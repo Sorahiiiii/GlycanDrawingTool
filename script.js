@@ -141,7 +141,7 @@ class GlycanDrawer {
         this.canvas.addEventListener('click', (e) => this.handleCanvasClick(e));
         this.canvas.addEventListener('dblclick', (e) => this.handleDoubleClick(e));
         this.canvas.addEventListener('mouseleave', (e) => this.handleMouseLeave(e));
-        this.canvas.addEventListener('wheel', (e) => this.handleWheel(e));
+        // Removed wheel zoom - now using zoom slider
         
         // Add keyboard event listeners
         document.addEventListener('keydown', (e) => this.handleKeyDown(e));
@@ -168,14 +168,17 @@ class GlycanDrawer {
         // Add canvas size control listeners
         const sizeButtons = document.querySelectorAll('.size-btn');
         sizeButtons.forEach(btn => {
-            btn.addEventListener('click', () => this.setExportAreaSize(btn.dataset.size));
+            btn.addEventListener('click', () => {
+                console.log('Size button clicked:', btn.dataset.size);
+                this.setExportAreaSize(btn.dataset.size);
+            });
         });
         
-        // Add center button listener
-        const centerBtn = document.getElementById('centerCanvas');
-        if (centerBtn) {
-            centerBtn.addEventListener('click', () => this.centerWorkspace());
-        }
+        // Initialize workspace first
+        this.initializeWorkspace();
+        
+        // Then setup zoom controls (needs workspace to be ready)
+        this.setupZoomControl();
         
         // Set default tool to select
         this.setTool('select');
@@ -188,9 +191,6 @@ class GlycanDrawer {
         
         // Initialize undo/redo button states
         this.updateUndoRedoButtons();
-        
-        // Initialize workspace
-        this.initializeWorkspace();
     }
     
     setupToolbar() {
@@ -3834,6 +3834,81 @@ class GlycanDrawer {
         }
     }
     
+    // Zoom Control Setup
+    setupZoomControl() {
+        const zoomSlider = document.getElementById('zoomSlider');
+        const zoomValue = document.getElementById('zoomValue');
+        const zoomReset = document.getElementById('zoomReset');
+        
+        if (!zoomSlider || !zoomValue || !zoomReset) {
+            console.error('Zoom control elements not found', {
+                slider: !!zoomSlider,
+                value: !!zoomValue,
+                reset: !!zoomReset
+            });
+            return;
+        }
+        
+        console.log('Setting up zoom controls');
+        
+        // Update zoom when slider changes
+        zoomSlider.addEventListener('input', (e) => {
+            const zoomPercent = parseInt(e.target.value);
+            console.log('Slider changed to:', zoomPercent);
+            this.setZoomLevel(zoomPercent / 100);
+            zoomValue.textContent = zoomPercent + '%';
+        });
+        
+        // Reset zoom to 100% when reset button clicked
+        zoomReset.addEventListener('click', () => {
+            console.log('Reset zoom to 100%');
+            zoomSlider.value = 100;
+            this.setZoomLevel(1.0);
+            zoomValue.textContent = '100%';
+        });
+        
+        // Initialize zoom display
+        zoomValue.textContent = '100%';
+        console.log('Zoom controls initialized');
+    }
+    
+    // Set zoom level and apply to canvas content only
+    setZoomLevel(zoom) {
+        // Clamp zoom level
+        this.zoomLevel = Math.max(0.5, Math.min(3.0, zoom));
+        
+        console.log(`Setting zoom level to: ${this.zoomLevel}`);
+        
+        // Find canvas and export area elements
+        const canvas = document.getElementById('canvas');
+        const exportArea = document.getElementById('exportArea');
+        const workspace = document.getElementById('workspace');
+        
+        if (canvas) {
+            // Apply zoom to canvas only
+            canvas.style.transform = `scale(${this.zoomLevel})`;
+            canvas.style.transformOrigin = 'center center';
+            console.log(`Canvas zoom applied: scale(${this.zoomLevel})`);
+        }
+        
+        if (exportArea) {
+            // Apply zoom to export area as well, but keep the existing margin-based centering
+            exportArea.style.transform = `scale(${this.zoomLevel})`;
+            exportArea.style.transformOrigin = '50% 50%'; // Center the scaling
+            console.log(`Export area zoom applied: scale(${this.zoomLevel})`);
+        }
+        
+        if (workspace) {
+            // Update stored reference but don't transform workspace
+            this.workspace = workspace;
+            
+            // Update grid background to match zoom
+            this.updateGridBackground();
+        } else {
+            console.error('Workspace element not found!');
+        }
+    }
+    
     // Workspace Management
     initializeWorkspace() {
         this.workspace = document.getElementById('workspace');
@@ -3841,36 +3916,74 @@ class GlycanDrawer {
         
         if (!this.workspace || !this.exportArea) {
             console.error('Workspace elements not found');
+            console.log('workspace:', this.workspace);
+            console.log('exportArea:', this.exportArea);
             return;
         }
+        
+        console.log('Workspace elements found successfully');
+        console.log('Export area element:', this.exportArea);
         
         // Set initial export area size (medium)
         this.setExportAreaSize('medium');
         
-        // Add zoom functionality
-        this.workspace.addEventListener('wheel', (e) => this.handleWorkspaceWheel(e));
+        // Initialize grid background
+        this.updateGridBackground();
         
-        // Center the workspace initially
-        setTimeout(() => this.centerWorkspace(), 100);
+        // Add Alt+wheel zoom functionality
+        this.workspace.addEventListener('wheel', (e) => this.handleWheelZoom(e));
+        
+        // Debug: Track unexpected scroll changes
+        this.workspace.addEventListener('scroll', (e) => {
+            if (!this.expectingScrollChange) {
+                console.log('Unexpected scroll change:', this.workspace.scrollLeft, this.workspace.scrollTop);
+            }
+        });
+        
+        // Center the viewport by setting initial scroll position (delayed to ensure layout is complete)
+        setTimeout(() => {
+            console.log('Before centering - scroll position:', this.workspace.scrollLeft, this.workspace.scrollTop);
+            this.centerWorkspaceView();
+            console.log('After centering - scroll position:', this.workspace.scrollLeft, this.workspace.scrollTop);
+        }, 300);
         
         console.log('Workspace initialized');
     }
     
     setExportAreaSize(size) {
-        if (!this.exportSizes[size]) return;
+        console.log(`setExportAreaSize called with size: ${size}`);
+        if (!this.exportSizes[size]) {
+            console.error(`Invalid size: ${size}`);
+            return;
+        }
         
         const { width, height } = this.exportSizes[size];
         this.currentExportSize = size;
         
-        // Update canvas dimensions
-        this.canvas.setAttribute('width', width);
-        this.canvas.setAttribute('height', height);
-        this.canvas.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        console.log(`Setting export area size to ${width}x${height}`);
         
-        // Update export area size
-        if (this.exportArea) {
-            this.exportArea.style.width = width + 'px';
-            this.exportArea.style.height = height + 'px';
+        // Note: We do NOT change canvas dimensions here!
+        // Canvas should remain fixed size, only export area (white background) changes
+        // Canvas dimensions should only be changed during actual export
+        
+        // Update export area size - find element fresh each time
+        const exportArea = document.getElementById('exportArea');
+        if (exportArea) {
+            exportArea.style.width = width + 'px';
+            exportArea.style.height = height + 'px';
+            // Update margins for centering (half of width/height)
+            exportArea.style.marginLeft = -(width / 2) + 'px';
+            exportArea.style.marginTop = -(height / 2) + 'px';
+            console.log(`Export area DOM updated: ${width}x${height}`);
+            console.log('Export area computed style:', window.getComputedStyle(exportArea).width, window.getComputedStyle(exportArea).height);
+            
+            // Update stored reference
+            this.exportArea = exportArea;
+        } else {
+            console.error('Export area element not found!');
+            console.log('DOM ready state:', document.readyState);
+            console.log('All elements with id exportArea:', document.querySelectorAll('#exportArea'));
+            console.log('All elements with class export-area:', document.querySelectorAll('.export-area'));
         }
         
         // Update button states
@@ -3881,53 +3994,91 @@ class GlycanDrawer {
         console.log(`Export area size changed to ${size}: ${width}×${height}`);
     }
     
-    centerWorkspace() {
+    // Center the workspace view (scroll to middle of canvas)
+    centerWorkspaceView() {
         if (!this.workspace) return;
         
-        // Reset zoom and center the workspace
-        this.zoomLevel = 1;
-        this.workspace.style.transform = `scale(${this.zoomLevel})`;
+        // The canvas is positioned with CSS: top:50%, left:50%, margin-top:-1400px, margin-left:-2000px
+        // This means the canvas center aligns with the workspace center
+        // To center the view, we need to scroll so the workspace viewport shows the canvas center
         
-        // Scroll to center
-        const rect = this.workspace.getBoundingClientRect();
-        const scrollX = (this.workspace.scrollWidth - rect.width) / 2;
-        const scrollY = (this.workspace.scrollHeight - rect.height) / 2;
+        // Calculate the total scrollable area
+        const totalScrollWidth = this.workspace.scrollWidth;
+        const totalScrollHeight = this.workspace.scrollHeight;
         
-        this.workspace.scrollLeft = scrollX;
-        this.workspace.scrollTop = scrollY;
+        // Get workspace viewport dimensions
+        const viewportWidth = this.workspace.clientWidth;
+        const viewportHeight = this.workspace.clientHeight;
         
-        console.log('Workspace centered');
+        // Center the scroll position
+        const scrollLeft = (totalScrollWidth - viewportWidth) / 2;
+        const scrollTop = (totalScrollHeight - viewportHeight) / 2;
+        
+        this.expectingScrollChange = true;
+        this.workspace.scrollLeft = scrollLeft;
+        this.workspace.scrollTop = scrollTop;
+        setTimeout(() => this.expectingScrollChange = false, 100);
+        
+        // Verify the setting took effect
+        setTimeout(() => {
+            const actualScrollLeft = this.workspace.scrollLeft;
+            const actualScrollTop = this.workspace.scrollTop;
+            console.log(`Centering attempt: expected(${scrollLeft}, ${scrollTop}), actual(${actualScrollLeft}, ${actualScrollTop})`);
+            if (actualScrollLeft !== scrollLeft || actualScrollTop !== scrollTop) {
+                console.warn('Scroll position was reset by something else!');
+                // Try again
+                this.workspace.scrollLeft = scrollLeft;
+                this.workspace.scrollTop = scrollTop;
+            }
+        }, 50);
+        
+        console.log(`Workspace centered: scrollLeft=${scrollLeft}, scrollTop=${scrollTop}`);
+        console.log(`Scroll area: ${totalScrollWidth}x${totalScrollHeight}, Viewport: ${viewportWidth}x${viewportHeight}`);
     }
     
-    handleWorkspaceWheel(e) {
-        // Only zoom when Ctrl is pressed
-        if (!e.ctrlKey) return;
+    // Handle Alt+wheel zoom
+    handleWheelZoom(e) {
+        // Only zoom when Alt is pressed
+        if (!e.altKey) return;
         
         e.preventDefault();
         
-        const delta = e.deltaY > 0 ? 0.9 : 1.1;
-        const newZoom = Math.max(this.minZoom, Math.min(this.maxZoom, this.zoomLevel * delta));
+        // Determine zoom direction (up = zoom in, down = zoom out)
+        const zoomStep = 10; // 10% increment
+        const currentPercent = Math.round(this.zoomLevel * 100);
+        const deltaPercent = e.deltaY < 0 ? zoomStep : -zoomStep;
+        const newPercent = Math.max(50, Math.min(300, currentPercent + deltaPercent));
         
-        if (newZoom !== this.zoomLevel) {
-            const rect = this.workspace.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-            
-            // Calculate zoom origin
-            const zoomOriginX = (mouseX + this.workspace.scrollLeft) / this.zoomLevel;
-            const zoomOriginY = (mouseY + this.workspace.scrollTop) / this.zoomLevel;
-            
-            this.zoomLevel = newZoom;
-            this.workspace.style.transform = `scale(${this.zoomLevel})`;
-            
-            // Adjust scroll to maintain zoom origin
-            const newScrollX = zoomOriginX * this.zoomLevel - mouseX;
-            const newScrollY = zoomOriginY * this.zoomLevel - mouseY;
-            
-            this.workspace.scrollLeft = newScrollX;
-            this.workspace.scrollTop = newScrollY;
+        console.log(`Wheel zoom: ${currentPercent}% -> ${newPercent}%`);
+        
+        // Update zoom level
+        this.setZoomLevel(newPercent / 100);
+        
+        // Update slider and display
+        const zoomSlider = document.getElementById('zoomSlider');
+        const zoomValue = document.getElementById('zoomValue');
+        if (zoomSlider) zoomSlider.value = newPercent;
+        if (zoomValue) zoomValue.textContent = newPercent + '%';
+    }
+    
+    // Update grid background size to match zoom level
+    updateGridBackground() {
+        // Calculate grid size based on zoom level (inverse scaling for visual consistency)
+        const gridSize = 20 / this.zoomLevel;
+        
+        // Find workspace element if not already available
+        const workspace = this.workspace || document.getElementById('workspace');
+        if (workspace) {
+            // Apply to workspace pseudo-element via CSS custom property
+            workspace.style.setProperty('--grid-size', `${gridSize}px`);
+            // Update stored reference
+            this.workspace = workspace;
+        } else {
+            console.warn('Workspace not available for grid background update');
         }
     }
+    
+    // Removed handleWorkspaceWheel - now using zoom slider instead
     
     // Legacy canvas size adjustment (kept for compatibility)
     changeCanvasSize(sizeValue) {
@@ -4145,14 +4296,7 @@ class GlycanDrawer {
         this.isShiftPressed = e.shiftKey;
     }
     
-    handleWheel(e) {
-        if (e.ctrlKey) {
-            e.preventDefault();
-            // Zoom functionality
-            const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
-            this.zoomCanvas(scaleFactor, e.offsetX, e.offsetY);
-        }
-    }
+    // Removed handleWheel - now using zoom slider instead
     
     // ===== UNIFIED ELEMENT SYSTEM =====
     

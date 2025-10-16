@@ -34,7 +34,14 @@
                     <button id="canvasSmall" class="size-btn" data-size="small">小</button>
                     <button id="canvasMedium" class="size-btn active" data-size="medium">中</button>
                     <button id="canvasLarge" class="size-btn" data-size="large">大</button>
-                    <button id="centerCanvas" class="action-btn center">居中</button>
+                </div>
+                
+                <!-- Zoom Controls -->
+                <div class="zoom-controls">
+                    <label>缩放:</label>
+                    <input type="range" id="zoomSlider" min="50" max="300" value="100" step="10">
+                    <span id="zoomValue">100%</span>
+                    <button id="zoomReset" class="action-btn">重置</button>
                 </div>
             </div>
         </div>
@@ -71,7 +78,7 @@
                     <!-- Export area visual background (not a container) -->
                     <div id="exportArea" class="export-area"></div>
                     <!-- SVG canvas spans entire workspace -->
-                    <svg id="canvas" class="workspace-canvas" viewBox="-500 -350 2000 1400">
+                    <svg id="canvas" class="workspace-canvas" viewBox="0 0 4000 2800">
                         <!-- SVG content will be added here -->
                     </svg>
                 </div>

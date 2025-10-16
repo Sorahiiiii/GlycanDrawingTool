@@ -307,20 +307,77 @@ h1 {
     margin-right: 250px; /* Space for fixed right panel */
 }
 
+/* Zoom Controls in Toolbar */
+.zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.zoom-controls label {
+    font-size: 14px;
+    color: #333;
+    margin: 0;
+}
+
+.zoom-controls input[type="range"] {
+    width: 100px;
+    height: 6px;
+    background: #ddd;
+    border-radius: 3px;
+    outline: none;
+    margin: 0;
+}
+
+.zoom-controls input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #3498db;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.zoom-controls span {
+    min-width: 45px;
+    text-align: center;
+    font-weight: 500;
+    font-size: 13px;
+    color: #555;
+}
+
+.zoom-controls .action-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
 /* Infinite Workspace (Gray Background) */
 .workspace {
     width: 100%;
     height: 100%;
     background-color: #e5e5e5;
-    background-image: 
-        linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
-    background-size: 20px 20px;
     position: relative;
     overflow: auto;
     cursor: grab;
     transform-origin: center center;
     transition: transform 0.1s ease;
+    --grid-size: 20px; /* Default grid size */
+}
+
+/* Grid background applied to workspace-content to scale with zoom */
+.workspace::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: 
+        linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
+    background-size: var(--grid-size) var(--grid-size);
+    pointer-events: none;
+    z-index: 0;
 }
 
 .workspace:active {
@@ -335,25 +392,33 @@ h1 {
     box-shadow: 
         0 4px 20px rgba(0, 0, 0, 0.15),
         0 1px 3px rgba(0, 0, 0, 0.1);
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    transition: all 0.3s ease;
-    z-index: 1; /* Behind canvas */
+    /* Position at canvas center - canvas is 4000x2800, so center is at (2000, 1400) */
+    top: 1400px; /* Canvas center Y */
+    left: 2000px; /* Canvas center X */
+    /* Offset by half the export area size to center it */
+    margin-top: -350px; /* Half of export area height */
+    margin-left: -500px; /* Half of export area width */
+    /* No transition for instant zoom response */
+    z-index: 5; /* Above grid background, below canvas */
+    /* Width and height are set dynamically by JavaScript */
+    pointer-events: none; /* Don't interfere with interactions */
+    /* Default size in case JavaScript hasn't run yet */
     width: 1000px;
     height: 700px;
-    pointer-events: none; /* Don't interfere with interactions */
 }
 
-/* Canvas spans entire workspace */
+/* Canvas - larger than workspace to provide more drawing space */
 .workspace-canvas {
     position: absolute;
+    /* Position canvas at the start, not centered */
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
+    /* Canvas is 2x larger than before: 4000x2800 display size */
+    width: 4000px;
+    height: 2800px;
     z-index: 10; /* Above export area background */
     pointer-events: auto;
+    /* No transition for instant zoom response */
 }
 
 /* Right Panel - Sugar Configuration */
