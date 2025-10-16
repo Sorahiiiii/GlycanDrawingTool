@@ -2570,11 +2570,15 @@ class GlycanDrawer {
         }
         
         // 更新颜色按钮 - 只有在默认调色板中的颜色才显示选中
+        let colorButtonFound = false;
         document.querySelectorAll('.color-btn').forEach(btn => {
             if (btn.dataset.color === sugarData.color && defaultColors.includes(sugarData.color)) {
                 btn.classList.add('active');
+                colorButtonFound = true;
             }
         });
+        
+        console.log(`Sugar color: ${sugarData.color}, Found matching preset button: ${colorButtonFound}`);
         
         // 查找匹配的SNFG预设
         let matchingPreset = null;
