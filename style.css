@@ -205,6 +205,7 @@ h1 {
     flex: 1;
     overflow: hidden;
     position: relative; /* For fixed panels positioning */
+    margin-top: 120px; /* Space for header (60px) + top panel (~60px) */
 }
 
 /* Left Panel - Tools */

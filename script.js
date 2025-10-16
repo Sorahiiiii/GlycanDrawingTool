@@ -17,10 +17,20 @@ class GlycanDrawer {
             type: 'custom',
             shape: 'circle',
             color: '#3498db',
+            size: 20,
+            borderWidth: 2,
+            borderColor: '#333333',
             preset: null
         };
         
-
+        this.currentTextConfig = {
+            fontSize: 16,
+            fontFamily: 'Arial, sans-serif',
+            color: '#000000',
+            bold: false,
+            italic: false,
+            underline: false
+        };
         
         // Unified element system
         this.selectedElements = new Set(); // All selected elements (sugars, texts, connections)
@@ -123,6 +133,10 @@ class GlycanDrawer {
         document.addEventListener('keydown', (e) => this.handleKeyDown(e));
         document.addEventListener('keyup', (e) => this.handleKeyUp(e));
         
+        // Setup global drag event listeners (will be added/removed as needed)
+        this.globalDragMouseMove = (e) => this.handleGlobalDragMove(e);
+        this.globalDragMouseUp = (e) => this.handleGlobalDragUp(e);
+        
         // Add action button listeners
         this.undoBtn.addEventListener('click', () => this.undo());
         this.redoBtn.addEventListener('click', () => this.redo());
@@ -209,9 +223,18 @@ class GlycanDrawer {
         const sugarSizeValue = document.getElementById('sugarSizeValue');
         
         sugarSize.addEventListener('input', (e) => {
-            const value = e.target.value;
+            const value = parseInt(e.target.value);
             sugarSizeValue.textContent = value;
-            this.applySugarSize();
+            
+            if (this.currentTool === 'add') {
+                // 添加模式：只更新配置，不应用到任何元素
+                if (this.currentSugarConfig) {
+                    this.currentSugarConfig.size = value;
+                }
+            } else if (this.currentTool === 'select') {
+                // 选择模式：只应用到选中元素，不更新配置
+                this.applySugarSize();
+            }
         });
         
         // Sugar border style controls
@@ -220,13 +243,22 @@ class GlycanDrawer {
         const borderStyleButtons = document.querySelectorAll('.border-style-btn');
         
         sugarBorderWidth.addEventListener('input', (e) => {
-            const value = e.target.value;
+            const value = parseFloat(e.target.value);
             sugarBorderWidthValue.textContent = value;
+            
             // Clear mixed state when user manually changes value
-            const sugarBorderWidthValue = document.getElementById('sugarBorderWidthValue');
             e.target.classList.remove('mixed');
             if (sugarBorderWidthValue) sugarBorderWidthValue.classList.remove('mixed');
-            this.applySugarBorderWidth();
+            
+            if (this.currentTool === 'add') {
+                // 添加模式：只更新配置，不应用到任何元素
+                if (this.currentSugarConfig) {
+                    this.currentSugarConfig.borderWidth = value;
+                }
+            } else if (this.currentTool === 'select') {
+                // 选择模式：只应用到选中元素，不更新配置
+                this.applySugarBorderWidth();
+            }
         });
         
         borderStyleButtons.forEach(btn => {
@@ -266,28 +298,57 @@ class GlycanDrawer {
         
         // Font size control
         fontSize.addEventListener('input', (e) => {
-            const value = e.target.value;
+            const value = parseInt(e.target.value);
             fontSizeValue.textContent = value;
-            this.applyFontSize(value);
+            
+            if (this.currentTool === 'text') {
+                // 文本工具模式：只更新配置，不应用到任何元素
+                this.currentTextConfig.fontSize = value;
+            } else if (this.currentTool === 'select') {
+                // 选择模式：只应用到选中元素，不更新配置
+                this.applyFontSize(value);
+            }
         });
         
         // Font family control
         fontFamily.addEventListener('change', (e) => {
-            this.applyFontFamily(e.target.value);
+            const value = e.target.value;
+            
+            if (this.currentTool === 'text') {
+                // 文本工具模式：只更新配置，不应用到任何元素
+                this.currentTextConfig.fontFamily = value;
+            } else if (this.currentTool === 'select') {
+                // 选择模式：只应用到选中元素，不更新配置
+                this.applyFontFamily(value);
+            }
         });
         
         // Text color controls
         textColor.addEventListener('input', (e) => {
             const color = e.target.value;
             textColorHex.value = color;
-            this.applyTextColor(color);
+            
+            if (this.currentTool === 'text') {
+                // 文本工具模式：只更新配置，不应用到任何元素
+                this.currentTextConfig.color = color;
+            } else if (this.currentTool === 'select') {
+                // 选择模式：只应用到选中元素，不更新配置
+                this.applyTextColor(color);
+            }
         });
         
         textColorHex.addEventListener('input', (e) => {
             const color = e.target.value;
             if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
                 textColor.value = color;
-                this.applyTextStyle();
+                
+                if (this.currentTool === 'text') {
+                    // 文本工具模式：只更新配置，不应用到任何元素
+                    this.currentTextConfig.color = color;
+                } else if (this.currentTool === 'select') {
+                    // 选择模式：只应用到选中元素，不更新配置
+                    this.applyTextStyle();
+                }
             }
         });
         
@@ -301,8 +362,22 @@ class GlycanDrawer {
                 } else {
                     btn.classList.toggle('active');
                 }
-                // Apply only this specific style, not all styles
-                this.applySpecificTextStyle(btn.id, btn.classList.contains('active'));
+                
+                const isActive = btn.classList.contains('active');
+                
+                if (this.currentTool === 'text') {
+                    // 文本工具模式：只更新配置，不应用到任何元素
+                    if (btn.id === 'bold') {
+                        this.currentTextConfig.bold = isActive;
+                    } else if (btn.id === 'italic') {
+                        this.currentTextConfig.italic = isActive;
+                    } else if (btn.id === 'underline') {
+                        this.currentTextConfig.underline = isActive;
+                    }
+                } else if (this.currentTool === 'select') {
+                    // 选择模式：只应用到选中元素，不更新配置
+                    this.applySpecificTextStyle(btn.id, isActive);
+                }
             });
         });
         
@@ -316,7 +391,14 @@ class GlycanDrawer {
             // Clear mixed state when user manually changes value
             sugarBorderColor.classList.remove('mixed');
             sugarBorderColorHex.classList.remove('mixed');
-            this.applySugarBorderColor(color);
+            
+            if (this.currentTool === 'add') {
+                // 添加模式：只更新配置，不应用到任何元素
+                this.currentSugarConfig.borderColor = color;
+            } else if (this.currentTool === 'select') {
+                // 选择模式：只应用到选中元素，不更新配置
+                this.applySugarBorderColor(color);
+            }
         });
         
         sugarBorderColorHex.addEventListener('input', (e) => {
@@ -326,7 +408,14 @@ class GlycanDrawer {
                 // Clear mixed state when user manually changes value
                 sugarBorderColor.classList.remove('mixed');
                 sugarBorderColorHex.classList.remove('mixed');
-                this.applySugarBorderColor(color);
+                
+                if (this.currentTool === 'add') {
+                    // 添加模式：只更新配置，不应用到任何元素
+                    this.currentSugarConfig.borderColor = color;
+                } else if (this.currentTool === 'select') {
+                    // 选择模式：只应用到选中元素，不更新配置
+                    this.applySugarBorderColor(color);
+                }
             }
         });
         
@@ -588,8 +677,14 @@ class GlycanDrawer {
                 this.updateStylePanel();
                 e.preventDefault();
             } else {
-                // Clicked on empty space - start box selection
+                // Clicked on empty space
                 this.resetPasteCounter();
+                
+                // If currently editing text, finish the edit first
+                if (this.isEditingText) {
+                    this.finishTextEditing();
+                }
+                
                 this.clearAllSelections();
                 this.startBoxSelection(x, y);
                 e.preventDefault();
@@ -800,6 +895,10 @@ class GlycanDrawer {
         this.isDraggingMultiple = false;
         this.isDraggingMultipleTexts = false;
         
+        // Remove global drag listeners as backup cleanup
+        document.removeEventListener('mousemove', this.globalDragMouseMove);
+        document.removeEventListener('mouseup', this.globalDragMouseUp);
+        
         // Stop erasing
         if (this.isErasing) {
             this.stopErasing();
@@ -814,38 +913,8 @@ class GlycanDrawer {
         // Clear hover previews
         this.clearAllHoverPreviews();
         
-        // Don't clear selection box when mouse leaves - let it continue until mouse up
-        
-        // Stop all dragging operations
-        if (this.isDragging) {
-            // Clean up multiple drag state
-            if (this.isDraggingMultiple) {
-                const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
-                selectedSugars.forEach(sugar => {
-                    sugar.removeAttribute('data-initial-x');
-                    sugar.removeAttribute('data-initial-y');
-                    sugar.classList.remove('dragging');
-                });
-                this.isDraggingMultiple = false;
-            }
-            
-            // Clean up multiple text drag state
-            if (this.isDraggingMultipleTexts) {
-                this.selectedTexts.forEach(text => {
-                    text.removeAttribute('data-initial-x');
-                    text.removeAttribute('data-initial-y');
-                    text.classList.remove('dragging');
-                });
-                this.isDraggingMultipleTexts = false;
-            }
-            
-            // Remove dragging class from all selected elements
-            this.selectedElements.forEach(element => {
-                element.classList.remove('dragging');
-            });
-            
-            this.isDragging = false;
-        }
+        // DON'T stop dragging operations when mouse leaves - let them continue
+        // until mouse up event. This prevents elements from getting stuck.
         
         // Clear connection target highlights
         this.clearConnectionTargetHighlight();
@@ -1602,6 +1671,15 @@ class GlycanDrawer {
         });
     }
     
+    finishTextEditing() {
+        // Find any active text input boxes and finish their editing
+        const textInputs = document.querySelectorAll('.text-input-box');
+        textInputs.forEach(input => {
+            // Trigger blur event to save the text
+            input.blur();
+        });
+    }
+    
     moveText(textElement, newX, newY) {
         textElement.setAttribute('x', newX);
         textElement.setAttribute('y', newY);
@@ -2095,6 +2173,60 @@ class GlycanDrawer {
         e.preventDefault();
     }
     
+    handleGlobalDragMove(e) {
+        if (!this.isDragging || this.currentTool !== 'select') return;
+        
+        // Convert global coordinates to canvas-relative coordinates
+        const canvasRect = this.canvas.getBoundingClientRect();
+        const x = e.clientX - canvasRect.left;
+        const y = e.clientY - canvasRect.top;
+        
+        // Use the existing drag logic from handleMouseMove
+        if (this.isDraggingMultiple && this.selectedElements.size > 0) {
+            // Calculate movement delta from initial drag position
+            let deltaX = x - this.dragStartX;  
+            let deltaY = y - this.dragStartY;
+            
+            // Apply Shift constraint for axis-aligned movement
+            if (this.dragWithShift) {
+                if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                    deltaY = 0; // Horizontal movement only
+                } else {
+                    deltaX = 0; // Vertical movement only
+                }
+            }
+            
+            // Move all selected elements
+            this.selectedElements.forEach(element => {
+                const initialX = parseFloat(element.getAttribute('data-initial-x'));
+                const initialY = parseFloat(element.getAttribute('data-initial-y'));
+                
+                const newX = initialX + deltaX;
+                const newY = initialY + deltaY;
+                
+                const type = this.getElementType(element);
+                if (type === 'sugar') {
+                    this.moveSugar(element, newX, newY);
+                } else if (type === 'text') {
+                    this.moveText(element, newX, newY);
+                }
+            });
+        }
+        
+        e.preventDefault();
+    }
+    
+    handleGlobalDragUp(e) {
+        if (!this.isDragging) return;
+        
+        // Remove global event listeners
+        document.removeEventListener('mousemove', this.globalDragMouseMove);
+        document.removeEventListener('mouseup', this.globalDragMouseUp);
+        
+        // Use existing mouse up logic
+        this.handleMouseUp(e);
+    }
+    
     previewBoxSelection(boxX, boxY, boxWidth, boxHeight) {
         // Clear previous previews
         this.clearBoxSelectionPreviews();
@@ -2544,22 +2676,34 @@ class GlycanDrawer {
     }
     
     getCurrentTextConfig() {
-        // Get current text configuration from right panel
-        const fontSize = document.getElementById('fontSize');
-        const fontFamily = document.getElementById('fontFamily');
-        const textColor = document.getElementById('textColor');
-        const boldBtn = document.getElementById('boldBtn');
-        const italicBtn = document.getElementById('italicBtn');
-        const underlineBtn = document.getElementById('underlineBtn');
-        
-        return {
-            fontSize: fontSize ? parseInt(fontSize.value) : 16,
-            fontFamily: fontFamily ? fontFamily.value : 'Arial',
-            color: textColor ? textColor.value : '#000000',
-            bold: boldBtn ? boldBtn.classList.contains('active') : false,
-            italic: italicBtn ? italicBtn.classList.contains('active') : false,
-            underline: underlineBtn ? underlineBtn.classList.contains('active') : false
-        };
+        if (this.currentTool === 'text') {
+            // 文本工具模式：使用保存的配置
+            return this.currentTextConfig || {
+                fontSize: 16,
+                fontFamily: 'Arial, sans-serif',
+                color: '#000000',
+                bold: false,
+                italic: false,
+                underline: false
+            };
+        } else {
+            // 选择模式或其他模式：从右侧面板读取当前值
+            const fontSize = document.getElementById('fontSize');
+            const fontFamily = document.getElementById('fontFamily');
+            const textColor = document.getElementById('textColor');
+            const boldBtn = document.getElementById('bold');
+            const italicBtn = document.getElementById('italic');
+            const underlineBtn = document.getElementById('underline');
+            
+            return {
+                fontSize: fontSize ? parseInt(fontSize.value) : 16,
+                fontFamily: fontFamily ? fontFamily.value : 'Arial, sans-serif',
+                color: textColor ? textColor.value : '#000000',
+                bold: boldBtn ? boldBtn.classList.contains('active') : false,
+                italic: italicBtn ? italicBtn.classList.contains('active') : false,
+                underline: underlineBtn ? underlineBtn.classList.contains('active') : false
+            };
+        }
     }
     
     // Eraser methods
@@ -2612,11 +2756,19 @@ class GlycanDrawer {
         
         if (!sugarControlsSection || !textControlsSection || !emptyControlsSection) return;
         
-        // Use unified selection system to check what's selected
-        const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
-        const selectedTexts = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'text');
-        
-        if (this.currentTool === 'select') {
+        if (this.currentTool === 'add') {
+            // 添加模式：总是显示糖分子控制面板并显示添加配置参数
+            sugarControlsSection.style.display = 'block';
+            textControlsSection.style.display = 'none';
+            emptyControlsSection.style.display = 'none';
+            
+            // 总是显示 currentSugarConfig 的参数，不管是否有选中元素
+            this.updateStyleControlValues();
+            
+        } else if (this.currentTool === 'select') {
+            // 选择模式：根据选中元素显示相应面板
+            const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
+            const selectedTexts = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'text');
             if (selectedSugars.length > 0) {
                 // Show sugar controls panel
                 sugarControlsSection.style.display = 'block';
@@ -2641,16 +2793,14 @@ class GlycanDrawer {
                 textControlsSection.style.display = 'none';
                 emptyControlsSection.style.display = 'block';
             }
-        } else if (this.currentTool === 'add') {
-            // Show sugar controls for adding
-            sugarControlsSection.style.display = 'block';
-            textControlsSection.style.display = 'none';
-            emptyControlsSection.style.display = 'none';
         } else if (this.currentTool === 'text') {
             // Show text controls for text tool
             sugarControlsSection.style.display = 'none';
             textControlsSection.style.display = 'block';
             emptyControlsSection.style.display = 'none';
+            
+            // Update control values from currentTextConfig
+            this.updateTextStyleControlValues();
         } else {
             // Show empty state for other tools
             sugarControlsSection.style.display = 'none';
@@ -2660,49 +2810,129 @@ class GlycanDrawer {
     }
     
     updateStyleControlValues() {
-        // Update control values based on the first selected sugar using unified selection system
-        const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
-        const referenceSugar = selectedSugars.length > 0 ? selectedSugars[0] : null;
-        
-        if (referenceSugar) {
-            // Update size slider
-            const currentSize = this.getSugarSize(referenceSugar);
-            const sizeSlider = document.getElementById('sugarSize');
-            const sizeValue = document.getElementById('sugarSizeValue');
+        const sizeSlider = document.getElementById('sugarSize');
+        const sizeValue = document.getElementById('sugarSizeValue');
+        const widthSlider = document.getElementById('sugarBorderWidth');
+        const widthValue = document.getElementById('sugarBorderWidthValue');
+        const colorPicker = document.getElementById('sugarBorderColor');
+        const colorHex = document.getElementById('sugarBorderColorHex');
+
+        if (this.currentTool === 'add') {
+            // 添加模式：显示即将添加的新糖分子配置参数
+            const config = this.currentSugarConfig || { size: 20, borderWidth: 2, borderColor: '#333333' };
+            
+            // Update size slider from config
             if (sizeSlider && sizeValue) {
-                sizeSlider.value = currentSize;
-                sizeValue.textContent = currentSize;
+                const configSize = config.size || 20;
+                sizeSlider.value = configSize;
+                sizeValue.textContent = configSize;
             }
             
-            // Update border width slider and color
-            const shape = referenceSugar.querySelector('.sugar-shape');
-            if (shape) {
-                const currentWidth = shape.style.strokeWidth || shape.getAttribute('stroke-width') || '2';
-                const widthSlider = document.getElementById('sugarBorderWidth');
-                const widthValue = document.getElementById('sugarBorderWidthValue');
-                if (widthSlider && widthValue) {
-                    widthSlider.value = parseFloat(currentWidth);
-                    widthValue.textContent = parseFloat(currentWidth);
+            // Update border width from config
+            if (widthSlider && widthValue) {
+                const configWidth = config.borderWidth || 2;
+                widthSlider.value = configWidth;
+                widthValue.textContent = configWidth;
+            }
+            
+            // Update border color from config
+            if (colorPicker && colorHex) {
+                const configColor = config.borderColor || '#333333';
+                colorPicker.value = configColor;
+                colorHex.value = configColor;
+            }
+            
+        } else if (this.currentTool === 'select') {
+            // 选择模式：显示选中糖分子的实际参数
+            const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
+            const referenceSugar = selectedSugars.length > 0 ? selectedSugars[0] : null;
+            
+            if (referenceSugar) {
+                // Update size slider from selected sugar
+                const currentSize = this.getSugarSize(referenceSugar);
+                if (sizeSlider && sizeValue) {
+                    sizeSlider.value = currentSize;
+                    sizeValue.textContent = currentSize;
                 }
                 
-                // Update border color
-                const currentColor = shape.style.stroke || shape.getAttribute('stroke') || '#333333';
-                const colorPicker = document.getElementById('sugarBorderColor');
-                const colorHex = document.getElementById('sugarBorderColorHex');
-                if (colorPicker && colorHex) {
-                    colorPicker.value = currentColor;
-                    colorHex.value = currentColor;
+                // Update border width and color from selected sugar
+                const shape = referenceSugar.querySelector('.sugar-shape');
+                if (shape) {
+                    const currentWidth = shape.style.strokeWidth || shape.getAttribute('stroke-width') || '2';
+                    if (widthSlider && widthValue) {
+                        widthSlider.value = parseFloat(currentWidth);
+                        widthValue.textContent = parseFloat(currentWidth);
+                    }
+                    
+                    const currentColor = shape.style.stroke || shape.getAttribute('stroke') || '#333333';
+                    if (colorPicker && colorHex) {
+                        colorPicker.value = currentColor;
+                        colorHex.value = currentColor;
+                    }
                 }
             }
+            // 如果选择模式下没有选中糖分子，不更新控制值（保持当前显示）
         }
     }
     
     updateTextStyleControlValues() {
-        // Get first selected text element using unified selection system
-        const selectedTexts = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'text');
-        const textElement = selectedTexts.length > 0 ? selectedTexts[0] : null;
+        if (this.currentTool === 'text') {
+            // 文本工具模式：显示文本配置参数
+            this.updateTextControlsFromConfig();
+        } else if (this.currentTool === 'select') {
+            // 选择模式：显示选中文本元素的参数
+            const selectedTexts = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'text');
+            const textElement = selectedTexts.length > 0 ? selectedTexts[0] : null;
+            
+            if (!textElement) return;
+            this.updateTextControlsFromElement(textElement);
+        }
+    }
+    
+    updateTextControlsFromConfig() {
+        // 从 currentTextConfig 更新控件值
+        const config = this.currentTextConfig || { fontSize: 16, fontFamily: 'Arial, sans-serif', color: '#000000', bold: false, italic: false, underline: false };
         
-        if (!textElement) return;
+        // Update font size
+        const fontSize = document.getElementById('fontSize');
+        const fontSizeValue = document.getElementById('fontSizeValue');
+        if (fontSize && fontSizeValue) {
+            fontSize.value = config.fontSize;
+            fontSizeValue.textContent = config.fontSize;
+        }
+        
+        // Update font family
+        const fontFamily = document.getElementById('fontFamily');
+        if (fontFamily) {
+            fontFamily.value = config.fontFamily;
+        }
+        
+        // Update text color
+        const textColor = document.getElementById('textColor');
+        const textColorHex = document.getElementById('textColorHex');
+        if (textColor && textColorHex) {
+            textColor.value = config.color;
+            textColorHex.value = config.color;
+        }
+        
+        // Update style buttons
+        const boldBtn = document.getElementById('bold');
+        const italicBtn = document.getElementById('italic');
+        const underlineBtn = document.getElementById('underline');
+        
+        if (boldBtn) {
+            boldBtn.classList.toggle('active', config.bold);
+        }
+        if (italicBtn) {
+            italicBtn.classList.toggle('active', config.italic);
+        }
+        if (underlineBtn) {
+            underlineBtn.classList.toggle('active', config.underline);
+        }
+    }
+    
+    updateTextControlsFromElement(textElement) {
+        // 从选中的文本元素更新控件值
         
         // Get current styles
         const computedStyle = window.getComputedStyle(textElement);
@@ -3872,6 +4102,10 @@ class GlycanDrawer {
         this.isDragging = true;
         this.dragStartX = x;
         this.dragStartY = y;
+        
+        // Add global event listeners for dragging outside canvas
+        document.addEventListener('mousemove', this.globalDragMouseMove);
+        document.addEventListener('mouseup', this.globalDragMouseUp);
         
         if (multipleElements) {
             this.isDraggingMultiple = true;
