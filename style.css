@@ -125,6 +125,44 @@ h1 {
     z-index: 20;
 }
 
+.version {
+    font-size: 12px;
+    color: #7f8c8d;
+    font-weight: 400;
+    margin-left: 8px;
+}
+
+.help-links {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.help-link {
+    display: inline-block; /* underline matches text width */
+    font-size: 15px;
+    color: #2980b9;
+    margin: 0;
+    padding-bottom: 2px;
+    text-align: center; /* center each wrapped line */
+    text-decoration: none;
+    border-bottom: 1px dotted rgba(41, 128, 185, 0.3);
+}
+
+.help-link:hover {
+    color: #1f6ea8;
+    border-bottom-color: rgba(31, 110, 168, 0.6);
+}
+
+.feedback-text {
+    text-align: center;
+    margin-top: 8px;
+    font-size: 15px;
+    color: #2c3e50;
+}
+
 /* Top Panel */
 .top-panel {
     background-color: white;
