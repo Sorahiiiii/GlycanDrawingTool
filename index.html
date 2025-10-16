@@ -13,7 +13,19 @@
         <!-- Top Panel: Actions and Functions -->
         <div class="top-panel">
             <div class="action-buttons">
-                <button id="downloadBtn" class="action-btn">导出 SVG</button>
+                <button id="undoBtn" class="action-btn undo">撤回</button>
+                <button id="redoBtn" class="action-btn redo">恢复</button>
+                
+                <!-- Export dropdown -->
+                <div class="export-dropdown">
+                    <button id="exportBtn" class="action-btn export">导出 ▾</button>
+                    <div class="export-options">
+                        <div class="export-option" data-format="svg">SVG（可编辑矢量）</div>
+                        <div class="export-option" data-format="png">PNG（透明背景）</div>
+                        <div class="export-option" data-format="jpg">JPG（白色背景）</div>
+                    </div>
+                </div>
+                
                 <button id="clearBtn" class="action-btn clear">清空画布</button>
                 
                 <!-- Canvas Size Controls -->

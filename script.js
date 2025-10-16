@@ -1,7 +1,9 @@
 class GlycanDrawer {
     constructor() {
         this.canvas = document.getElementById('canvas');
-        this.downloadBtn = document.getElementById('downloadBtn');
+        this.undoBtn = document.getElementById('undoBtn');
+        this.redoBtn = document.getElementById('redoBtn');
+        this.exportBtn = document.getElementById('exportBtn');
         this.clearBtn = document.getElementById('clearBtn');
         
         this.sugarCount = 0;
@@ -20,10 +22,19 @@ class GlycanDrawer {
         
 
         
-        // Selection and drag states
+        // Unified element system
+        this.selectedElements = new Set(); // All selected elements (sugars, texts, connections)
+        this.hoveredElement = null; // Element being hovered for preview highlight
+        this.hoveredElements = new Set(); // Elements being hovered during box selection
+        
+        // Legacy selection states for backward compatibility (maintained by updateLegacySelectionStates)
         this.selectedSugar = null;
         this.selectedText = null;
-        this.selectedTexts = new Set(); // Multiple text selection
+        this.selectedTexts = new Set();
+        this.selectedConnections = new Set();
+        this.selectedSugars = new Set();
+        
+        // Drag states
         this.isDragging = false;
         this.dragOffset = { x: 0, y: 0 };
         this.lastClickTime = 0;
@@ -42,10 +53,14 @@ class GlycanDrawer {
         this.isBoxSelecting = false;
         this.boxSelectionStart = { x: 0, y: 0 };
         this.selectionBox = null;
-        this.selectedSugars = new Set(); // Multiple sugar selection
         
         // UI update flag to prevent style application during UI updates
         this.isUpdatingUI = false;
+        
+        // Undo/Redo system
+        this.undoStack = [];
+        this.redoStack = [];
+        this.maxUndoSteps = 50; // Maximum number of undo steps
         
         // Eraser states for continuous deletion
         this.isErasing = false;
@@ -53,6 +68,15 @@ class GlycanDrawer {
         this.eraserDelay = 100; // 100ms delay between continuous deletions
         this.isDraggingMultiple = false;
         this.isDraggingMultipleTexts = false;
+        
+        // Keyboard state tracking
+        this.isCtrlPressed = false;
+        this.isShiftPressed = false;
+        this.clipboard = {
+            sugars: [],
+            texts: [],
+            connections: []
+        };
         
         // SNFG Presets Configuration
         this.snfgPresets = {
@@ -93,10 +117,25 @@ class GlycanDrawer {
         this.canvas.addEventListener('click', (e) => this.handleCanvasClick(e));
         this.canvas.addEventListener('dblclick', (e) => this.handleDoubleClick(e));
         this.canvas.addEventListener('mouseleave', (e) => this.handleMouseLeave(e));
+        this.canvas.addEventListener('wheel', (e) => this.handleWheel(e));
+        
+        // Add keyboard event listeners
+        document.addEventListener('keydown', (e) => this.handleKeyDown(e));
+        document.addEventListener('keyup', (e) => this.handleKeyUp(e));
         
         // Add action button listeners
-        this.downloadBtn.addEventListener('click', () => this.downloadSVG());
+        this.undoBtn.addEventListener('click', () => this.undo());
+        this.redoBtn.addEventListener('click', () => this.redo());
         this.clearBtn.addEventListener('click', () => this.clearCanvas());
+        
+        // Add export option listeners
+        const exportOptions = document.querySelectorAll('.export-option');
+        exportOptions.forEach(option => {
+            option.addEventListener('click', (e) => {
+                const format = e.target.getAttribute('data-format');
+                this.exportCanvas(format);
+            });
+        });
         
         // Add canvas size control listener
         const canvasSizeSelect = document.getElementById('canvasSizeSelect');
@@ -112,6 +151,9 @@ class GlycanDrawer {
         
         // Initialize left panel visibility
         this.updateLeftPanel();
+        
+        // Initialize undo/redo button states
+        this.updateUndoRedoButtons();
     }
     
     setupToolbar() {
@@ -443,7 +485,8 @@ class GlycanDrawer {
             
             // If in select mode, only apply shape and color from preset (not size/border)
             if (this.currentTool === 'select') {
-                if (this.selectedSugar || this.selectedSugars.size > 0) {
+                const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
+                if (selectedSugars.length > 0) {
                     this.applySugarShape(this.snfgPresets[preset].shape);
                     this.applySugarColor(this.snfgPresets[preset].color);
                 }
@@ -494,99 +537,72 @@ class GlycanDrawer {
         const x = coords.x;
         const y = coords.y;
         
-        const clickedSugar = this.getSugarAtPoint(x, y);
-        const clickedText = this.getTextAtPoint(x, y);
+        // Store modifier keys state for dragging
+        this.dragWithCtrl = e.ctrlKey;
+        this.dragWithShift = e.shiftKey;
+        
+        // Find clicked element using unified system
+        const clickedElement = this.getElementAtPoint(x, y);
         
         if (this.currentTool === 'select') {
-            if (clickedSugar) {
+            if (clickedElement) {
+                // Reset paste counter when user starts selecting
+                this.resetPasteCounter();
+                
                 // Get SVG-relative coordinates
                 const svgX = x;
                 const svgY = y;
                 
-                // Check if clicked sugar is part of multiple selection
-                if (this.selectedSugars.has(clickedSugar)) {
-                    // Dragging multiple selected sugars
-                    this.isDragging = true;
-                    this.isDraggingMultiple = true;
-                    this.dragStartX = svgX;
-                    this.dragStartY = svgY;
-                    
-                    // Store initial positions and add dragging class for all selected sugars
-                    this.selectedSugars.forEach(sugar => {
-                        sugar.setAttribute('data-initial-x', sugar.getAttribute('data-x'));
-                        sugar.setAttribute('data-initial-y', sugar.getAttribute('data-y'));
-                        sugar.classList.add('dragging');
-                    });
-                } else {
-                    // Select single sugar first
-                    this.selectSugar(clickedSugar);
-                    
-                    // Initialize single sugar dragging with SVG coordinates
-                    this.isDragging = true;
-                    this.isDraggingMultiple = false;
-                    
-                    const sugarX = parseFloat(clickedSugar.getAttribute('data-x'));
-                    const sugarY = parseFloat(clickedSugar.getAttribute('data-y'));
-                    this.dragOffset = {
-                        x: svgX - sugarX,
-                        y: svgY - sugarY
-                    };
-                    
-                    this.selectedSugar.classList.add('dragging');
+                // Handle Shift+click for multi-selection
+                if (e.shiftKey) {
+                    this.toggleElementSelection(clickedElement, true);
+                    this.updateStylePanel();
+                    e.preventDefault();
+                    return; // Don't start dragging on shift-click
                 }
                 
-                e.preventDefault();
-            } else if (clickedText) {
-                // Get SVG-relative coordinates
-                const svgX = x;
-                const svgY = y;
-                
-                // Handle text selection (single or multiple)
-                if (this.selectedTexts.has(clickedText)) {
-                    // Already selected, prepare for multiple text dragging
-                    this.isDraggingMultipleTexts = true;
-                    this.isDragging = true;
-                    
-                    // Store initial positions for all selected texts
-                    this.selectedTexts.forEach(text => {
-                        const textX = parseFloat(text.getAttribute('data-x'));
-                        const textY = parseFloat(text.getAttribute('data-y'));
-                        text.setAttribute('data-initial-x', textX);
-                        text.setAttribute('data-initial-y', textY);
-                    });
-                    
-                    this.dragStartX = svgX;
-                    this.dragStartY = svgY;
+                // Check if element is already selected
+                if (this.selectedElements.has(clickedElement)) {
+                    // Start dragging all selected elements
+                    this.startDragging(x, y, true);
                 } else {
-                    // Select the text if not already selected
-                    if (this.selectedText !== clickedText) {
-                        this.selectText(clickedText);
+                    // Select this element (clear others first)
+                    this.selectElement(clickedElement, false);
+                    
+                    // Check for double-click on text
+                    if (this.getElementType(clickedElement) === 'text') {
+                        const currentTime = Date.now();
+                        if (currentTime - this.lastClickTime < this.doubleClickDelay) {
+                            // Double-click detected - enter edit mode
+                            this.startTextEditing(clickedElement);
+                            e.preventDefault();
+                            return;
+                        }
+                        this.lastClickTime = currentTime;
                     }
                     
-                    // Initialize single text dragging with SVG coordinates
-                    this.isDragging = true;
-                    const textX = parseFloat(clickedText.getAttribute('data-x'));
-                    const textY = parseFloat(clickedText.getAttribute('data-y'));
-                    this.dragOffset = {
-                        x: svgX - textX,
-                        y: svgY - textY
-                    };
+                    // Start dragging this element
+                    this.startDragging(x, y, false);
                 }
                 
+                this.updateStylePanel();
                 e.preventDefault();
             } else {
                 // Clicked on empty space - start box selection
-                this.deselectAll();
+                this.resetPasteCounter();
+                this.clearAllSelections();
                 this.startBoxSelection(x, y);
                 e.preventDefault();
             }
         } else if (this.currentTool === 'add') {
+            this.resetPasteCounter();
             if (clickedSugar) {
                 // Start long press detection for connection dragging
                 this.startLongPress(clickedSugar, e);
                 e.preventDefault();
             }
         } else if (this.currentTool === 'delete') {
+            this.resetPasteCounter();
             // Start erasing on mouse down
             this.startErasing(x, y);
             e.preventDefault();
@@ -598,6 +614,20 @@ class GlycanDrawer {
         const x = coords.x;
         const y = coords.y;
         
+        // Handle hover preview in select mode (when not dragging)
+        if (this.currentTool === 'select' && !this.isDragging && !this.isBoxSelecting) {
+            const hoveredElement = this.getElementAtPoint(x, y);
+            
+            if (hoveredElement !== this.hoveredElement) {
+                // Clear previous hover
+                this.hideHoverPreview();
+                
+                // Show new hover if element is not selected
+                if (hoveredElement && !this.selectedElements.has(hoveredElement)) {
+                    this.showHoverPreview(hoveredElement);
+                }
+            }
+        }
 
         // Handle box selection
         if (this.isBoxSelecting && this.currentTool === 'select') {
@@ -607,46 +637,65 @@ class GlycanDrawer {
         
         // Handle select mode dragging
         if (this.isDragging && this.currentTool === 'select') {
-            if (this.isDraggingMultiple && this.selectedSugars.size > 0) {
+            if (this.isDraggingMultiple && this.selectedElements.size > 0) {
                 // Calculate movement delta from initial drag position
-                const deltaX = x - this.dragStartX;  
-                const deltaY = y - this.dragStartY;
+                let deltaX = x - this.dragStartX;  
+                let deltaY = y - this.dragStartY;
                 
-                this.selectedSugars.forEach(sugar => {
-                    const initialX = parseFloat(sugar.getAttribute('data-initial-x'));
-                    const initialY = parseFloat(sugar.getAttribute('data-initial-y'));
+                // Apply Shift constraint for axis-aligned movement
+                if (this.dragWithShift) {
+                    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                        deltaY = 0; // Horizontal movement only
+                    } else {
+                        deltaX = 0; // Vertical movement only
+                    }
+                }
+                
+                // Move all selected elements
+                this.selectedElements.forEach(element => {
+                    const initialX = parseFloat(element.getAttribute('data-initial-x'));
+                    const initialY = parseFloat(element.getAttribute('data-initial-y'));
                     
-                    this.moveSugar(sugar, initialX + deltaX, initialY + deltaY);
+                    const newX = initialX + deltaX;
+                    const newY = initialY + deltaY;
+                    
+                    const type = this.getElementType(element);
+                    if (type === 'sugar') {
+                        this.moveSugar(element, newX, newY);
+                    } else if (type === 'text') {
+                        this.moveText(element, newX, newY);
+                    }
                 });
                 
                 e.preventDefault();
-            } else if (this.isDraggingMultipleTexts && this.selectedTexts.size > 0) {
-                // Calculate movement delta from initial drag position for texts
-                const deltaX = x - this.dragStartX;  
-                const deltaY = y - this.dragStartY;
+            } else if (this.selectedElements.size === 1) {
+                // Single element dragging
+                const element = Array.from(this.selectedElements)[0];
+                let newX = x - this.dragOffset.x;
+                let newY = y - this.dragOffset.y;
                 
-                this.selectedTexts.forEach(text => {
-                    const initialX = parseFloat(text.getAttribute('data-initial-x'));
-                    const initialY = parseFloat(text.getAttribute('data-initial-y'));
+                // Apply Shift constraint for axis-aligned movement
+                if (this.dragWithShift) {
+                    const originalX = parseFloat(element.getAttribute('data-initial-x') || element.getAttribute('data-x'));
+                    const originalY = parseFloat(element.getAttribute('data-initial-y') || element.getAttribute('data-y'));
                     
-                    this.moveText(text, initialX + deltaX, initialY + deltaY);
-                });
+                    const deltaX = newX - originalX;
+                    const deltaY = newY - originalY;
+                    
+                    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                        newY = originalY; // Horizontal movement only
+                    } else {
+                        newX = originalX; // Vertical movement only
+                    }
+                }
                 
-                e.preventDefault();
-            } else if (this.selectedSugar) {
-                const newX = x - this.dragOffset.x;
-                const newY = y - this.dragOffset.y;
-                
-                // Update sugar position
-                this.moveSugar(this.selectedSugar, newX, newY);
-                
-                e.preventDefault();
-            } else if (this.selectedText) {
-                const newX = x - this.dragOffset.x;
-                const newY = y - this.dragOffset.y;
-                
-                // Update text position
-                this.moveText(this.selectedText, newX, newY);
+                // Update element position
+                const type = this.getElementType(element);
+                if (type === 'sugar') {
+                    this.moveSugar(element, newX, newY);
+                } else if (type === 'text') {
+                    this.moveText(element, newX, newY);
+                }
                 
                 e.preventDefault();
             }
@@ -709,33 +758,47 @@ class GlycanDrawer {
         
         // Handle box selection completion
         if (this.isBoxSelecting) {
-            this.finishBoxSelection();
+            this.finishBoxSelection(e.shiftKey);
         }
         
-        // Clean up multiple drag state
-        if (this.isDraggingMultiple) {
-            this.selectedSugars.forEach(sugar => {
-                sugar.removeAttribute('data-initial-x');
-                sugar.removeAttribute('data-initial-y');
-                sugar.classList.remove('dragging');
+        // Handle Ctrl+drag copy functionality
+        if (this.isDragging && this.dragWithCtrl && this.currentTool === 'select') {
+            this.saveState(); // Save state before copying
+            
+            // Copy all selected elements
+            const copies = [];
+            this.selectedElements.forEach(element => {
+                const type = this.getElementType(element);
+                let newElement;
+                
+                if (type === 'sugar') {
+                    newElement = this.copySugar(element);
+                } else if (type === 'text') {
+                    newElement = this.copyText(element);
+                }
+                
+                if (newElement) {
+                    copies.push(newElement);
+                }
             });
-            this.isDraggingMultiple = false;
-        }
-        
-        // Clean up multiple text drag state
-        if (this.isDraggingMultipleTexts) {
-            this.selectedTexts.forEach(text => {
-                text.removeAttribute('data-initial-x');
-                text.removeAttribute('data-initial-y');
-                text.classList.remove('dragging');
+            
+            // Clear current selection and select the copies
+            this.clearAllSelections();
+            copies.forEach(copy => {
+                this.selectElement(copy, true);
             });
-            this.isDraggingMultipleTexts = false;
         }
         
-        // Remove dragging class from single selected sugar
-        if (this.selectedSugar) {
-            this.selectedSugar.classList.remove('dragging');
-        }
+        // Clean up drag state for all selected elements
+        this.selectedElements.forEach(element => {
+            element.removeAttribute('data-initial-x');
+            element.removeAttribute('data-initial-y');
+            element.classList.remove('dragging');
+        });
+        
+        // Reset drag flags
+        this.isDraggingMultiple = false;
+        this.isDraggingMultipleTexts = false;
         
         // Stop erasing
         if (this.isErasing) {
@@ -748,10 +811,40 @@ class GlycanDrawer {
     handleMouseLeave(e) {
         // Clean up any UI artifacts when mouse leaves canvas
         
-        // Clear selection box if active
-        if (this.isBoxSelecting) {
-            this.clearSelectionBox();
-            this.isBoxSelecting = false;
+        // Clear hover previews
+        this.clearAllHoverPreviews();
+        
+        // Don't clear selection box when mouse leaves - let it continue until mouse up
+        
+        // Stop all dragging operations
+        if (this.isDragging) {
+            // Clean up multiple drag state
+            if (this.isDraggingMultiple) {
+                const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
+                selectedSugars.forEach(sugar => {
+                    sugar.removeAttribute('data-initial-x');
+                    sugar.removeAttribute('data-initial-y');
+                    sugar.classList.remove('dragging');
+                });
+                this.isDraggingMultiple = false;
+            }
+            
+            // Clean up multiple text drag state
+            if (this.isDraggingMultipleTexts) {
+                this.selectedTexts.forEach(text => {
+                    text.removeAttribute('data-initial-x');
+                    text.removeAttribute('data-initial-y');
+                    text.classList.remove('dragging');
+                });
+                this.isDraggingMultipleTexts = false;
+            }
+            
+            // Remove dragging class from all selected elements
+            this.selectedElements.forEach(element => {
+                element.classList.remove('dragging');
+            });
+            
+            this.isDragging = false;
         }
         
         // Clear connection target highlights
@@ -770,6 +863,11 @@ class GlycanDrawer {
         if (this.longPressTimer) {
             clearTimeout(this.longPressTimer);
             this.longPressTimer = null;
+        }
+        
+        // Stop erasing
+        if (this.isErasing) {
+            this.stopErasing();
         }
     }
     
@@ -803,6 +901,7 @@ class GlycanDrawer {
                 this.createSugar(x, y, this.currentSugarConfig);
             }
         } else if (this.currentTool === 'text') {
+            this.resetPasteCounter();
             if (this.isEditingText) {
                 // If currently editing text, ignore clicks to prevent multiple dialogs
                 return;
@@ -835,9 +934,10 @@ class GlycanDrawer {
         const clickedText = this.getTextAtPoint(x, y);
         
         if (clickedSugar) {
-            this.selectSugar(clickedSugar);
-            // Update UI to show current sugar properties
-            this.updateUIForSelectedSugar(clickedSugar);
+            // Use unified selection system
+            this.clearAllSelections();
+            this.selectElement(clickedSugar);
+            this.updateStylePanel();
         } else if (clickedText) {
             // Double click on text in select mode should edit it
             this.editText(clickedText);
@@ -850,7 +950,9 @@ class GlycanDrawer {
             const sugarX = parseFloat(sugar.getAttribute('data-x'));
             const sugarY = parseFloat(sugar.getAttribute('data-y'));
             const distance = Math.sqrt((x - sugarX) ** 2 + (y - sugarY) ** 2);
-            if (distance <= this.sugarRadius + 5) {
+            // Use actual sugar size for hit detection with a small buffer
+            const actualSize = this.getSugarSize(sugar);
+            if (distance <= actualSize + 5) {
                 return sugar;
             }
         }
@@ -925,7 +1027,12 @@ class GlycanDrawer {
         return null;
     }
     
-    createSugar(x, y, config) {
+    createSugar(x, y, config, saveState = true) {
+        // Save state before creating sugar (unless explicitly disabled)
+        if (saveState) {
+            this.saveState();
+        }
+        
         this.sugarCount++;
         
         // Create a group element for the sugar
@@ -1089,92 +1196,27 @@ class GlycanDrawer {
             (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1);
     }
     
-    selectSugar(sugar) {
-        // Deselect all previous selections (both single and multiple)
-        this.deselectAll();
-        
-        // Select new sugar
-        this.selectedSugar = sugar;
-        sugar.classList.add('selected');
-        
-        // Add selection highlight
-        this.addSelectionHighlight(sugar);
-        
-        // Update style panel for single selection
-        this.updateStylePanel();
-        
-        // Update left panel visibility
-        this.updateLeftPanel();
-        
-        // Update right panel content
-        this.updateRightPanel();
-    }
+    // Deprecated: selectSugar method removed - use selectElement() instead
     
-    deselectSugar() {
-        if (this.selectedSugar) {
-            this.selectedSugar.classList.remove('selected');
-            this.removeSelectionHighlight(this.selectedSugar);
-            this.selectedSugar = null;
-        }
-    }
+    // Deprecated: selectSugarOnly method removed - use selectElement() instead
     
-    selectText(text) {
-        // Deselect previous selections
-        this.deselectAll();
-        
-        // Select new text
-        this.selectedText = text;
-        this.selectedTexts.add(text);
-        text.classList.add('selected');
-        
-        // Add text selection highlight
-        this.addTextSelectionHighlight(text);
-        
-        // Update style panel for text selection
-        this.updateStylePanel();
-        
-        // Update right panel content
-        this.updateRightPanel();
-    }
+    // Deprecated: deselectSugar method removed - use deselectElement() instead
     
-    deselectText() {
-        if (this.selectedText) {
-            this.selectedText.classList.remove('selected');
-            this.removeTextSelectionHighlight(this.selectedText);
-            this.selectedTexts.delete(this.selectedText);
-            this.selectedText = null;
-        }
-    }
+    // Deprecated: selectText and selectTextOnly methods removed - use selectElement() instead
+    
+    // Deprecated: deselectText method removed - use deselectElement() instead
     
     deselectAll() {
-        this.deselectSugar();
-        this.deselectText();
-        this.deselectMultipleSugars();
-        this.deselectMultipleTexts();
+        // Use unified selection system
+        this.clearAllSelections();
         
-        // Always update style panel when deselecting (regardless of current tool)
+        // Always update panels when deselecting
         this.updateStylePanel();
         this.updateLeftPanel();
-        
-        // Update right panel content
         this.updateRightPanel();
     }
     
-    deselectMultipleSugars() {
-        this.selectedSugars.forEach(sugar => {
-            sugar.classList.remove('selected');
-            this.removeSelectionHighlight(sugar);
-        });
-        this.selectedSugars.clear();
-    }
-    
-    deselectMultipleTexts() {
-        this.selectedTexts.forEach(text => {
-            text.classList.remove('selected');
-            this.removeTextSelectionHighlight(text);
-        });
-        this.selectedTexts.clear();
-    }
+    // Deprecated: Multiple old deselection methods removed - use clearAllSelections() instead
     
     addSelectionHighlight(sugar) {
         // Remove existing highlight for this sugar
@@ -1192,7 +1234,9 @@ class GlycanDrawer {
         highlight.setAttribute('id', highlightId);
         highlight.setAttribute('cx', x);
         highlight.setAttribute('cy', y);
-        highlight.setAttribute('r', this.sugarRadius + 5);
+        // Use actual sugar size for highlight
+        const actualSize = this.getSugarSize(sugar);
+        highlight.setAttribute('r', actualSize + 5);
         highlight.setAttribute('fill', 'none');
         highlight.setAttribute('stroke', '#3498db');
         highlight.setAttribute('stroke-width', '2');
@@ -1283,7 +1327,7 @@ class GlycanDrawer {
         this.updateShapePosition(shape, shapeType, newX, newY);
         
         // Update selection highlight position directly without recreating
-        if (sugar.classList.contains('selected')) {
+        if (sugar.classList.contains('selected') || this.selectedSugars.has(sugar)) {
             this.updateSelectionHighlightPosition(sugar, newX, newY);
         }
         
@@ -1445,7 +1489,12 @@ class GlycanDrawer {
         return null;
     }
     
-    createText(x, y, content = 'Text') {
+    createText(x, y, content = 'Text', saveState = true, autoEdit = true) {
+        // Save state before creating text (unless explicitly disabled)
+        if (saveState) {
+            this.saveState();
+        }
+        
         this.textCount++;
         
         // Create text element
@@ -1482,8 +1531,8 @@ class GlycanDrawer {
         // Add to canvas
         this.canvas.appendChild(textElement);
         
-        // If content is default, immediately edit it
-        if (content === 'Text') {
+        // If content is default and autoEdit is enabled, immediately edit it
+        if (content === 'Text' && autoEdit) {
             setTimeout(() => this.editText(textElement), 10);
         }
         
@@ -1560,7 +1609,7 @@ class GlycanDrawer {
         textElement.setAttribute('data-y', newY);
         
         // Update highlight position if this text is selected
-        if (textElement.classList.contains('selected')) {
+        if (textElement.classList.contains('selected') || this.selectedTexts.has(textElement)) {
             this.removeTextSelectionHighlight(textElement);
             this.addTextSelectionHighlight(textElement);
         }
@@ -1570,6 +1619,11 @@ class GlycanDrawer {
         if (this.selectedText === textElement) {
             this.selectedText = null;
         }
+        // Remove from multiple selection if selected
+        this.selectedTexts.delete(textElement);
+        
+        // Remove text selection highlight before deleting
+        this.removeTextSelectionHighlight(textElement);
         textElement.remove();
     }
     
@@ -1623,7 +1677,9 @@ class GlycanDrawer {
         highlight.classList.add('connection-start-highlight');
         highlight.setAttribute('cx', x);
         highlight.setAttribute('cy', y);
-        highlight.setAttribute('r', this.sugarRadius + 8);
+        // Use actual sugar size for connection start highlight
+        const actualSize = this.getSugarSize(sugar);
+        highlight.setAttribute('r', actualSize + 8);
         highlight.setAttribute('fill', 'none');
         highlight.setAttribute('stroke', '#2ecc71');
         highlight.setAttribute('stroke-width', '3');
@@ -1648,7 +1704,9 @@ class GlycanDrawer {
         highlight.classList.add('connection-target-highlight');
         highlight.setAttribute('cx', x);
         highlight.setAttribute('cy', y);
-        highlight.setAttribute('r', this.sugarRadius + 6);
+        // Use actual sugar size for connection target highlight
+        const actualSize = this.getSugarSize(sugar);
+        highlight.setAttribute('r', actualSize + 6);
         highlight.setAttribute('fill', 'none');
         highlight.setAttribute('stroke', '#f39c12');
         highlight.setAttribute('stroke-width', '3');
@@ -1720,6 +1778,15 @@ class GlycanDrawer {
     }
     
     deleteSugar(sugar) {
+        // Save state before deleting sugar
+        this.saveState();
+        
+        // Remove from selection if selected
+        if (this.selectedSugar === sugar) {
+            this.selectedSugar = null;
+        }
+        this.selectedSugars.delete(sugar);
+        
         // Remove connections involving this sugar
         const sugarX = parseFloat(sugar.getAttribute('data-x'));
         const sugarY = parseFloat(sugar.getAttribute('data-y'));
@@ -1735,6 +1802,9 @@ class GlycanDrawer {
                 connection.remove();
             }
         });
+        
+        // Remove selection highlight before deleting the sugar
+        this.removeSelectionHighlight(sugar);
         
         // Remove the sugar
         sugar.remove();
@@ -1792,7 +1862,122 @@ class GlycanDrawer {
         return svgString.replace('>', '>' + styleString);
     }
     
+    exportCanvas(format) {
+        switch (format) {
+            case 'svg':
+                this.downloadSVG();
+                break;
+            case 'png':
+                this.exportAsPNG();
+                break;
+            case 'jpg':
+                this.exportAsJPG();
+                break;
+            default:
+                console.error('Unknown export format:', format);
+        }
+    }
+    
+    exportAsPNG() {
+        const svgClone = this.canvas.cloneNode(true);
+        svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        
+        const svgString = new XMLSerializer().serializeToString(svgClone);
+        const styledSVG = this.addInlineStyles(svgString);
+        
+        // Create canvas element
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Get SVG dimensions
+        const svgRect = this.canvas.getBoundingClientRect();
+        const svgWidth = parseInt(this.canvas.getAttribute('width')) || svgRect.width;
+        const svgHeight = parseInt(this.canvas.getAttribute('height')) || svgRect.height;
+        
+        // Set canvas size with higher resolution for better quality
+        const scale = 2;
+        canvas.width = svgWidth * scale;
+        canvas.height = svgHeight * scale;
+        
+        // Scale context for high resolution
+        ctx.scale(scale, scale);
+        
+        const img = new Image();
+        img.onload = () => {
+            ctx.drawImage(img, 0, 0);
+            
+            // Convert to PNG and download
+            canvas.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `glycan-structure-${new Date().getTime()}.png`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }, 'image/png');
+        };
+        
+        const svgBlob = new Blob([styledSVG], { type: 'image/svg+xml;charset=utf-8' });
+        const svgUrl = URL.createObjectURL(svgBlob);
+        img.src = svgUrl;
+    }
+    
+    exportAsJPG() {
+        const svgClone = this.canvas.cloneNode(true);
+        svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        
+        const svgString = new XMLSerializer().serializeToString(svgClone);
+        const styledSVG = this.addInlineStyles(svgString);
+        
+        // Create canvas element
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Get SVG dimensions
+        const svgRect = this.canvas.getBoundingClientRect();
+        const svgWidth = parseInt(this.canvas.getAttribute('width')) || svgRect.width;
+        const svgHeight = parseInt(this.canvas.getAttribute('height')) || svgRect.height;
+        
+        // Set canvas size with higher resolution for better quality
+        const scale = 2;
+        canvas.width = svgWidth * scale;
+        canvas.height = svgHeight * scale;
+        
+        // Scale context for high resolution
+        ctx.scale(scale, scale);
+        
+        // Fill with white background for JPG
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, svgWidth, svgHeight);
+        
+        const img = new Image();
+        img.onload = () => {
+            ctx.drawImage(img, 0, 0);
+            
+            // Convert to JPG and download
+            canvas.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `glycan-structure-${new Date().getTime()}.jpg`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }, 'image/jpeg', 0.9);
+        };
+        
+        const svgBlob = new Blob([styledSVG], { type: 'image/svg+xml;charset=utf-8' });
+        const svgUrl = URL.createObjectURL(svgBlob);
+        img.src = svgUrl;
+    }
+    
     clearCanvas() {
+        // Save state before clearing canvas
+        this.saveState();
+        
         // Deselect any selected elements
         this.deselectAll();
         
@@ -1836,6 +2021,13 @@ class GlycanDrawer {
         this.selectionBox.setAttribute('height', 0);
         
         this.canvas.appendChild(this.selectionBox);
+        
+        // Add global event listeners for box selection outside canvas
+        this.globalBoxSelectionMouseMove = (e) => this.handleGlobalBoxSelectionMove(e);
+        this.globalBoxSelectionMouseUp = (e) => this.handleGlobalBoxSelectionUp(e);
+        
+        document.addEventListener('mousemove', this.globalBoxSelectionMouseMove);
+        document.addEventListener('mouseup', this.globalBoxSelectionMouseUp);
     }
     
     updateBoxSelection(currentX, currentY) {
@@ -1844,28 +2036,75 @@ class GlycanDrawer {
         const startX = this.boxSelectionStart.x;
         const startY = this.boxSelectionStart.y;
         
-        // Calculate rectangle bounds
-        const x = Math.min(startX, currentX);
-        const y = Math.min(startY, currentY);
-        const width = Math.abs(currentX - startX);
-        const height = Math.abs(currentY - startY);
+        // Get canvas dimensions for boundary limiting
+        const canvasRect = this.canvas.getBoundingClientRect();
+        const canvasWidth = canvasRect.width;
+        const canvasHeight = canvasRect.height;
         
-        // Update selection box
-        this.selectionBox.setAttribute('x', x);
-        this.selectionBox.setAttribute('y', y);
-        this.selectionBox.setAttribute('width', width);
-        this.selectionBox.setAttribute('height', height);
+        // Calculate rectangle bounds (unclamped for selection logic)
+        const selectionX = Math.min(startX, currentX);
+        const selectionY = Math.min(startY, currentY);
+        const selectionWidth = Math.abs(currentX - startX);
+        const selectionHeight = Math.abs(currentY - startY);
         
-        // Preview selection by highlighting sugars in the box
-        this.previewBoxSelection(x, y, width, height);
+        // Clamp the visual box to canvas boundaries
+        const clampedX = Math.max(0, Math.min(selectionX, canvasWidth));
+        const clampedY = Math.max(0, Math.min(selectionY, canvasHeight));
+        const clampedWidth = Math.max(0, Math.min(selectionWidth, canvasWidth - clampedX));
+        const clampedHeight = Math.max(0, Math.min(selectionHeight, canvasHeight - clampedY));
+        
+        // Update visual selection box (clamped to canvas)
+        this.selectionBox.setAttribute('x', clampedX);
+        this.selectionBox.setAttribute('y', clampedY);
+        this.selectionBox.setAttribute('width', clampedWidth);
+        this.selectionBox.setAttribute('height', clampedHeight);
+        
+        // Store unclamped bounds for selection logic
+        this.currentSelectionBounds = {
+            x: selectionX,
+            y: selectionY,
+            width: selectionWidth,
+            height: selectionHeight
+        };
+        
+        // Preview selection using unclamped bounds
+        this.previewBoxSelection(selectionX, selectionY, selectionWidth, selectionHeight);
+    }
+    
+    handleGlobalBoxSelectionMove(e) {
+        if (!this.isBoxSelecting) return;
+        
+        // Convert global coordinates to canvas-relative coordinates
+        const canvasRect = this.canvas.getBoundingClientRect();
+        const x = e.clientX - canvasRect.left;
+        const y = e.clientY - canvasRect.top;
+        
+        this.updateBoxSelection(x, y);
+        e.preventDefault();
+    }
+    
+    handleGlobalBoxSelectionUp(e) {
+        if (!this.isBoxSelecting) return;
+        
+        // Remove global event listeners
+        document.removeEventListener('mousemove', this.globalBoxSelectionMouseMove);
+        document.removeEventListener('mouseup', this.globalBoxSelectionMouseUp);
+        
+        // Finish box selection
+        this.finishBoxSelection(e.shiftKey);
+        e.preventDefault();
     }
     
     previewBoxSelection(boxX, boxY, boxWidth, boxHeight) {
         // Clear previous previews
         this.clearBoxSelectionPreviews();
+        this.hoveredElements.clear();
         
-        // Find sugars within the selection box
+        // Find all elements within the selection box
         const sugars = this.canvas.querySelectorAll('.sugar');
+        const texts = this.canvas.querySelectorAll('.text-element');
+        
+        // Check sugars
         sugars.forEach(sugar => {
             const sugarX = parseFloat(sugar.getAttribute('data-x'));
             const sugarY = parseFloat(sugar.getAttribute('data-y'));
@@ -1874,69 +2113,105 @@ class GlycanDrawer {
             if (sugarX >= boxX && sugarX <= boxX + boxWidth &&
                 sugarY >= boxY && sugarY <= boxY + boxHeight) {
                 sugar.classList.add('box-selection-preview');
+                this.hoveredElements.add(sugar);
+            }
+        });
+        
+        // Check texts
+        texts.forEach(text => {
+            const textX = parseFloat(text.getAttribute('data-x'));
+            const textY = parseFloat(text.getAttribute('data-y'));
+            
+            // Check if text position is within the selection box
+            if (textX >= boxX && textX <= boxX + boxWidth &&
+                textY >= boxY && textY <= boxY + boxHeight) {
+                text.classList.add('box-selection-preview');
+                this.hoveredElements.add(text);
             }
         });
     }
     
     clearBoxSelectionPreviews() {
         const previews = this.canvas.querySelectorAll('.box-selection-preview');
-        previews.forEach(sugar => sugar.classList.remove('box-selection-preview'));
+        previews.forEach(element => element.classList.remove('box-selection-preview'));
     }
     
-    finishBoxSelection() {
-        if (!this.isBoxSelecting || !this.selectionBox) return;
-        
-        // Get final selection box bounds
-        const boxX = parseFloat(this.selectionBox.getAttribute('x'));
-        const boxY = parseFloat(this.selectionBox.getAttribute('y'));
-        const boxWidth = parseFloat(this.selectionBox.getAttribute('width'));
-        const boxHeight = parseFloat(this.selectionBox.getAttribute('height'));
-        
-        // Clear previous selections
-        this.deselectAll();
-        this.selectedSugars.clear();
-        this.selectedTexts.clear();
-        
-        // Select all sugars within the box
-        const sugars = this.canvas.querySelectorAll('.sugar');
-        sugars.forEach(sugar => {
-            const sugarX = parseFloat(sugar.getAttribute('data-x'));
-            const sugarY = parseFloat(sugar.getAttribute('data-y'));
-            
-            // Check if sugar center is within the selection box
-            if (sugarX >= boxX && sugarX <= boxX + boxWidth &&
-                sugarY >= boxY && sugarY <= boxY + boxHeight) {
-                this.selectedSugars.add(sugar);
-                sugar.classList.add('selected');
-                this.addSelectionHighlight(sugar);
-            }
-        });
-        
-        // Select all text elements within the box
-        const textElements = this.canvas.querySelectorAll('.text-element');
-        textElements.forEach(text => {
-            const textX = parseFloat(text.getAttribute('x'));
-            const textY = parseFloat(text.getAttribute('y'));
-            
-            // Check if text position is within the selection box
-            if (textX >= boxX && textX <= boxX + boxWidth &&
-                textY >= boxY && textY <= boxY + boxHeight) {
-                this.selectedTexts.add(text);
-                text.classList.add('selected');
-                this.addTextSelectionHighlight(text);
-                // Keep selectedText for backward compatibility (use first selected)
-                if (!this.selectedText) {
-                    this.selectedText = text;
-                }
-            }
-        });
-        
-        // Clean up
-        this.clearBoxSelectionPreviews();
+    clearSelectionBox() {
         if (this.selectionBox) {
             this.canvas.removeChild(this.selectionBox);
             this.selectionBox = null;
         }
+        this.currentSelectionBounds = null; // Clear stored bounds
+        this.clearBoxSelectionPreviews();
+        
+        // Remove global event listeners if they exist
+        if (this.globalBoxSelectionMouseMove) {
+            document.removeEventListener('mousemove', this.globalBoxSelectionMouseMove);
+            this.globalBoxSelectionMouseMove = null;
+        }
+        if (this.globalBoxSelectionMouseUp) {
+            document.removeEventListener('mouseup', this.globalBoxSelectionMouseUp);
+            this.globalBoxSelectionMouseUp = null;
+        }
+    }
+    
+    finishBoxSelection(isShiftKey = false) {
+        if (!this.isBoxSelecting || !this.selectionBox) return;
+        
+        // Get elements that were previewed during box selection
+        const elementsInBox = Array.from(this.hoveredElements);
+        
+        if (!isShiftKey) {
+            // Normal box selection - clear all previous selections
+            this.clearAllSelections();
+        }
+        
+        // Handle Shift box selection logic
+        if (isShiftKey && elementsInBox.length > 0) {
+            // Check if ALL elements in box are already selected
+            const allElementsSelected = elementsInBox.every(element => 
+                this.selectedElements.has(element)
+            );
+            
+            if (allElementsSelected) {
+                // All elements are selected - remove them from selection
+                elementsInBox.forEach(element => {
+                    this.deselectElement(element);
+                });
+            } else {
+                // Some elements are not selected - add all unselected to selection
+                elementsInBox.forEach(element => {
+                    if (!this.selectedElements.has(element)) {
+                        this.selectElement(element, true);
+                    }
+                });
+            }
+        } else {
+            // Normal selection - select all elements in box
+            elementsInBox.forEach(element => {
+                this.selectElement(element, true);
+            });
+        }
+        
+        // Clean up
+        this.clearBoxSelectionPreviews();
+        this.hoveredElements.clear();
+        if (this.selectionBox) {
+            this.canvas.removeChild(this.selectionBox);
+            this.selectionBox = null;
+        }
+        this.currentSelectionBounds = null; // Clear stored bounds
+        
+        // Remove global event listeners
+        if (this.globalBoxSelectionMouseMove) {
+            document.removeEventListener('mousemove', this.globalBoxSelectionMouseMove);
+            this.globalBoxSelectionMouseMove = null;
+        }
+        if (this.globalBoxSelectionMouseUp) {
+            document.removeEventListener('mouseup', this.globalBoxSelectionMouseUp);
+            this.globalBoxSelectionMouseUp = null;
+        }
+        
         this.isBoxSelecting = false;
         
         // Update right panel to show controls for selected elements
@@ -2330,72 +2605,64 @@ class GlycanDrawer {
     
     // Style control methods
     updateStylePanel() {
-        const stylePanel = document.getElementById('stylePanel');
-        const sugarStyleSection = document.getElementById('sugarStyleSection');
-        const connectionStyleSection = document.getElementById('connectionStyleSection');
-        const textStyleSection = document.getElementById('textStyleSection');
-        const connectionStatus = document.getElementById('connectionStatus');
+        // Use the correct panel IDs from the main index.html
+        const sugarControlsSection = document.getElementById('sugarControlsSection');
+        const textControlsSection = document.getElementById('textControlsSection');
+        const emptyControlsSection = document.getElementById('emptyControlsSection');
         
-        if (!stylePanel || !sugarStyleSection || !connectionStyleSection || !textStyleSection || !connectionStatus) return;
+        if (!sugarControlsSection || !textControlsSection || !emptyControlsSection) return;
         
-        // If not in select mode, hide entire bottom style panel
-        if (this.currentTool !== 'select') {
-            stylePanel.style.display = 'none';
-            return;
-        }
+        // Use unified selection system to check what's selected
+        const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
+        const selectedTexts = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'text');
         
-        // Check if any sugars are selected
-        const hasSugarsSelected = this.selectedSugar || this.selectedSugars.size > 0;
-        const hasTextSelected = this.selectedText;
-        
-        if (hasSugarsSelected) {
-            // Show bottom style panel
-            stylePanel.style.display = 'block';
-            
-            // Show sugar style section
-            sugarStyleSection.style.display = 'block';
-            textStyleSection.style.display = 'none';
-            
-            // Update current values from selected sugar
-            this.updateStyleControlValues();
-            
-            // Check for connections
-            const connections = this.getConnectionsForSelection();
-            if (connections.length > 0) {
-                // Show connection style section
-                connectionStyleSection.style.display = 'block';
-                connectionStatus.className = 'connection-status has-connections';
-                connectionStatus.querySelector('.status-text').textContent = 
-                    `发现 ${connections.length} 条连接线`;
+        if (this.currentTool === 'select') {
+            if (selectedSugars.length > 0) {
+                // Show sugar controls panel
+                sugarControlsSection.style.display = 'block';
+                textControlsSection.style.display = 'none';
+                emptyControlsSection.style.display = 'none';
+                
+                // Update current values from selected sugar
+                this.updateStyleControlValues();
+                
+            } else if (selectedTexts.length > 0) {
+                // Show text controls panel
+                sugarControlsSection.style.display = 'none';
+                textControlsSection.style.display = 'block';
+                emptyControlsSection.style.display = 'none';
+                
+                // Update current values from selected text
+                this.updateTextStyleControlValues();
+                
             } else {
-                // Show connection section but indicate no connections
-                connectionStyleSection.style.display = 'block';
-                connectionStatus.className = 'connection-status no-connections';
-                connectionStatus.querySelector('.status-text').textContent = '所选糖之间无连接线';
+                // Show empty state when nothing is selected
+                sugarControlsSection.style.display = 'none';
+                textControlsSection.style.display = 'none';
+                emptyControlsSection.style.display = 'block';
             }
-        } else if (hasTextSelected) {
-            // Show bottom style panel
-            stylePanel.style.display = 'block';
-            
-            // Show text style section
-            textStyleSection.style.display = 'block';
-            sugarStyleSection.style.display = 'none';
-            connectionStyleSection.style.display = 'none';
-            
-            // Update current values from selected text
-            this.updateTextStyleControlValues();
+        } else if (this.currentTool === 'add') {
+            // Show sugar controls for adding
+            sugarControlsSection.style.display = 'block';
+            textControlsSection.style.display = 'none';
+            emptyControlsSection.style.display = 'none';
+        } else if (this.currentTool === 'text') {
+            // Show text controls for text tool
+            sugarControlsSection.style.display = 'none';
+            textControlsSection.style.display = 'block';
+            emptyControlsSection.style.display = 'none';
         } else {
-            // Hide entire bottom style panel when nothing is selected
-            stylePanel.style.display = 'none';
+            // Show empty state for other tools
+            sugarControlsSection.style.display = 'none';
+            textControlsSection.style.display = 'none';
+            emptyControlsSection.style.display = 'block';
         }
     }
     
     updateStyleControlValues() {
-        // Update control values based on the first selected sugar
-        let referenceSugar = this.selectedSugar;
-        if (!referenceSugar && this.selectedSugars.size > 0) {
-            referenceSugar = Array.from(this.selectedSugars)[0];
-        }
+        // Update control values based on the first selected sugar using unified selection system
+        const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
+        const referenceSugar = selectedSugars.length > 0 ? selectedSugars[0] : null;
         
         if (referenceSugar) {
             // Update size slider
@@ -2431,10 +2698,11 @@ class GlycanDrawer {
     }
     
     updateTextStyleControlValues() {
-        if (!this.selectedText) return;
+        // Get first selected text element using unified selection system
+        const selectedTexts = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'text');
+        const textElement = selectedTexts.length > 0 ? selectedTexts[0] : null;
         
-        // selectedText is already the text element
-        const textElement = this.selectedText;
+        if (!textElement) return;
         
         // Get current styles
         const computedStyle = window.getComputedStyle(textElement);
@@ -2512,9 +2780,12 @@ class GlycanDrawer {
         const connections = [];
         const allConnections = this.canvas.querySelectorAll('.connection');
         
-        if (this.selectedSugar) {
+        // Get selected sugars using unified selection system
+        const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
+        
+        if (selectedSugars.length === 1) {
             // Single sugar selection
-            const sugarId = this.selectedSugar.getAttribute('id');
+            const sugarId = selectedSugars[0].getAttribute('id');
             allConnections.forEach(conn => {
                 const startId = conn.getAttribute('data-start');
                 const endId = conn.getAttribute('data-end');
@@ -2522,9 +2793,9 @@ class GlycanDrawer {
                     connections.push(conn);
                 }
             });
-        } else if (this.selectedSugars.size > 1) {
+        } else if (selectedSugars.length > 1) {
             // Multiple sugar selection - find connections between selected sugars
-            const selectedIds = Array.from(this.selectedSugars).map(sugar => sugar.getAttribute('id'));
+            const selectedIds = selectedSugars.map(sugar => sugar.getAttribute('id'));
             allConnections.forEach(conn => {
                 const startId = conn.getAttribute('data-start');
                 const endId = conn.getAttribute('data-end');
@@ -3200,10 +3471,897 @@ class GlycanDrawer {
         console.log(`Canvas size changed to ${width}×${height}`);
     }
     
+    // Undo system methods
+    saveState() {
+        // Save current canvas state for undo
+        const state = {
+            canvasContent: this.canvas.innerHTML,
+            timestamp: Date.now()
+        };
+        
+        this.undoStack.push(state);
+        
+        // Clear redo stack when a new action is performed
+        this.redoStack = [];
+        
+        // Limit undo stack size
+        if (this.undoStack.length > this.maxUndoSteps) {
+            this.undoStack.shift();
+        }
+        
+        this.updateUndoRedoButtons();
+    }
+    
+    undo() {
+        if (this.undoStack.length === 0) {
+            console.log('Nothing to undo');
+            return;
+        }
+        
+        // Save current state to redo stack before undoing
+        const currentState = {
+            canvasContent: this.canvas.innerHTML,
+            timestamp: Date.now()
+        };
+        this.redoStack.push(currentState);
+        
+        // Limit redo stack size
+        if (this.redoStack.length > this.maxUndoSteps) {
+            this.redoStack.shift();
+        }
+        
+        // Get the last saved state
+        const lastState = this.undoStack.pop();
+        
+        // Restore canvas content
+        this.canvas.innerHTML = lastState.canvasContent;
+        
+        // Clear current selections since elements may have changed
+        this.deselectAll();
+        
+        // Update UI
+        this.updateRightPanel();
+        this.updateLeftPanel();
+        this.updateUndoRedoButtons();
+        
+        console.log('Undo completed');
+    }
+    
+    redo() {
+        if (this.redoStack.length === 0) {
+            console.log('Nothing to redo');
+            return;
+        }
+        
+        // Save current state to undo stack before redoing
+        const currentState = {
+            canvasContent: this.canvas.innerHTML,
+            timestamp: Date.now()
+        };
+        this.undoStack.push(currentState);
+        
+        // Get the last redo state
+        const nextState = this.redoStack.pop();
+        
+        // Restore canvas content
+        this.canvas.innerHTML = nextState.canvasContent;
+        
+        // Clear current selections since elements may have changed
+        this.deselectAll();
+        
+        // Update UI
+        this.updateRightPanel();
+        this.updateLeftPanel();
+        this.updateUndoRedoButtons();
+        
+        console.log('Redo completed');
+    }
+    
+    updateUndoRedoButtons() {
+        if (this.undoBtn) {
+            this.undoBtn.disabled = this.undoStack.length === 0;
+        }
+        if (this.redoBtn) {
+            this.redoBtn.disabled = this.redoStack.length === 0;
+        }
+    }
+    
+    // Keep old method for compatibility
+    updateUndoButton() {
+        this.updateUndoRedoButtons();
+    }
+    
+    // Keyboard event handlers
+    handleKeyDown(e) {
+        // Track modifier keys
+        this.isCtrlPressed = e.ctrlKey;
+        this.isShiftPressed = e.shiftKey;
+        
+        // Don't handle shortcuts when editing text
+        if (this.isEditingText) {
+            // Allow text formatting shortcuts even when editing
+            if (e.ctrlKey) {
+                switch (e.key.toLowerCase()) {
+                    case 'b':
+                        e.preventDefault();
+                        this.toggleTextStyle('boldBtn');
+                        break;
+                    case 'i':
+                        e.preventDefault();
+                        this.toggleTextStyle('italicBtn');
+                        break;
+                    case 'u':
+                        e.preventDefault();
+                        this.toggleTextStyle('underlineBtn');
+                        break;
+                    case '=':
+                        e.preventDefault();
+                        if (e.shiftKey) {
+                            this.toggleSuperscript();
+                        } else {
+                            this.toggleSubscript();
+                        }
+                        break;
+                }
+            }
+            return;
+        }
+        
+        // Handle keyboard shortcuts
+        if (e.ctrlKey) {
+            switch (e.key.toLowerCase()) {
+                case 'c':
+                    e.preventDefault();
+                    this.copySelection();
+                    break;
+                case 'v':
+                    e.preventDefault();
+                    this.pasteFromClipboard();
+                    break;
+                case 'x':
+                    e.preventDefault();
+                    this.cutSelection();
+                    break;
+                case 'z':
+                    e.preventDefault();
+                    this.undo();
+                    break;
+                case 'y':
+                    e.preventDefault();
+                    this.redo();
+                    break;
+                case 'a':
+                    e.preventDefault();
+                    this.selectAll();
+                    break;
+                case 'b':
+                    e.preventDefault();
+                    this.toggleTextStyle('boldBtn');
+                    break;
+                case 'i':
+                    e.preventDefault();
+                    this.toggleTextStyle('italicBtn');
+                    break;
+                case 'u':
+                    e.preventDefault();
+                    this.toggleTextStyle('underlineBtn');
+                    break;
+                case '=':
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        this.toggleSuperscript();
+                    } else {
+                        this.toggleSubscript();
+                    }
+                    break;
+            }
+        } else {
+            switch (e.key) {
+                case 'Escape':
+                    e.preventDefault();
+                    this.clearSelection();
+                    break;
+                case 'Delete':
+                    e.preventDefault();
+                    this.deleteSelection();
+                    break;
+            }
+        }
+    }
+    
+    handleKeyUp(e) {
+        // Update modifier key states
+        this.isCtrlPressed = e.ctrlKey;
+        this.isShiftPressed = e.shiftKey;
+    }
+    
+    handleWheel(e) {
+        if (e.ctrlKey) {
+            e.preventDefault();
+            // Zoom functionality
+            const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
+            this.zoomCanvas(scaleFactor, e.offsetX, e.offsetY);
+        }
+    }
+    
+    // ===== UNIFIED ELEMENT SYSTEM =====
+    
+    // Element type detection
+    getElementType(element) {
+        if (element.classList.contains('sugar')) return 'sugar';
+        if (element.classList.contains('text-element')) return 'text';
+        if (element.classList.contains('connection')) return 'connection';
+        return null;
+    }
+    
+    // Check if element is selectable
+    isSelectableElement(element) {
+        return this.getElementType(element) !== null;
+    }
+    
+    // Unified element selection
+    selectElement(element, multiSelect = false) {
+        if (!this.isSelectableElement(element)) return;
+        
+        if (!multiSelect) {
+            this.clearAllSelections();
+        }
+        
+        this.selectedElements.add(element);
+        element.classList.add('selected');
+        this.showSelectionHighlight(element);
+        
+        // Update legacy selection states for backward compatibility
+        this.updateLegacySelectionStates();
+    }
+    
+    // Unified element deselection
+    deselectElement(element) {
+        if (!this.selectedElements.has(element)) return;
+        
+        this.selectedElements.delete(element);
+        element.classList.remove('selected');
+        this.hideSelectionHighlight(element);
+        
+        // Update legacy selection states
+        this.updateLegacySelectionStates();
+    }
+    
+    // Toggle element selection
+    toggleElementSelection(element, multiSelect = false) {
+        if (this.selectedElements.has(element)) {
+            this.deselectElement(element);
+        } else {
+            this.selectElement(element, multiSelect);
+        }
+    }
+    
+    // Show hover preview
+    showHoverPreview(element) {
+        if (!this.isSelectableElement(element)) return;
+        if (this.selectedElements.has(element)) return; // Already selected
+        
+        this.hoveredElement = element;
+        element.classList.add('hover-preview');
+    }
+    
+    // Hide hover preview
+    hideHoverPreview(element = null) {
+        if (element) {
+            element.classList.remove('hover-preview');
+            if (this.hoveredElement === element) {
+                this.hoveredElement = null;
+            }
+        } else if (this.hoveredElement) {
+            this.hoveredElement.classList.remove('hover-preview');
+            this.hoveredElement = null;
+        }
+    }
+    
+    // Clear all hover previews
+    clearAllHoverPreviews() {
+        document.querySelectorAll('.hover-preview').forEach(el => {
+            el.classList.remove('hover-preview');
+        });
+        this.hoveredElements.clear();
+        this.hoveredElement = null;
+    }
+    
+    // Unified selection highlight
+    showSelectionHighlight(element) {
+        const type = this.getElementType(element);
+        switch (type) {
+            case 'sugar':
+                this.addSelectionHighlight(element);
+                break;
+            case 'text':
+                this.addTextSelectionHighlight(element);
+                break;
+            case 'connection':
+                // Connection selection highlight (if needed)
+                break;
+        }
+    }
+    
+    // Unified selection highlight removal
+    hideSelectionHighlight(element) {
+        const type = this.getElementType(element);
+        switch (type) {
+            case 'sugar':
+                this.removeSelectionHighlight(element);
+                break;
+            case 'text':
+                this.removeTextSelectionHighlight(element);
+                break;
+            case 'connection':
+                // Connection selection highlight removal (if needed)
+                break;
+        }
+    }
+    
+    // Clear all selections
+    clearAllSelections() {
+        this.selectedElements.forEach(element => {
+            element.classList.remove('selected');
+            this.hideSelectionHighlight(element);
+        });
+        this.selectedElements.clear();
+        this.clearAllHoverPreviews();
+        
+        // Update legacy selection states
+        this.updateLegacySelectionStates();
+        this.updateStylePanel();
+    }
+    
+    // Update legacy selection states for backward compatibility
+    updateLegacySelectionStates() {
+        // Clear legacy states
+        this.selectedSugar = null;
+        this.selectedText = null;
+        this.selectedSugars.clear();
+        this.selectedTexts.clear();
+        this.selectedConnections.clear();
+        
+        // Update from unified selection
+        this.selectedElements.forEach(element => {
+            const type = this.getElementType(element);
+            switch (type) {
+                case 'sugar':
+                    this.selectedSugars.add(element);
+                    if (!this.selectedSugar) this.selectedSugar = element;
+                    break;
+                case 'text':
+                    this.selectedTexts.add(element);
+                    if (!this.selectedText) this.selectedText = element;
+                    break;
+                case 'connection':
+                    this.selectedConnections.add(element);
+                    break;
+            }
+        });
+    }
+    
+    // Get all selected elements by type
+    getSelectedElementsByType(type) {
+        return Array.from(this.selectedElements).filter(element => 
+            this.getElementType(element) === type
+        );
+    }
+    
+    // Check if any elements are selected
+    hasSelectedElements() {
+        return this.selectedElements.size > 0;
+    }
+    
+    // Get element at point (unified)
+    getElementAtPoint(x, y) {
+        // Check for sugars first
+        const clickedSugar = this.getSugarAtPoint(x, y);
+        if (clickedSugar) return clickedSugar;
+        
+        // Then check for text
+        const clickedText = this.getTextAtPoint(x, y);
+        if (clickedText) return clickedText;
+        
+        // Could add connections here in the future
+        return null;
+    }
+    
+    // Start dragging selected elements
+    startDragging(x, y, multipleElements = false) {
+        this.isDragging = true;
+        this.dragStartX = x;
+        this.dragStartY = y;
+        
+        if (multipleElements) {
+            this.isDraggingMultiple = true;
+            this.isDraggingMultipleTexts = false;
+            
+            // Store initial positions for all selected elements
+            this.selectedElements.forEach(element => {
+                const elementX = parseFloat(element.getAttribute('data-x'));
+                const elementY = parseFloat(element.getAttribute('data-y'));
+                element.setAttribute('data-initial-x', elementX);
+                element.setAttribute('data-initial-y', elementY);
+                element.classList.add('dragging');
+            });
+        } else {
+            this.isDraggingMultiple = false;
+            
+            // For single element, set drag offset
+            const element = Array.from(this.selectedElements)[0];
+            if (element) {
+                const elementX = parseFloat(element.getAttribute('data-x'));
+                const elementY = parseFloat(element.getAttribute('data-y'));
+                
+                element.setAttribute('data-initial-x', elementX);
+                element.setAttribute('data-initial-y', elementY);
+                element.classList.add('dragging');
+                
+                this.dragOffset = {
+                    x: x - elementX,
+                    y: y - elementY
+                };
+                
+                // Set type-specific dragging flags for backward compatibility
+                const type = this.getElementType(element);
+                if (type === 'text') {
+                    this.isDraggingMultipleTexts = false;
+                }
+            }
+        }
+    }
+    
+    // ===== END UNIFIED ELEMENT SYSTEM =====
+    
+    // Keyboard shortcut implementations
+    clearSelection() {
+        this.clearAllSelections();
+    }
+    
+    deleteSelection() {
+        this.saveState(); // Save state before deletion
+        
+        // Collect elements to delete using unified system
+        const sugarsToDelete = this.getSelectedElementsByType('sugar');
+        const textsToDelete = this.getSelectedElementsByType('text');
+        const connectionsToDelete = this.getSelectedElementsByType('connection');
+        
+        // Delete connections that are connected to sugars being deleted
+        document.querySelectorAll('.connection').forEach(connection => {
+            const startId = connection.getAttribute('data-start');
+            const endId = connection.getAttribute('data-end');
+            
+            const startSugar = document.getElementById(startId);
+            const endSugar = document.getElementById(endId);
+            
+            // Delete connection if either end is being deleted (and not already in connectionsToDelete)
+            if ((startSugar && sugarsToDelete.includes(startSugar)) || 
+                (endSugar && sugarsToDelete.includes(endSugar))) {
+                if (!connectionsToDelete.includes(connection)) {
+                    connection.remove();
+                }
+            }
+        });
+        
+        // Delete selected elements
+        this.selectedElements.forEach(element => {
+            this.hideSelectionHighlight(element);
+            element.remove();
+        });
+        
+        this.clearAllSelections();
+    }
+    
+    copySelection() {
+        this.clipboard = {
+            sugars: [],
+            texts: [],
+            connections: []
+        };
+        
+        // Use unified selectedElements system
+        this.selectedElements.forEach(element => {
+            const type = this.getElementType(element);
+            
+            if (type === 'sugar') {
+                this.clipboard.sugars.push({
+                    id: element.id,
+                    x: parseFloat(element.getAttribute('data-x')),
+                    y: parseFloat(element.getAttribute('data-y')),
+                    shape: element.getAttribute('data-shape'),
+                    color: element.getAttribute('data-color'),
+                    preset: element.getAttribute('data-preset'),
+                    innerHTML: element.innerHTML
+                });
+            } else if (type === 'text') {
+                const content = element.textContent || 'Text'; // Ensure we have content
+                this.clipboard.texts.push({
+                    x: parseFloat(element.getAttribute('data-x')),
+                    y: parseFloat(element.getAttribute('data-y')),
+                    content: content,
+                    style: element.getAttribute('style'),
+                    className: element.className
+                });
+            }
+        });
+        
+        // Copy connections between selected sugars
+        const connectionsToCopy = [];
+        const selectedSugarElements = this.getSelectedElementsByType('sugar');
+        
+        document.querySelectorAll('.connection').forEach(connection => {
+            const startId = connection.getAttribute('data-start');
+            const endId = connection.getAttribute('data-end');
+            
+            const startSugar = document.getElementById(startId);
+            const endSugar = document.getElementById(endId);
+            
+            // Only copy connections where both sugars are selected
+            if (startSugar && endSugar && 
+                selectedSugarElements.includes(startSugar) && 
+                selectedSugarElements.includes(endSugar)) {
+                connectionsToCopy.push({
+                    startId: startId,
+                    endId: endId,
+                    style: connection.getAttribute('style'),
+                    className: connection.className
+                });
+            }
+        });
+        
+        this.clipboard.connections = connectionsToCopy;
+        
+        // Show copy confirmation
+        const totalCopied = this.clipboard.sugars.length + this.clipboard.texts.length + this.clipboard.connections.length;
+        if (totalCopied > 0) {
+            this.showTemporaryNotification(`已复制 ${totalCopied} 个元素 (保持选择)`);
+        }
+    }
+    
+    cutSelection() {
+        const totalToCut = this.selectedElements.size;
+        
+        this.copySelection();
+        this.deleteSelection();
+        // Selection is already cleared by deleteSelection
+        
+        if (totalToCut > 0) {
+            this.showTemporaryNotification(`已剪切 ${totalToCut} 个元素`);
+        }
+    }
+    
+    pasteFromClipboard() {
+        if (this.clipboard.sugars.length === 0 && this.clipboard.texts.length === 0) {
+            return; // Nothing to paste
+        }
+        
+        this.saveState(); // Save state before pasting
+        
+        // Clear current selection first (use unified system)
+        this.clearAllSelections();
+        
+        // Calculate dynamic offset to avoid overlapping with previous pastes
+        // Each paste moves items 30 pixels to the right and down
+        this.pasteCount = (this.pasteCount || 0) + 1;
+        const offsetX = 30 * this.pasteCount; // Dynamic offset
+        const offsetY = 30 * this.pasteCount;
+        
+        const pastedSugars = [];
+        const pastedTexts = [];
+        
+        // Paste sugars
+        this.clipboard.sugars.forEach(sugarData => {
+            const config = {
+                shape: sugarData.shape,
+                color: sugarData.color,
+                type: sugarData.preset ? 'preset' : 'custom',
+                preset: sugarData.preset
+            };
+            
+            const newSugar = this.createSugar(
+                sugarData.x + offsetX,
+                sugarData.y + offsetY,
+                config,
+                false // Don't save state for each individual sugar during paste
+            );
+            if (newSugar) {
+                pastedSugars.push(newSugar);
+            }
+        });
+        
+        // Paste texts
+        this.clipboard.texts.forEach(textData => {
+            const newText = this.createText(
+                textData.x + offsetX,
+                textData.y + offsetY,
+                textData.content,
+                false, // Don't save state for each individual text during paste
+                false  // Don't auto-edit pasted text
+            );
+            if (newText) {
+                if (textData.style) {
+                    newText.setAttribute('style', textData.style);
+                }
+                pastedTexts.push(newText);
+            }
+        });
+        
+        // Select all pasted items using unified selection system
+        const allPastedElements = [...pastedSugars, ...pastedTexts];
+        allPastedElements.forEach(element => {
+            this.selectElement(element, true); // Use multiSelect=true to keep all selected
+        });
+        
+        // Create mapping from old sugar IDs to new sugars for connections
+        const sugarIdMapping = {};
+        for (let i = 0; i < this.clipboard.sugars.length; i++) {
+            const oldId = this.clipboard.sugars[i].id;
+            const newId = pastedSugars[i].id;
+            sugarIdMapping[oldId] = newId;
+        }
+        
+        // Paste connections
+        this.clipboard.connections.forEach(connectionData => {
+            const newStartId = sugarIdMapping[connectionData.startId];
+            const newEndId = sugarIdMapping[connectionData.endId];
+            
+            if (newStartId && newEndId) {
+                const startSugar = document.getElementById(newStartId);
+                const endSugar = document.getElementById(newEndId);
+                
+                if (startSugar && endSugar) {
+                    this.createConnection(startSugar, endSugar);
+                }
+            }
+        });
+        
+        // Update the style panel to reflect new selection
+        this.updateStylePanel();
+        
+        // Show paste confirmation
+        const totalPasted = pastedSugars.length + pastedTexts.length + this.clipboard.connections.length;
+        if (totalPasted > 0) {
+            this.showTemporaryNotification(`已粘贴 ${totalPasted} 个元素 (已选中新元素)`);
+        }
+    }
+    
+    // Reset paste counter when user performs other actions
+    resetPasteCounter() {
+        this.pasteCount = 0;
+    }
+    
+    selectAll() {
+        // Clear all existing selections using unified system
+        this.clearAllSelections();
+        
+        // Select all elements using unified system
+        const allElements = [
+            ...document.querySelectorAll('.sugar'),
+            ...document.querySelectorAll('.text-element'),
+            ...document.querySelectorAll('.connection')
+        ];
+        
+        allElements.forEach(element => {
+            this.selectElement(element, true); // Use multiSelect=true
+        });
+        
+        // Show selection summary using unified system
+        const totalSelected = this.selectedElements.size;
+        if (totalSelected > 0) {
+            const sugars = this.getSelectedElementsByType('sugar').length;
+            const texts = this.getSelectedElementsByType('text').length;
+            const connections = this.getSelectedElementsByType('connection').length;
+            
+            console.log(`全选完成: 选中了 ${sugars} 个糖类, ${texts} 个文字, ${connections} 条连接线 (共 ${totalSelected} 个元素)`);
+            this.showTemporaryNotification(`已选中 ${totalSelected} 个元素`);
+        } else {
+            console.log('画布为空，没有可选择的内容');
+            this.showTemporaryNotification('画布为空');
+        }
+        
+        this.updateStylePanel();
+    }
+    
+    toggleTextStyle(styleId) {
+        const btn = document.getElementById(styleId);
+        if (!btn) return;
+        
+        btn.classList.toggle('active');
+        
+        // Apply to selected texts or current text being edited
+        if (this.isEditingText && this.selectedText) {
+            this.applyTextStyleToElement(this.selectedText, styleId, btn.classList.contains('active'));
+        } else if (this.selectedText || this.selectedTexts.size > 0) {
+            this.applySpecificTextStyle(styleId, btn.classList.contains('active'));
+        }
+    }
+    
+    applyTextStyleToElement(textElement, styleId, isActive) {
+        switch (styleId) {
+            case 'boldBtn':
+                if (isActive) {
+                    textElement.style.setProperty('font-weight', 'bold', 'important');
+                } else {
+                    textElement.style.removeProperty('font-weight');
+                }
+                break;
+            case 'italicBtn':
+                if (isActive) {
+                    textElement.style.setProperty('font-style', 'italic', 'important');
+                } else {
+                    textElement.style.removeProperty('font-style');
+                }
+                break;
+            case 'underlineBtn':
+                if (isActive) {
+                    textElement.style.setProperty('text-decoration', 'underline', 'important');
+                } else {
+                    textElement.style.removeProperty('text-decoration');
+                }
+                break;
+        }
+    }
+    
+    applySpecificTextStyle(styleId, isActive) {
+        // Get all selected text elements
+        const selectedTextElements = [];
+        if (this.selectedText) selectedTextElements.push(this.selectedText);
+        if (this.selectedTexts.size > 0) {
+            this.selectedTexts.forEach(text => {
+                if (!selectedTextElements.includes(text)) {
+                    selectedTextElements.push(text);
+                }
+            });
+        }
+        
+        if (selectedTextElements.length === 0) return;
+        
+        // Apply the specific style to all selected texts
+        selectedTextElements.forEach(textElement => {
+            this.applyTextStyleToElement(textElement, styleId, isActive);
+        });
+    }
+    
+    toggleSuperscript() {
+        if (this.selectedText || this.selectedTexts.size > 0) {
+            this.applyTextTransform('superscript');
+        }
+    }
+    
+    toggleSubscript() {
+        if (this.selectedText || this.selectedTexts.size > 0) {
+            this.applyTextTransform('subscript');
+        }
+    }
+    
+    applyTextTransform(type) {
+        const selectedTextElements = [];
+        if (this.selectedText) selectedTextElements.push(this.selectedText);
+        if (this.selectedTexts.size > 0) {
+            this.selectedTexts.forEach(text => {
+                if (!selectedTextElements.includes(text)) {
+                    selectedTextElements.push(text);
+                }
+            });
+        }
+        
+        selectedTextElements.forEach(textElement => {
+            const currentTransform = textElement.style.verticalAlign;
+            
+            if (type === 'superscript') {
+                if (currentTransform === 'super') {
+                    textElement.style.removeProperty('vertical-align');
+                    textElement.style.removeProperty('font-size');
+                } else {
+                    textElement.style.setProperty('vertical-align', 'super', 'important');
+                    textElement.style.setProperty('font-size', '0.8em', 'important');
+                }
+            } else if (type === 'subscript') {
+                if (currentTransform === 'sub') {
+                    textElement.style.removeProperty('vertical-align');
+                    textElement.style.removeProperty('font-size');
+                } else {
+                    textElement.style.setProperty('vertical-align', 'sub', 'important');
+                    textElement.style.setProperty('font-size', '0.8em', 'important');
+                }
+            }
+        });
+    }
+    
+    zoomCanvas(scaleFactor, centerX, centerY) {
+        const canvas = this.canvas;
+        const rect = canvas.getBoundingClientRect();
+        const viewBox = canvas.viewBox.baseVal;
+        
+        // Calculate zoom
+        const newWidth = viewBox.width * scaleFactor;
+        const newHeight = viewBox.height * scaleFactor;
+        
+        // Calculate new viewBox position to zoom towards cursor
+        const scaleChange = scaleFactor - 1;
+        const newX = viewBox.x - (centerX - rect.left) * scaleChange;
+        const newY = viewBox.y - (centerY - rect.top) * scaleChange;
+        
+        // Apply new viewBox
+        canvas.setAttribute('viewBox', `${newX} ${newY} ${newWidth} ${newHeight}`);
+    }
+    
+    // Copy helper methods
+    copySugar(originalSugar) {
+        const x = parseFloat(originalSugar.getAttribute('data-x'));
+        const y = parseFloat(originalSugar.getAttribute('data-y'));
+        const shape = originalSugar.getAttribute('data-shape');
+        const color = originalSugar.getAttribute('data-color');
+        const preset = originalSugar.getAttribute('data-preset');
+        
+        const config = {
+            shape: shape,
+            color: color,
+            type: preset ? 'preset' : 'custom',
+            preset: preset
+        };
+        
+        return this.createSugar(x, y, config, false); // Don't save state during copy
+    }
+    
+    copyText(originalText) {
+        const x = parseFloat(originalText.getAttribute('x'));
+        const y = parseFloat(originalText.getAttribute('y'));
+        const content = originalText.textContent;
+        
+        const newText = this.createText(x, y, content, false, false); // Don't save state during copy, don't auto-edit
+        
+        // Copy all styles
+        if (originalText.getAttribute('style')) {
+            newText.setAttribute('style', originalText.getAttribute('style'));
+        }
+        
+        return newText;
+    }
+    
+    showTemporaryNotification(message, duration = 2000) {
+        // Remove any existing notifications
+        const existingNotification = document.querySelector('.temp-notification');
+        if (existingNotification) {
+            existingNotification.remove();
+        }
+        
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = 'temp-notification';
+        notification.textContent = message;
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 4px;
+            z-index: 10000;
+            font-size: 14px;
+            transition: opacity 0.3s ease;
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Fade out and remove
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, duration);
+    }
+    
+
 
 }
 
 // Initialize the application when the DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new GlycanDrawer();
+    window.glycanApp = new GlycanDrawer();
 });
