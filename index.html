@@ -150,18 +150,24 @@
                         
                         <!-- Color Selection -->
                         <div class="control-group">
-                            <label>颜色:</label>
                             <div class="color-grid" id="colorGrid">
-                                <button class="color-btn active" data-color="#3498db" style="background-color: #3498db;"></button>
-                                <button class="color-btn" data-color="#e74c3c" style="background-color: #e74c3c;"></button>
-                                <button class="color-btn" data-color="#2ecc71" style="background-color: #2ecc71;"></button>
-                                <button class="color-btn" data-color="#f39c12" style="background-color: #f39c12;"></button>
-                                <button class="color-btn" data-color="#9b59b6" style="background-color: #9b59b6;"></button>
-                                <button class="color-btn" data-color="#34495e" style="background-color: #34495e;"></button>
+                                <button class="color-btn active" data-color="#3498db" style="background-color: #3498db;" title="蓝色"></button>
+                                <button class="color-btn" data-color="#e74c3c" style="background-color: #e74c3c;" title="红色"></button>
+                                <button class="color-btn" data-color="#2ecc71" style="background-color: #2ecc71;" title="绿色"></button>
+                                <button class="color-btn" data-color="#f39c12" style="background-color: #f39c12;" title="橙色"></button>
+                                <button class="color-btn" data-color="#9b59b6" style="background-color: #9b59b6;" title="紫色"></button>
+                                <button class="color-btn" data-color="#34495e" style="background-color: #34495e;" title="灰色"></button>
+                                <button class="color-btn" data-color="#1abc9c" style="background-color: #1abc9c;" title="青色"></button>
+                                <button class="color-btn" data-color="#f1c40f" style="background-color: #f1c40f;" title="黄色"></button>
                             </div>
-                            <div class="custom-color">
-                                <input type="text" id="customColorInput" placeholder="#3498db" maxlength="7">
-                                <button id="applyCustomColor">应用</button>
+                            <div class="control-group">
+                                <input type="color" id="customSugarColor" value="#3498db">
+                                <input type="text" id="customSugarColorHex" value="#3498db" maxlength="7" placeholder="#3498db">
+                            </div>
+                            <div class="control-group">
+                                <label for="customSugarOpacity">糖填充透明度:</label>
+                                <input type="range" id="customSugarOpacity" min="0" max="1" value="1" step="0.1">
+                                <span id="customSugarOpacityValue">100%</span>
                             </div>
                         </div>
                     </div>
@@ -192,6 +198,11 @@
                             <input type="color" id="sugarBorderColor" value="#333333">
                             <input type="text" id="sugarBorderColorHex" value="#333333" maxlength="7" placeholder="#333333">
                         </div>
+                        <div class="control-group">
+                            <label for="sugarBorderOpacity">边缘透明度:</label>
+                            <input type="range" id="sugarBorderOpacity" min="0" max="1" value="1" step="0.1">
+                            <span id="sugarBorderOpacityValue">100%</span>
+                        </div>
                     </div>
                     
                     <!-- Connection Line Style -->
@@ -217,6 +228,11 @@
                             <label for="connectionColor">颜色:</label>
                             <input type="color" id="connectionColor" value="#333333">
                             <input type="text" id="connectionColorHex" value="#333333" maxlength="7" placeholder="#333333">
+                        </div>
+                        <div class="control-group">
+                            <label for="connectionOpacity">透明度:</label>
+                            <input type="range" id="connectionOpacity" min="0" max="1" value="1" step="0.1">
+                            <span id="connectionOpacityValue">100%</span>
                         </div>
                     </div>
                 </div>
@@ -261,6 +277,11 @@
                             <label for="textColor">颜色:</label>
                             <input type="color" id="textColor" value="#000000">
                             <input type="text" id="textColorHex" value="#000000" maxlength="7" placeholder="#000000">
+                        </div>
+                        <div class="control-group">
+                            <label for="textOpacity">透明度:</label>
+                            <input type="range" id="textOpacity" min="0" max="1" value="1" step="0.1">
+                            <span id="textOpacityValue">100%</span>
                         </div>
                     </div>
                 </div>

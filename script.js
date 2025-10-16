@@ -12,7 +12,7 @@ class GlycanDrawer {
         this.connectionDistance = 80;
         
         // Tool states
-        this.currentTool = 'add';
+        this.currentTool = 'select';
         this.currentSugarConfig = {
             type: 'custom',
             shape: 'circle',
@@ -20,6 +20,8 @@ class GlycanDrawer {
             size: 20,
             borderWidth: 2,
             borderColor: '#333333',
+            borderOpacity: 1,
+            fillOpacity: 1,
             preset: null
         };
         
@@ -27,6 +29,7 @@ class GlycanDrawer {
             fontSize: 16,
             fontFamily: 'Arial, sans-serif',
             color: '#000000',
+            opacity: 1,
             bold: false,
             italic: false,
             underline: false
@@ -87,6 +90,11 @@ class GlycanDrawer {
             texts: [],
             connections: []
         };
+        
+        // Scroll tracking for debugging
+        this.userScrollTimeout = null;
+        this.isUserScrolling = false;
+        this.isInitialLoad = true; // Flag to track initial page load
         
         // Workspace properties
         this.workspace = null;
@@ -219,25 +227,50 @@ class GlycanDrawer {
         // Shape and color buttons are now handled in setupStyleControls()
         // This prevents double event listeners
         
-        // Custom color input
-        const customColorInput = document.getElementById('customColorInput');
-        const applyCustomColorBtn = document.getElementById('applyCustomColor');
+        // Custom sugar color controls
+        const customSugarColor = document.getElementById('customSugarColor');
+        const customSugarColorHex = document.getElementById('customSugarColorHex');
+        const customSugarOpacity = document.getElementById('customSugarOpacity');
+        const customSugarOpacityValue = document.getElementById('customSugarOpacityValue');
         
-        applyCustomColorBtn.addEventListener('click', () => {
-            const color = customColorInput.value;
-            if (this.isValidHexColor(color)) {
+        if (customSugarColor && customSugarColorHex) {
+            customSugarColor.addEventListener('change', (e) => {
+                const color = e.target.value;
+                customSugarColorHex.value = color;
                 this.selectColor(color);
-                customColorInput.value = '';
-            } else {
-                alert('请输入有效的十六进制颜色代码（如：#FF0000）');
-            }
-        });
+            });
+            
+            customSugarColorHex.addEventListener('change', (e) => {
+                const color = e.target.value;
+                if (this.isValidHexColor(color)) {
+                    const normalizedColor = this.normalizeColorToHex(color);
+                    customSugarColor.value = normalizedColor;
+                    customSugarColorHex.value = normalizedColor;
+                    this.selectColor(normalizedColor);
+                } else {
+                    // Reset to current color if invalid
+                    customSugarColorHex.value = this.currentSugarConfig.color;
+                }
+            });
+        }
         
-        customColorInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                applyCustomColorBtn.click();
-            }
-        });
+        // Custom sugar opacity control
+        if (customSugarOpacity && customSugarOpacityValue) {
+            customSugarOpacity.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                customSugarOpacityValue.textContent = Math.round(value * 100) + '%';
+                
+                if (this.currentTool === 'add') {
+                    // 添加模式：只更新配置，不应用到任何元素
+                    if (this.currentSugarConfig) {
+                        this.currentSugarConfig.fillOpacity = value;
+                    }
+                } else if (this.currentTool === 'select') {
+                    // 选择模式：只应用到选中元素，不更新配置
+                    this.applySugarFillOpacity();
+                }
+            });
+        }
     }
     
     setupStyleControls() {
@@ -292,6 +325,31 @@ class GlycanDrawer {
             });
         });
         
+        // Sugar border opacity control
+        const sugarBorderOpacity = document.getElementById('sugarBorderOpacity');
+        const sugarBorderOpacityValue = document.getElementById('sugarBorderOpacityValue');
+        
+        if (sugarBorderOpacity && sugarBorderOpacityValue) {
+            sugarBorderOpacity.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                sugarBorderOpacityValue.textContent = Math.round(value * 100) + '%';
+                
+                // Clear mixed state when user manually changes value
+                e.target.classList.remove('mixed');
+                if (sugarBorderOpacityValue) sugarBorderOpacityValue.classList.remove('mixed');
+                
+                if (this.currentTool === 'add') {
+                    // 添加模式：只更新配置，不应用到任何元素
+                    if (this.currentSugarConfig) {
+                        this.currentSugarConfig.borderOpacity = value;
+                    }
+                } else if (this.currentTool === 'select') {
+                    // 选择模式：只应用到选中元素，不更新配置
+                    this.applySugarBorderOpacity();
+                }
+            });
+        }
+        
         // Connection line style controls
         const connectionWidth = document.getElementById('connectionWidth');
         const connectionWidthValue = document.getElementById('connectionWidthValue');
@@ -310,6 +368,23 @@ class GlycanDrawer {
                 this.applyConnectionStyle();
             });
         });
+        
+        // Connection opacity control
+        const connectionOpacity = document.getElementById('connectionOpacity');
+        const connectionOpacityValue = document.getElementById('connectionOpacityValue');
+        
+        if (connectionOpacity && connectionOpacityValue) {
+            connectionOpacity.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                connectionOpacityValue.textContent = Math.round(value * 100) + '%';
+                
+                // Clear mixed state when user manually changes value
+                e.target.classList.remove('mixed');
+                if (connectionOpacityValue) connectionOpacityValue.classList.remove('mixed');
+                
+                this.applyConnectionOpacity();
+            });
+        }
         
         // Text style controls
         const fontSize = document.getElementById('fontSize');
@@ -390,11 +465,11 @@ class GlycanDrawer {
                 
                 if (this.currentTool === 'text') {
                     // 文本工具模式：只更新配置，不应用到任何元素
-                    if (btn.id === 'bold') {
+                    if (btn.id === 'boldBtn') {
                         this.currentTextConfig.bold = isActive;
-                    } else if (btn.id === 'italic') {
+                    } else if (btn.id === 'italicBtn') {
                         this.currentTextConfig.italic = isActive;
-                    } else if (btn.id === 'underline') {
+                    } else if (btn.id === 'underlineBtn') {
                         this.currentTextConfig.underline = isActive;
                     }
                 } else if (this.currentTool === 'select') {
@@ -403,6 +478,29 @@ class GlycanDrawer {
                 }
             });
         });
+        
+        // Text opacity control
+        const textOpacity = document.getElementById('textOpacity');
+        const textOpacityValue = document.getElementById('textOpacityValue');
+        
+        if (textOpacity && textOpacityValue) {
+            textOpacity.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                textOpacityValue.textContent = Math.round(value * 100) + '%';
+                
+                // Clear mixed state when user manually changes value
+                e.target.classList.remove('mixed');
+                if (textOpacityValue) textOpacityValue.classList.remove('mixed');
+                
+                if (this.currentTool === 'text') {
+                    // 文本工具模式：只更新配置，不应用到任何元素
+                    this.currentTextConfig.opacity = value;
+                } else if (this.currentTool === 'select') {
+                    // 选择模式：只应用到选中元素，不更新配置
+                    this.applyTextOpacity();
+                }
+            });
+        }
         
         // Sugar border color controls
         const sugarBorderColor = document.getElementById('sugarBorderColor');
@@ -615,12 +713,161 @@ class GlycanDrawer {
     }
     
     selectColor(color) {
-        // This method is kept for compatibility but color selection is now handled in setupStyleControls  
-        console.warn('selectColor called - this should now be handled by button event listeners');
+        const normalizedColor = this.normalizeColorToHex(color);
+        
+        // Update color grid buttons
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.dataset.color === normalizedColor) {
+                btn.classList.add('active');
+            }
+        });
+        
+        // Update custom color controls
+        const customSugarColor = document.getElementById('customSugarColor');
+        const customSugarColorHex = document.getElementById('customSugarColorHex');
+        if (customSugarColor && customSugarColorHex) {
+            customSugarColor.value = normalizedColor;
+            customSugarColorHex.value = normalizedColor;
+        }
+        
+        if (this.currentTool === 'add') {
+            // 添加模式：更新配置
+            if (!this.currentSugarConfig) {
+                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+            }
+            this.currentSugarConfig.color = normalizedColor;
+            this.currentSugarConfig.type = 'custom';
+            this.currentSugarConfig.preset = null;
+        } else if (this.currentTool === 'select') {
+            // 选择模式：应用到选中的糖分子
+            this.applySugarColor(normalizedColor);
+        }
     }
     
     isValidHexColor(color) {
         return /^#[0-9A-F]{6}$/i.test(color);
+    }
+    
+    // Convert any color format to hex format for consistency
+    normalizeColorToHex(color) {
+        if (!color) return '#000000';
+        
+        // If already hex format, return as is
+        if (this.isValidHexColor(color)) {
+            return color;
+        }
+        
+        // Handle rgb(r, g, b) format
+        const rgbMatch = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+        if (rgbMatch) {
+            const r = parseInt(rgbMatch[1]);
+            const g = parseInt(rgbMatch[2]);
+            const b = parseInt(rgbMatch[3]);
+            return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+        }
+        
+        // Handle rgba(r, g, b, a) format (ignore alpha)
+        const rgbaMatch = color.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/);
+        if (rgbaMatch) {
+            const r = parseInt(rgbaMatch[1]);
+            const g = parseInt(rgbaMatch[2]);
+            const b = parseInt(rgbaMatch[3]);
+            return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+        }
+        
+        // Handle cmyk(c%, m%, y%, k%) format
+        const cmykMatch = color.match(/cmyk\((\d+)%?,\s*(\d+)%?,\s*(\d+)%?,\s*(\d+)%?\)/);
+        if (cmykMatch) {
+            const c = parseFloat(cmykMatch[1]) / 100;
+            const m = parseFloat(cmykMatch[2]) / 100;
+            const y = parseFloat(cmykMatch[3]) / 100;
+            const k = parseFloat(cmykMatch[4]) / 100;
+            
+            // Convert CMYK to RGB
+            const r = Math.round(255 * (1 - c) * (1 - k));
+            const g = Math.round(255 * (1 - m) * (1 - k));
+            const b = Math.round(255 * (1 - y) * (1 - k));
+            
+            return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+        }
+        
+        // Handle named colors by creating a temporary element
+        const tempDiv = document.createElement('div');
+        tempDiv.style.color = color;
+        document.body.appendChild(tempDiv);
+        const computedColor = window.getComputedStyle(tempDiv).color;
+        document.body.removeChild(tempDiv);
+        
+        // If computed color is rgb format, convert it
+        const computedRgbMatch = computedColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+        if (computedRgbMatch) {
+            const r = parseInt(computedRgbMatch[1]);
+            const g = parseInt(computedRgbMatch[2]);
+            const b = parseInt(computedRgbMatch[3]);
+            return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+        }
+        
+        // Fallback to black if conversion fails
+        return '#000000';
+    }
+    
+    // Convert hex color to CMYK format
+    hexToCMYK(hex) {
+        // Remove # if present
+        hex = hex.replace('#', '');
+        
+        // Convert hex to RGB
+        const r = parseInt(hex.substr(0, 2), 16) / 255;
+        const g = parseInt(hex.substr(2, 2), 16) / 255;
+        const b = parseInt(hex.substr(4, 2), 16) / 255;
+        
+        // Convert RGB to CMYK
+        const k = 1 - Math.max(r, g, b);
+        const c = k === 1 ? 0 : (1 - r - k) / (1 - k);
+        const m = k === 1 ? 0 : (1 - g - k) / (1 - k);
+        const y = k === 1 ? 0 : (1 - b - k) / (1 - k);
+        
+        return {
+            c: Math.round(c * 100),
+            m: Math.round(m * 100),
+            y: Math.round(y * 100),
+            k: Math.round(k * 100)
+        };
+    }
+    
+    // Convert hex color to HSL format
+    hexToHSL(hex) {
+        // Remove # if present
+        hex = hex.replace('#', '');
+        
+        // Convert hex to RGB
+        const r = parseInt(hex.substr(0, 2), 16) / 255;
+        const g = parseInt(hex.substr(2, 2), 16) / 255;
+        const b = parseInt(hex.substr(4, 2), 16) / 255;
+        
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        let h, s, l = (max + min) / 2;
+        
+        if (max === min) {
+            h = s = 0; // achromatic
+        } else {
+            const d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            switch (max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+            }
+            h /= 6;
+        }
+        
+        return {
+            h: Math.round(h * 360),
+            s: Math.round(s * 100),
+            l: Math.round(l * 100)
+        };
     }
     
     updateCanvasCursor() {
@@ -1174,6 +1421,12 @@ class GlycanDrawer {
         if (config.borderColor) {
             shape.style.setProperty('stroke', config.borderColor, 'important');
         }
+        if (config.borderOpacity !== undefined) {
+            shape.style.setProperty('stroke-opacity', config.borderOpacity, 'important');
+        }
+        if (config.fillOpacity !== undefined) {
+            shape.style.setProperty('fill-opacity', config.fillOpacity, 'important');
+        }
         if (config.borderStyle && config.borderStyle !== 'solid') {
             const width = config.borderWidth || '2';
             switch (config.borderStyle) {
@@ -1621,7 +1874,7 @@ class GlycanDrawer {
         textElement.textContent = content;
         
         // Get current text configuration when in text tool mode
-        let textConfig = { fontSize: 16, fontFamily: 'Arial', color: '#2c3e50', bold: false, italic: false, underline: false };
+        let textConfig = { fontSize: 16, fontFamily: 'Arial', color: '#2c3e50', opacity: 1, bold: false, italic: false, underline: false };
         if (this.currentTool === 'text') {
             textConfig = this.getCurrentTextConfig();
         }
@@ -1630,6 +1883,10 @@ class GlycanDrawer {
         textElement.style.setProperty('font-family', textConfig.fontFamily, 'important');
         textElement.style.setProperty('font-size', `${textConfig.fontSize}px`, 'important');
         textElement.style.setProperty('fill', textConfig.color, 'important');
+        
+        if (textConfig.opacity !== undefined) {
+            textElement.style.setProperty('fill-opacity', textConfig.opacity, 'important');
+        }
         
         if (textConfig.bold) {
             textElement.style.setProperty('font-weight', 'bold', 'important');
@@ -1660,17 +1917,24 @@ class GlycanDrawer {
         
         this.isEditingText = true;
         
-        const rect = this.canvas.getBoundingClientRect();
         const x = parseFloat(textElement.getAttribute('data-x'));
         const y = parseFloat(textElement.getAttribute('data-y'));
+        
+        // Use SVG coordinate transformation to get screen position
+        const svgPoint = this.canvas.createSVGPoint();
+        svgPoint.x = x;
+        svgPoint.y = y;
+        
+        // Transform SVG coordinates to screen coordinates
+        const screenPoint = svgPoint.matrixTransform(this.canvas.getScreenCTM());
         
         // Create input box
         const input = document.createElement('input');
         input.type = 'text';
         input.className = 'text-input-box';
         input.value = textElement.textContent;
-        input.style.left = (rect.left + x) + 'px';
-        input.style.top = (rect.top + y - 20) + 'px';
+        input.style.left = screenPoint.x + 'px';
+        input.style.top = (screenPoint.y - 20) + 'px';
         
         // Add to document
         document.body.appendChild(input);
@@ -2664,9 +2928,13 @@ class GlycanDrawer {
         const firstShape = firstSugar.querySelector('.sugar-shape');
         const firstBorderWidth = firstShape ? (parseFloat(firstShape.style.strokeWidth || firstShape.getAttribute('stroke-width')) || 2) : 2;
         const firstBorderColor = firstShape ? (firstShape.style.stroke || firstShape.getAttribute('stroke') || '#333333') : '#333333';
+        const firstBorderOpacity = firstShape ? (parseFloat(firstShape.style.strokeOpacity || firstShape.getAttribute('stroke-opacity')) || 1) : 1;
+        const firstFillColor = firstShape ? (firstShape.style.fill || firstShape.getAttribute('fill') || firstSugar.getAttribute('data-color') || '#3498db') : '#3498db';
+        const firstFillOpacity = firstShape ? (parseFloat(firstShape.style.fillOpacity || firstShape.getAttribute('fill-opacity')) || 1) : 1;
         
         // Check if all selected sugars have same values
-        let mixedType = false, mixedSize = false, mixedBorderWidth = false, mixedBorderColor = false;
+        let mixedType = false, mixedSize = false, mixedBorderWidth = false, mixedBorderColor = false, mixedBorderOpacity = false;
+        let mixedFillColor = false, mixedFillOpacity = false;
         
         for (let i = 1; i < selectedSugars.length; i++) {
             const sugar = selectedSugars[i];
@@ -2677,8 +2945,14 @@ class GlycanDrawer {
             if (shape) {
                 const borderWidth = parseFloat(shape.style.strokeWidth || shape.getAttribute('stroke-width')) || 2;
                 const borderColor = shape.style.stroke || shape.getAttribute('stroke') || '#333333';
+                const borderOpacity = parseFloat(shape.style.strokeOpacity || shape.getAttribute('stroke-opacity')) || 1;
+                const fillColor = shape.style.fill || shape.getAttribute('fill') || sugar.getAttribute('data-color') || '#3498db';
+                const fillOpacity = parseFloat(shape.style.fillOpacity || shape.getAttribute('fill-opacity')) || 1;
                 if (borderWidth !== firstBorderWidth) mixedBorderWidth = true;
                 if (borderColor !== firstBorderColor) mixedBorderColor = true;
+                if (borderOpacity !== firstBorderOpacity) mixedBorderOpacity = true;
+                if (fillColor !== firstFillColor) mixedFillColor = true;
+                if (fillOpacity !== firstFillOpacity) mixedFillOpacity = true;
             }
         }
         
@@ -2690,6 +2964,12 @@ class GlycanDrawer {
         const sugarBorderWidthValue = document.getElementById('sugarBorderWidthValue');
         const sugarBorderColor = document.getElementById('sugarBorderColor');
         const sugarBorderColorHex = document.getElementById('sugarBorderColorHex');
+        const sugarBorderOpacity = document.getElementById('sugarBorderOpacity');
+        const sugarBorderOpacityValue = document.getElementById('sugarBorderOpacityValue');
+        const customSugarColor = document.getElementById('customSugarColor');
+        const customSugarColorHex = document.getElementById('customSugarColorHex');
+        const customSugarOpacity = document.getElementById('customSugarOpacity');
+        const customSugarOpacityValue = document.getElementById('customSugarOpacityValue');
         
         if (sugarType) {
             sugarType.value = mixedType ? '' : firstType;
@@ -2723,10 +3003,55 @@ class GlycanDrawer {
                 sugarBorderColor.classList.add('mixed');
                 sugarBorderColorHex.classList.add('mixed');
             } else {
-                sugarBorderColor.value = firstBorderColor;
-                sugarBorderColorHex.value = firstBorderColor;
+                const hexBorderColor = this.normalizeColorToHex(firstBorderColor);
+                sugarBorderColor.value = hexBorderColor;
+                sugarBorderColorHex.value = hexBorderColor;
                 sugarBorderColor.classList.remove('mixed');
                 sugarBorderColorHex.classList.remove('mixed');
+            }
+        }
+        if (sugarBorderOpacity && sugarBorderOpacityValue) {
+            if (mixedBorderOpacity) {
+                sugarBorderOpacity.value = '';
+                sugarBorderOpacityValue.textContent = '混合';
+                sugarBorderOpacity.classList.add('mixed');
+                sugarBorderOpacityValue.classList.add('mixed');
+            } else {
+                sugarBorderOpacity.value = firstBorderOpacity;
+                sugarBorderOpacityValue.textContent = Math.round(firstBorderOpacity * 100) + '%';
+                sugarBorderOpacity.classList.remove('mixed');
+                sugarBorderOpacityValue.classList.remove('mixed');
+            }
+        }
+        
+        // Update custom sugar color
+        if (customSugarColor && customSugarColorHex) {
+            if (mixedFillColor) {
+                customSugarColor.value = '#ffffff';
+                customSugarColorHex.value = '';
+                customSugarColor.classList.add('mixed');
+                customSugarColorHex.classList.add('mixed');
+            } else {
+                const hexFillColor = this.normalizeColorToHex(firstFillColor);
+                customSugarColor.value = hexFillColor;
+                customSugarColorHex.value = hexFillColor;
+                customSugarColor.classList.remove('mixed');
+                customSugarColorHex.classList.remove('mixed');
+            }
+        }
+        
+        // Update custom sugar opacity
+        if (customSugarOpacity && customSugarOpacityValue) {
+            if (mixedFillOpacity) {
+                customSugarOpacity.value = '';
+                customSugarOpacityValue.textContent = '混合';
+                customSugarOpacity.classList.add('mixed');
+                customSugarOpacityValue.classList.add('mixed');
+            } else {
+                customSugarOpacity.value = firstFillOpacity;
+                customSugarOpacityValue.textContent = Math.round(firstFillOpacity * 100) + '%';
+                customSugarOpacity.classList.remove('mixed');
+                customSugarOpacityValue.classList.remove('mixed');
             }
         }
         
@@ -2800,8 +3125,9 @@ class GlycanDrawer {
                 textColor.value = '#ffffff';
                 textColorHex.value = '';
             } else {
-                textColor.value = firstColor;
-                textColorHex.value = firstColor;
+                const hexColor = this.normalizeColorToHex(firstColor);
+                textColor.value = hexColor;
+                textColorHex.value = hexColor;
             }
         }
         
@@ -2961,10 +3287,16 @@ class GlycanDrawer {
         const widthValue = document.getElementById('sugarBorderWidthValue');
         const colorPicker = document.getElementById('sugarBorderColor');
         const colorHex = document.getElementById('sugarBorderColorHex');
+        const opacitySlider = document.getElementById('sugarBorderOpacity');
+        const opacityValue = document.getElementById('sugarBorderOpacityValue');
+        const customColorPicker = document.getElementById('customSugarColor');
+        const customColorHex = document.getElementById('customSugarColorHex');
+        const customOpacitySlider = document.getElementById('customSugarOpacity');
+        const customOpacityValue = document.getElementById('customSugarOpacityValue');
 
         if (this.currentTool === 'add') {
             // 添加模式：显示即将添加的新糖分子配置参数
-            const config = this.currentSugarConfig || { size: 20, borderWidth: 2, borderColor: '#333333' };
+            const config = this.currentSugarConfig || { size: 20, borderWidth: 2, borderColor: '#333333', borderOpacity: 1 };
             
             // Update size slider from config
             if (sizeSlider && sizeValue) {
@@ -2983,8 +3315,31 @@ class GlycanDrawer {
             // Update border color from config
             if (colorPicker && colorHex) {
                 const configColor = config.borderColor || '#333333';
-                colorPicker.value = configColor;
-                colorHex.value = configColor;
+                const hexColor = this.normalizeColorToHex(configColor);
+                colorPicker.value = hexColor;
+                colorHex.value = hexColor;
+            }
+            
+            // Update border opacity from config
+            if (opacitySlider && opacityValue) {
+                const configOpacity = config.borderOpacity !== undefined ? config.borderOpacity : 1;
+                opacitySlider.value = configOpacity;
+                opacityValue.textContent = Math.round(configOpacity * 100) + '%';
+            }
+            
+            // Update custom sugar color from config
+            if (customColorPicker && customColorHex) {
+                const configFillColor = config.color || '#3498db';
+                const hexFillColor = this.normalizeColorToHex(configFillColor);
+                customColorPicker.value = hexFillColor;
+                customColorHex.value = hexFillColor;
+            }
+            
+            // Update custom sugar opacity from config
+            if (customOpacitySlider && customOpacityValue) {
+                const configFillOpacity = config.fillOpacity !== undefined ? config.fillOpacity : 1;
+                customOpacitySlider.value = configFillOpacity;
+                customOpacityValue.textContent = Math.round(configFillOpacity * 100) + '%';
             }
             
         } else if (this.currentTool === 'select') {
@@ -3010,9 +3365,31 @@ class GlycanDrawer {
                     }
                     
                     const currentColor = shape.style.stroke || shape.getAttribute('stroke') || '#333333';
+                    const hexColor = this.normalizeColorToHex(currentColor);
                     if (colorPicker && colorHex) {
-                        colorPicker.value = currentColor;
-                        colorHex.value = currentColor;
+                        colorPicker.value = hexColor;
+                        colorHex.value = hexColor;
+                    }
+                    
+                    const currentOpacity = parseFloat(shape.style.strokeOpacity || shape.getAttribute('stroke-opacity') || '1');
+                    if (opacitySlider && opacityValue) {
+                        opacitySlider.value = currentOpacity;
+                        opacityValue.textContent = Math.round(currentOpacity * 100) + '%';
+                    }
+                    
+                    // Update custom sugar color from selected sugar
+                    const currentFillColor = shape.style.fill || shape.getAttribute('fill') || referenceSugar.getAttribute('data-color') || '#3498db';
+                    const hexFillColor = this.normalizeColorToHex(currentFillColor);
+                    if (customColorPicker && customColorHex) {
+                        customColorPicker.value = hexFillColor;
+                        customColorHex.value = hexFillColor;
+                    }
+                    
+                    // Update custom sugar opacity from selected sugar
+                    const currentFillOpacity = parseFloat(shape.style.fillOpacity || shape.getAttribute('fill-opacity') || '1');
+                    if (customOpacitySlider && customOpacityValue) {
+                        customOpacitySlider.value = currentFillOpacity;
+                        customOpacityValue.textContent = Math.round(currentFillOpacity * 100) + '%';
                     }
                 }
             }
@@ -3104,9 +3481,10 @@ class GlycanDrawer {
         const textColor = document.getElementById('textColor');
         const textColorHex = document.getElementById('textColorHex');
         const currentColor = textElement.style.fill || textElement.getAttribute('fill') || '#000000';
+        const hexColor = this.normalizeColorToHex(currentColor);
         if (textColor && textColorHex) {
-            textColor.value = currentColor;
-            textColorHex.value = currentColor;
+            textColor.value = hexColor;
+            textColorHex.value = hexColor;
         }
         
         // Update style buttons
@@ -3131,6 +3509,15 @@ class GlycanDrawer {
             const isUnderlined = textElement.style.textDecoration === 'underline' || 
                                 computedStyle.textDecoration.includes('underline');
             underlineBtn.classList.toggle('active', isUnderlined);
+        }
+        
+        // Update text opacity
+        const textOpacity = document.getElementById('textOpacity');
+        const textOpacityValue = document.getElementById('textOpacityValue');
+        const currentOpacity = parseFloat(textElement.style.fillOpacity || textElement.getAttribute('fill-opacity') || '1');
+        if (textOpacity && textOpacityValue) {
+            textOpacity.value = currentOpacity;
+            textOpacityValue.textContent = Math.round(currentOpacity * 100) + '%';
         }
     }
     
@@ -3396,6 +3783,69 @@ class GlycanDrawer {
         });
     }
     
+    applySugarBorderOpacity() {
+        // Skip if we're updating UI controls
+        if (this.isUpdatingUI) return;
+        
+        const opacity = document.getElementById('sugarBorderOpacity').value;
+        
+        // Update current configuration for add mode
+        if (this.currentTool === 'add') {
+            if (!this.currentSugarConfig) {
+                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+            }
+            this.currentSugarConfig.borderOpacity = opacity;
+            return;
+        }
+        
+        // Apply to selected sugar(s) in select mode
+        if (this.currentTool !== 'select') return;
+        
+        const sugarsToStyle = [];
+        if (this.selectedSugar) {
+            sugarsToStyle.push(this.selectedSugar);
+        }
+        if (this.selectedSugars.size > 0) {
+            sugarsToStyle.push(...Array.from(this.selectedSugars));
+        }
+        
+        sugarsToStyle.forEach(sugar => {
+            const shape = sugar.querySelector('.sugar-shape');
+            if (shape) {
+                shape.style.setProperty('stroke-opacity', opacity, 'important');
+            }
+        });
+    }
+    
+    applySugarFillOpacity() {
+        // Skip if we're updating UI controls
+        if (this.isUpdatingUI) return;
+        
+        const opacity = document.getElementById('customSugarOpacity').value;
+        
+        // Update current configuration for add mode
+        if (this.currentTool === 'add') {
+            if (!this.currentSugarConfig) {
+                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+            }
+            this.currentSugarConfig.fillOpacity = opacity;
+            return;
+        }
+        
+        // Apply to selected sugar(s) in select mode
+        if (this.currentTool !== 'select') return;
+        
+        // Get selected sugars from the unified selectedElements system
+        const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
+        
+        selectedSugars.forEach(sugar => {
+            const shape = sugar.querySelector('.sugar-shape');
+            if (shape) {
+                shape.style.setProperty('fill-opacity', opacity, 'important');
+            }
+        });
+    }
+    
     applyConnectionStyle() {
         if (this.currentTool !== 'select') return;
         
@@ -3422,6 +3872,17 @@ class GlycanDrawer {
                 default: // solid
                     conn.style.removeProperty('stroke-dasharray');
             }
+        });
+    }
+    
+    applyConnectionOpacity() {
+        if (this.currentTool !== 'select') return;
+        
+        const opacity = document.getElementById('connectionOpacity').value;
+        const connections = this.getConnectionsForSelection();
+
+        connections.forEach(conn => {
+            conn.style.setProperty('stroke-opacity', opacity, 'important');
         });
     }
     
@@ -3745,6 +4206,34 @@ class GlycanDrawer {
         });
     }
     
+    applyTextOpacity() {
+        const opacity = document.getElementById('textOpacity').value;
+        
+        // Update current configuration for text mode
+        if (this.currentTool === 'text') {
+            // Update current text config (for new text elements)
+            this.currentTextConfig.opacity = opacity;
+            return;
+        }
+        
+        // Apply to selected text elements in select mode
+        if (this.currentTool !== 'select') return;
+        
+        const selectedTextElements = [];
+        if (this.selectedText) selectedTextElements.push(this.selectedText);
+        if (this.selectedTexts.size > 0) {
+            this.selectedTexts.forEach(text => {
+                if (!selectedTextElements.includes(text)) {
+                    selectedTextElements.push(text);
+                }
+            });
+        }
+        
+        selectedTextElements.forEach(textElement => {
+            textElement.style.setProperty('fill-opacity', opacity, 'important');
+        });
+    }
+    
     // Lasso selection methods
     startLassoSelection(x, y) {
         this.isLassoDrawing = true;
@@ -3930,13 +4419,56 @@ class GlycanDrawer {
         // Initialize grid background
         this.updateGridBackground();
         
-        // Add Alt+wheel zoom functionality
-        this.workspace.addEventListener('wheel', (e) => this.handleWheelZoom(e));
+        // Add wheel event listener to track user scrolling
+        this.workspace.addEventListener('wheel', (e) => {
+            // Mark that user is scrolling for the next few milliseconds
+            clearTimeout(this.userScrollTimeout);
+            this.isUserScrolling = true;
+            this.userScrollTimeout = setTimeout(() => {
+                this.isUserScrolling = false;
+            }, 100);
+            
+            // Handle Alt+wheel zoom
+            this.handleWheelZoom(e);
+        });
         
-        // Debug: Track unexpected scroll changes
+        // Add mouse event listeners to detect scrollbar dragging and other user interactions
+        let isMouseDown = false;
+        
+        this.workspace.addEventListener('mousedown', (e) => {
+            isMouseDown = true;
+            // Any mouse interaction with workspace could lead to scrolling
+            this.isUserScrolling = true;
+            clearTimeout(this.userScrollTimeout);
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isMouseDown) {
+                isMouseDown = false;
+                // Keep the flag active for a bit longer to catch trailing scroll events
+                this.userScrollTimeout = setTimeout(() => {
+                    this.isUserScrolling = false;
+                }, 300);
+            }
+        });
+        
+        // Also detect keyboard navigation that might cause scrolling
+        this.workspace.addEventListener('keydown', (e) => {
+            const scrollKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 
+                               'PageUp', 'PageDown', 'Home', 'End'];
+            if (scrollKeys.includes(e.key)) {
+                this.isUserScrolling = true;
+                clearTimeout(this.userScrollTimeout);
+                this.userScrollTimeout = setTimeout(() => {
+                    this.isUserScrolling = false;
+                }, 200);
+            }
+        });
+        
+        // Debug: Track unexpected scroll changes (exclude user-initiated scrolling and initial load)
         this.workspace.addEventListener('scroll', (e) => {
-            if (!this.expectingScrollChange) {
-                console.log('Unexpected scroll change:', this.workspace.scrollLeft, this.workspace.scrollTop);
+            if (!this.expectingScrollChange && !this.isUserScrolling && !this.isInitialLoad) {
+                console.log('Unexpected scroll change (not user-initiated):', this.workspace.scrollLeft, this.workspace.scrollTop);
             }
         });
         
@@ -3945,6 +4477,8 @@ class GlycanDrawer {
             console.log('Before centering - scroll position:', this.workspace.scrollLeft, this.workspace.scrollTop);
             this.centerWorkspaceView();
             console.log('After centering - scroll position:', this.workspace.scrollLeft, this.workspace.scrollTop);
+            // Mark initial load as complete after centering
+            this.isInitialLoad = false;
         }, 300);
         
         console.log('Workspace initialized');
@@ -4024,13 +4558,23 @@ class GlycanDrawer {
             const actualScrollLeft = this.workspace.scrollLeft;
             const actualScrollTop = this.workspace.scrollTop;
             console.log(`Centering attempt: expected(${scrollLeft}, ${scrollTop}), actual(${actualScrollLeft}, ${actualScrollTop})`);
-            if (actualScrollLeft !== scrollLeft || actualScrollTop !== scrollTop) {
+            
+            // Only show warning if the difference is significant (more than 2px) and not during initial load
+            const leftDiff = Math.abs(actualScrollLeft - scrollLeft);
+            const topDiff = Math.abs(actualScrollTop - scrollTop);
+            
+            if ((leftDiff > 2 || topDiff > 2) && !this.isInitialLoad) {
                 console.warn('Scroll position was reset by something else!');
                 // Try again
+                this.expectingScrollChange = true;
                 this.workspace.scrollLeft = scrollLeft;
                 this.workspace.scrollTop = scrollTop;
+                setTimeout(() => this.expectingScrollChange = false, 100);
             }
-        }, 50);
+            
+            // Reset the expecting flag
+            this.expectingScrollChange = false;
+        }, 100);
         
         console.log(`Workspace centered: scrollLeft=${scrollLeft}, scrollTop=${scrollTop}`);
         console.log(`Scroll area: ${totalScrollWidth}x${totalScrollHeight}, Viewport: ${viewportWidth}x${viewportHeight}`);
