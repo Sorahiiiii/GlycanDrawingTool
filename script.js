@@ -113,11 +113,14 @@ class GlycanDrawer {
         // SNFG Presets Configuration
         this.snfgPresets = {
             'glc': { shape: 'circle', color: '#0072BC', name: 'Glucose' },
-            'gal': { shape: 'circle', color: '#ED1C24', name: 'Galactose' },
+            'gal': { shape: 'circle', color: '#FFD400', name: 'Galactose' },
             'man': { shape: 'circle', color: '#00A651', name: 'Mannose' },
-            'fuc': { shape: 'diamond', color: '#F47920', name: 'Fucose' },
-            'xyl': { shape: 'triangle', color: '#A54399', name: 'Xylose' },
-            'glcnac': { shape: 'square', color: '#0072BC', name: 'GlcNAc' }
+            'glcnac': { shape: 'square', color: '#0072BC', name: 'GlcNAc' },
+            'galnac': { shape: 'square', color: '#FFD400', name: 'GalNAc' },
+            'fuc': { shape: 'triangle', color: '#ED1C24', name: 'Fucose' },
+            'glca': { shape: 'diamond-divided-bottom', color: '#0072BC', name: 'GlcA' },
+            'sia': { shape: 'diamond', color: '#A54399', name: 'Sia' },
+            'xyl': { shape: 'star', color: '#F47920', name: 'Xyl' }
         };
         
         // 8 directional positions around a sugar (N, NE, E, SE, S, SW, W, NW)
