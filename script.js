@@ -2450,8 +2450,12 @@ class GlycanDrawer {
             this.finishBoxSelection(e.shiftKey);
         }
         
-        // Handle Ctrl+drag copy functionality
-        if (this.isDragging && this.dragWithCtrl && this.currentTool === 'select') {
+    // Handle Ctrl+drag copy functionality
+    // Temporarily disabled: creating duplicated elements during Ctrl+drag
+    // has been causing accidental duplicate creations in some workflows.
+    // To re-enable this behavior later, remove the `&& false` from
+    // the condition below (or change to a configurable flag).
+    if (this.isDragging && this.dragWithCtrl && this.currentTool === 'select' && false) {
   
             // Copy all selected elements
             const copies = [];
@@ -10171,15 +10175,54 @@ class GlycanDrawer {
                     break;
                 case 'b':
                     e.preventDefault();
-                    this.toggleTextStyle('boldBtn');
+                    // If a connection is selected, apply to its linkage text instead
+                    const selConnsB = this.getSelectedElementsByType('connection') || [];
+                    if (selConnsB.length > 0) {
+                        // Dispatch a real click so the existing linkage button handlers run
+                        const lbtn = document.getElementById('linkageTextBoldBtn');
+                        if (lbtn) {
+                            // simulate full user interaction so mousedown/mouseup handlers run
+                            lbtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                            lbtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                            lbtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                        }
+                    } else {
+                        this.toggleTextStyle('boldBtn');
+                    }
                     break;
                 case 'i':
                     e.preventDefault();
-                    this.toggleTextStyle('italicBtn');
+                    // If a connection is selected, apply to its linkage text instead
+                    const selConnsI = this.getSelectedElementsByType('connection') || [];
+                    if (selConnsI.length > 0) {
+                        // Dispatch a real click so the existing linkage button handlers run
+                        const lbtn = document.getElementById('linkageTextItalicBtn');
+                        if (lbtn) {
+                            // simulate full user interaction so mousedown/mouseup handlers run
+                            lbtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                            lbtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                            lbtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                        }
+                    } else {
+                        this.toggleTextStyle('italicBtn');
+                    }
                     break;
                 case 'u':
                     e.preventDefault();
-                    this.toggleTextStyle('underlineBtn');
+                    // If a connection is selected, apply to its linkage text instead
+                    const selConnsU = this.getSelectedElementsByType('connection') || [];
+                    if (selConnsU.length > 0) {
+                        // Dispatch a real click so the existing linkage button handlers run
+                        const lbtn = document.getElementById('linkageTextUnderlineBtn');
+                        if (lbtn) {
+                            // simulate full user interaction so mousedown/mouseup handlers run
+                            lbtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                            lbtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                            lbtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                        }
+                    } else {
+                        this.toggleTextStyle('underlineBtn');
+                    }
                     break;
                 case '=':
                     e.preventDefault();
@@ -11036,15 +11079,21 @@ class GlycanDrawer {
     }
     
     toggleSuperscript() {
-        if (this.selectedText || this.selectedTexts.size > 0) {
-            this.applyTextTransform('superscript');
-        }
+        // Temporarily disabled: superscript toggling causes inconsistent
+        // text transformations and interferes with undo/redo in some cases.
+        // The original implementation is kept in version history. To
+        // re-enable, restore the original body (call applyTextTransform)
+        // or remove this early return.
+        return;
     }
     
     toggleSubscript() {
-        if (this.selectedText || this.selectedTexts.size > 0) {
-            this.applyTextTransform('subscript');
-        }
+        // Temporarily disabled: subscript toggling causes inconsistent
+        // text transformations and interferes with undo/redo in some cases.
+        // The original implementation is kept in version history. To
+        // re-enable, restore the original body (call applyTextTransform)
+        // or remove this early return.
+        return;
     }
     
     applyTextTransform(type) {
