@@ -242,6 +242,8 @@ class GlycanDrawer {
         
         // Initialize object list for undo/redo system
         this.initializeObjectList();
+        // Preset glycan setup (load templates)
+        this.setupPresetGlycans();
     }
     
     setupToolbar() {
@@ -269,6 +271,368 @@ class GlycanDrawer {
                 this.selectPreset(preset);
             });
         });
+    }
+
+    // New: preset glycan toolbar setup
+    setupPresetGlycans() {
+        this.presetTemplates = {}; // key -> DocumentFragment of SVG
+        this.activePreset = null; // {src, name}
+
+        const toolbar = document.getElementById('presetGlycanToolbar');
+        if (!toolbar) return;
+
+        // Bind clicks on thumbnails
+        toolbar.querySelectorAll('.preset-thumb').forEach(thumb => {
+            const src = thumb.dataset.presetSrc;
+            if (src) {
+                thumb.addEventListener('click', (e) => {
+                    // Toggle selection
+                    if (thumb.classList.contains('active')) {
+                        thumb.classList.remove('active');
+                        this.exitPresetMode();
+                    } else {
+                        toolbar.querySelectorAll('.preset-thumb').forEach(t => t.classList.remove('active'));
+                        thumb.classList.add('active');
+                        this.enterPresetMode(src);
+                    }
+                });
+                // Preload template
+                this.loadPresetSVG(src).catch(err => {
+                    console.warn('Failed to load preset SVG:', src, err);
+                });
+            }
+        });
+
+        // Esc key to cancel preset mode
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.activePreset) {
+                this.exitPresetMode();
+                document.querySelectorAll('.preset-thumb').forEach(t => t.classList.remove('active'));
+            }
+        });
+    }
+
+    async loadPresetSVG(src) {
+        if (this.presetTemplates[src]) return this.presetTemplates[src];
+
+        // Check for embedded template in DOM to avoid fetch/CORS issues when opened via file://
+        try {
+            const base = src.split('/').pop().split('?')[0].replace(/\.[^.]+$/, ''); // e.g. 'test-glycan'
+            const embeddedId = `embedded-${base}`;
+            const embedded = document.getElementById(embeddedId);
+            if (embedded) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(embedded.textContent || embedded.innerHTML, 'image/svg+xml');
+                const svg = doc.querySelector('svg');
+                if (svg) {
+                    // Store the original template but return a clone to avoid mutations
+                    this.presetTemplates[src] = svg;
+                    return document.importNode(svg, true);
+                }
+            }
+        } catch (e) {
+            // fall through to fetch
+            console.warn('Embedded preset parse failed, will try fetch:', e);
+        }
+
+        // Fallback to fetch (for HTTP/HTTPS serving)
+        try {
+            const resp = await fetch(src);
+            const text = await resp.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(text, 'image/svg+xml');
+            const svg = doc.querySelector('svg');
+            if (!svg) throw new Error('No svg root found');
+            // Store original and return a clone so caller can modify without affecting cache
+            this.presetTemplates[src] = svg;
+            return document.importNode(svg, true);
+        } catch (err) {
+            console.error('Error loading preset SVG', src, err);
+            throw err;
+        }
+    }
+
+    // Compute the minimum x/y coordinates used by the template's graphical elements
+    computeTemplateOrigin(svgRoot) {
+        let minX = Infinity;
+        let minY = Infinity;
+
+        function consider(x, y) {
+            if (typeof x === 'number' && typeof y === 'number') {
+                if (x < minX) minX = x;
+                if (y < minY) minY = y;
+            }
+        }
+
+        function scan(node) {
+            if (!node || node.nodeType !== 1) return;
+            const tag = node.tagName.toLowerCase();
+            if (tag === 'circle' || tag === 'ellipse') {
+                const cx = parseFloat(node.getAttribute('cx')) || 0;
+                const cy = parseFloat(node.getAttribute('cy')) || 0;
+                const r = parseFloat(node.getAttribute('r')) || 0;
+                consider(cx - r, cy - r);
+            } else if (tag === 'rect') {
+                const x = parseFloat(node.getAttribute('x')) || 0;
+                const y = parseFloat(node.getAttribute('y')) || 0;
+                consider(x, y);
+            } else if (tag === 'line') {
+                const x1 = parseFloat(node.getAttribute('x1')) || 0;
+                const y1 = parseFloat(node.getAttribute('y1')) || 0;
+                const x2 = parseFloat(node.getAttribute('x2')) || 0;
+                const y2 = parseFloat(node.getAttribute('y2')) || 0;
+                consider(Math.min(x1, x2), Math.min(y1, y2));
+            } else if (tag === 'polygon' || tag === 'polyline') {
+                const pts = (node.getAttribute('points') || '').trim();
+                if (pts) {
+                    pts.split(/\s+/).forEach(pair => {
+                        const parts = pair.split(',');
+                        if (parts.length >= 2) consider(parseFloat(parts[0]) || 0, parseFloat(parts[1]) || 0);
+                    });
+                }
+            } else if (tag === 'g' || tag === 'svg') {
+                Array.from(node.children).forEach(child => scan(child));
+                return;
+            } else if (tag === 'use') {
+                // try to read x/y attributes
+                const x = parseFloat(node.getAttribute('x')) || 0;
+                const y = parseFloat(node.getAttribute('y')) || 0;
+                consider(x, y);
+            } else if (tag === 'path') {
+                // skip complex path parsing; assume it sits near origin if no other hints
+            }
+
+            // Also descend into children for composite nodes
+            Array.from(node.children).forEach(child => scan(child));
+        }
+
+        scan(svgRoot);
+
+        if (!isFinite(minX)) minX = 0;
+        if (!isFinite(minY)) minY = 0;
+        return { minX, minY };
+    }
+
+    // Shift basic coordinate attributes of common SVG elements by dx/dy
+    shiftElementCoordinates(node, dx, dy) {
+        if (!node || node.nodeType !== 1) return;
+        const tag = node.tagName.toLowerCase();
+        function shiftAttr(attr) {
+            if (node.hasAttribute(attr)) {
+                const v = parseFloat(node.getAttribute(attr)) || 0;
+                node.setAttribute(attr, (v - dx).toString());
+            }
+        }
+
+        if (tag === 'circle' || tag === 'ellipse') {
+            if (node.hasAttribute('cx')) node.setAttribute('cx', (parseFloat(node.getAttribute('cx') || 0) - dx).toString());
+            if (node.hasAttribute('cy')) node.setAttribute('cy', (parseFloat(node.getAttribute('cy') || 0) - dy).toString());
+        } else if (tag === 'rect') {
+            if (node.hasAttribute('x')) node.setAttribute('x', (parseFloat(node.getAttribute('x') || 0) - dx).toString());
+            if (node.hasAttribute('y')) node.setAttribute('y', (parseFloat(node.getAttribute('y') || 0) - dy).toString());
+        } else if (tag === 'line') {
+            if (node.hasAttribute('x1')) node.setAttribute('x1', (parseFloat(node.getAttribute('x1') || 0) - dx).toString());
+            if (node.hasAttribute('y1')) node.setAttribute('y1', (parseFloat(node.getAttribute('y1') || 0) - dy).toString());
+            if (node.hasAttribute('x2')) node.setAttribute('x2', (parseFloat(node.getAttribute('x2') || 0) - dx).toString());
+            if (node.hasAttribute('y2')) node.setAttribute('y2', (parseFloat(node.getAttribute('y2') || 0) - dy).toString());
+        } else if (tag === 'polygon' || tag === 'polyline') {
+            const pts = (node.getAttribute('points') || '').trim();
+            if (pts) {
+                const newPts = pts.split(/\s+/).map(pair => {
+                    const parts = pair.split(',');
+                    if (parts.length >= 2) {
+                        const nx = (parseFloat(parts[0]) || 0) - dx;
+                        const ny = (parseFloat(parts[1]) || 0) - dy;
+                        return `${nx},${ny}`;
+                    }
+                    return pair;
+                }).join(' ');
+                node.setAttribute('points', newPts);
+            }
+        } else if (tag === 'g' || tag === 'svg') {
+            // If group has transform translate, try to incorporate it (best-effort)
+            const t = node.getAttribute('transform');
+            // For now, simply recurse children
+            Array.from(node.children).forEach(child => this.shiftElementCoordinates(child, dx, dy));
+            return;
+        }
+
+        // Recurse into children
+        Array.from(node.children).forEach(child => this.shiftElementCoordinates(child, dx, dy));
+    }
+
+    // Generate a unique id based on an original id, avoiding existing ids in the document
+    generateUniqueId(origId) {
+        if (!origId) return `id-${Date.now()}-${Math.floor(Math.random()*10000)}`;
+        this._idCounter = this._idCounter || 1;
+        let candidate;
+        do {
+            candidate = `${origId}-${this._idCounter++}`;
+        } while (document.getElementById(candidate));
+        return candidate;
+    }
+
+    // Extract numeric part from sugar id like 'sugar-12' -> 12. Returns NaN if not found.
+    getSugarNumberFromId(id) {
+        if (!id || typeof id !== 'string') return NaN;
+        const m = id.match(/sugar-?(\d+)$/i);
+        if (m) return parseInt(m[1], 10);
+        return NaN;
+    }
+
+    // Compute deterministic connection id in the form 'connection-<smaller>-<larger>' based on sugar ids
+    computeConnectionId(idA, idB) {
+        const a = this.getSugarNumberFromId(idA);
+        const b = this.getSugarNumberFromId(idB);
+        if (!isNaN(a) && !isNaN(b)) {
+            const min = Math.min(a, b);
+            const max = Math.max(a, b);
+            return `connection-${min}-${max}`;
+        }
+        // Fallback: if we can't parse numbers, create a unique-ish deterministic id using the raw ids
+        const safeA = (idA || '').replace(/[^A-Za-z0-9_-]/g, '_');
+        const safeB = (idB || '').replace(/[^A-Za-z0-9_-]/g, '_');
+        return `connection-${safeA}-${safeB}`;
+    }
+
+    // Collect all nodes under a node (or array of nodes)
+    collectNodes(rootOrArray) {
+        const nodes = [];
+        const pushNode = (n) => {
+            nodes.push(n);
+            Array.from(n.children || []).forEach(c => pushNode(c));
+        };
+        if (Array.isArray(rootOrArray)) {
+            rootOrArray.forEach(r => pushNode(r));
+        } else {
+            pushNode(rootOrArray);
+        }
+        return nodes;
+    }
+
+    // Build id map for a set of nodes (oldId -> newId)
+    // Compute next available sugar id like sugar-2, sugar-3 based on existing ids in the document and any assigned in idMap
+    getNextSugarId(existingMap) {
+        let max = 0;
+        const sugarRegex = /^sugar-?(\d+)$/i;
+
+        // Check existing document ids
+        Array.from(document.querySelectorAll('[id]')).forEach(el => {
+            const id = el.getAttribute('id');
+            if (!id) return;
+            const m = id.match(sugarRegex);
+            if (m) {
+                const n = parseInt(m[1], 10) || 0;
+                if (n > max) max = n;
+            }
+        });
+
+        // Also consider ids already assigned in existingMap
+        if (existingMap) {
+            Object.values(existingMap).forEach(id => {
+                const m = ('' + id).match(sugarRegex);
+                if (m) {
+                    const n = parseInt(m[1], 10) || 0;
+                    if (n > max) max = n;
+                }
+            });
+        }
+
+        return `sugar-${max + 1}`;
+    }
+
+    buildIdMapForNodes(nodes) {
+        const idMap = {};
+        nodes.forEach(node => {
+            if (node.getAttribute && node.getAttribute('id')) {
+                const oldId = node.getAttribute('id');
+                // If the node represents a sugar (by class) or its id looks like a sugar id, allocate a sequential sugar id
+                const looksLikeSugarId = /^sugar-?\d+$/i.test(oldId);
+                const isSugarClass = node.classList && node.classList.contains && node.classList.contains('sugar');
+                if ((isSugarClass || looksLikeSugarId) && !idMap[oldId]) {
+                    idMap[oldId] = this.getNextSugarId(idMap);
+                } else if (!idMap[oldId]) {
+                    idMap[oldId] = this.generateUniqueId(oldId);
+                }
+            }
+        });
+        return idMap;
+    }
+
+    // Escape regex special characters in string
+    escapeRegExp(s) {
+        return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // Apply id map to nodes: rename ids and update references (url(#id), href, xlink:href, and plain '#id')
+    applyIdMapToNodes(nodes, idMap) {
+        if (!idMap || Object.keys(idMap).length === 0) return;
+        const oldIds = Object.keys(idMap);
+        // Pre-build regexes for replacements
+        const urlRegexes = oldIds.map(old => ({
+            old,
+            urlRe: new RegExp('url\\(#' + this.escapeRegExp(old) + '\\)', 'g'),
+            hashRe: new RegExp('(^|[^A-Za-z0-9_-])#' + this.escapeRegExp(old) + '($|[^A-Za-z0-9_-])', 'g')
+        }));
+
+        nodes.forEach(node => {
+            if (node.getAttribute && node.getAttribute('id')) {
+                const oldId = node.getAttribute('id');
+                if (idMap[oldId]) {
+                    node.setAttribute('id', idMap[oldId]);
+                }
+            }
+
+            // Update attributes that may reference ids
+            if (node.attributes) {
+                Array.from(node.attributes).forEach(attr => {
+                    let v = attr.value;
+                    if (!v || typeof v !== 'string') return;
+                    let newV = v;
+                    urlRegexes.forEach(({old, urlRe, hashRe}) => {
+                        const newId = idMap[old];
+                        if (!newId) return;
+                        // url(#old) => url(#new)
+                        newV = newV.replace(urlRe, `url(#${newId})`);
+                        // href values like '#old' or occurrences of #old bounded by non identifier chars
+                        // Replace exact '#old' first
+                        if (newV === `#${old}`) newV = `#${newId}`;
+                        // Replace any standalone occurrences of #old (best-effort)
+                        newV = newV.replace(hashRe, (m, p1, p2) => `${p1}#${newId}${p2}`);
+                    });
+
+                    if (newV !== v) {
+                        try { node.setAttribute(attr.name, newV); } catch (e) { /* ignore */ }
+                    }
+                });
+            }
+        });
+    }
+
+    enterPresetMode(src) {
+        // Save previous tool so we can restore when exiting preset mode
+        this.previousToolBeforePreset = this.currentTool;
+        // Enter a dedicated preset mode so the right panel can show the preset UI only in this mode
+        this.setTool('preset');
+        this.activePreset = { src };
+        // show hint using temporary notification helper
+        if (typeof this.showTemporaryNotification === 'function') {
+            this.showTemporaryNotification('Preset selected: click canvas to place (Esc to cancel)', 1200);
+        } else {
+            // Fallback: simple alert (shouldn't happen in normal runtime)
+            console.log('Preset selected: click canvas to place (Esc to cancel)');
+        }
+    }
+
+    exitPresetMode() {
+        this.activePreset = null;
+        // Restore previous tool if available
+        if (this.previousToolBeforePreset) {
+            this.setTool(this.previousToolBeforePreset);
+            this.previousToolBeforePreset = null;
+        } else {
+            this.setTool('select');
+        }
     }
     
     setupCustomization() {
@@ -2623,6 +2987,192 @@ class GlycanDrawer {
                 this.deleteText(clickedText);
             }
             this.finishStep();
+        } else {
+            // If preset mode active (selected from right panel), insert preset glyph
+            if (this.activePreset && this.activePreset.src) {
+                const src = this.activePreset.src;
+                // Attempt to clone the loaded SVG template and insert at click position
+                    this.startStep('Insert preset glycan');
+                    console.debug('Preset insertion requested', src, { x, y });
+                    this.loadPresetSVG(src).then((svgTemplate) => {
+                            try {
+                                // Work on a deep clone so we don't touch the original template
+                                const cloned = svgTemplate.cloneNode(true);
+
+                                // Compute origin of template graphical objects so we ignore large svg canvas origin
+                                const origin = this.computeTemplateOrigin(cloned);
+                                const ox = origin.minX;
+                                const oy = origin.minY;
+
+                                // Final placement coordinates
+                                const dx = x;
+                                const dy = y;
+
+                                // Map from original template sugar id -> newly created sugar element
+                                const sugarMap = {};
+                                const addedNodeIds = [];
+
+                                // Helper to determine sugar coordinates from a template sugar node
+                                const getTemplateSugarPosition = (node) => {
+                                    let tx = parseFloat(node.getAttribute('data-x'));
+                                    let ty = parseFloat(node.getAttribute('data-y'));
+                                    if (!isFinite(tx) || !isFinite(ty)) {
+                                        // Try common child shapes
+                                        const c = node.querySelector('circle,ellipse');
+                                        if (c) {
+                                            tx = parseFloat(c.getAttribute('cx')) || tx || 0;
+                                            ty = parseFloat(c.getAttribute('cy')) || ty || 0;
+                                        } else {
+                                            const r = node.querySelector('rect');
+                                            if (r) {
+                                                const rx = parseFloat(r.getAttribute('x')) || 0;
+                                                const ry = parseFloat(r.getAttribute('y')) || 0;
+                                                const w = parseFloat(r.getAttribute('width')) || 0;
+                                                const h = parseFloat(r.getAttribute('height')) || 0;
+                                                tx = rx + w/2;
+                                                ty = ry + h/2;
+                                            } else {
+                                                // Fallback to origin
+                                                tx = tx || ox || 0;
+                                                ty = ty || oy || 0;
+                                            }
+                                        }
+                                    }
+                                    return { tx, ty };
+                                };
+
+                                // 1) Create sugars via canonical createSugar(...) to preserve sequencing/side-effects
+                                const templateSugars = Array.from(cloned.querySelectorAll('.sugar'));
+                                templateSugars.forEach(tnode => {
+                                    const oldId = tnode.getAttribute('id');
+                                    const pos = getTemplateSugarPosition(tnode);
+                                    const newX = pos.tx - ox + dx;
+                                    const newY = pos.ty - oy + dy;
+
+                                    // Build config from template attributes (best-effort)
+                                    const sugarConfig = {
+                                        shape: tnode.getAttribute('data-shape') || tnode.getAttribute('data-shape-type') || 'circle',
+                                        color: tnode.getAttribute('data-color') || tnode.getAttribute('fill') || null,
+                                        size: parseFloat(tnode.getAttribute('data-size')) || undefined,
+                                        type: 'preset',
+                                        preset: this.activePreset?.name || null
+                                    };
+
+                                    // Create sugar using canonical path so sugarCount increments correctly
+                                    const created = this.createSugar(newX, newY, sugarConfig);
+                                    if (created && created.getAttribute) {
+                                        sugarMap[oldId || `__anon_${Math.random().toString(36).slice(2,8)}`] = created;
+                                        addedNodeIds.push(created.getAttribute('id'));
+                                    }
+                                });
+                                console.debug('Preset sugars created', Object.keys(sugarMap).map(k => ({ from: k, id: sugarMap[k] && sugarMap[k].getAttribute ? sugarMap[k].getAttribute('id') : null })), addedNodeIds.slice());
+
+                                // 2) Recreate connections via createConnection(...) so ids and undo match
+                                const templateConnections = Array.from(cloned.querySelectorAll('.connection, line[data-start][data-end]'));
+                                templateConnections.forEach(conn => {
+                                    const sOld = conn.getAttribute('data-start');
+                                    const eOld = conn.getAttribute('data-end');
+                                    if (!sOld || !eOld) return;
+                                    const startEl = sugarMap[sOld];
+                                    const endEl = sugarMap[eOld];
+                                    if (!startEl || !endEl) return; // ignore connections to external nodes
+
+                                    const linkage = conn.getAttribute('data-linkage') || conn.getAttribute('data-linkage') || null;
+                                    // createConnection expects sugar elements
+                                        try {
+                                            const createdConn = this.createConnection(startEl, endEl, false, linkage);
+                                            if (createdConn && createdConn.getAttribute) addedNodeIds.push(createdConn.getAttribute('id'));
+                                        } catch (e) {
+                                            // ignore individual connection failures
+                                        }
+                                });
+                                console.debug('Preset connections created, total ids:', addedNodeIds.filter(id => id && id.startsWith('connection-')).slice());
+
+                                // 3) Append non-sugar, non-connection nodes (decorations, texts, defs)
+                                const clones = [];
+                                const defsClones = [];
+                                Array.from(cloned.children).forEach(child => {
+                                    const tag = (child.tagName || '').toLowerCase();
+                                    // defs go to defsClones
+                                    if (tag === 'defs') {
+                                        defsClones.push(child.cloneNode(true));
+                                        return;
+                                    }
+
+                                    // Skip sugar groups (they were created via createSugar)
+                                    if (child.classList && child.classList.contains('sugar')) {
+                                        return;
+                                    }
+
+                                    // Skip connection lines: they were recreated via createConnection
+                                    if ((tag === 'line' && child.hasAttribute && child.hasAttribute('data-start') && child.hasAttribute('data-end')) ||
+                                        (child.classList && child.classList.contains('connection'))) {
+                                        return;
+                                    }
+
+                                    // Otherwise clone decorations/texts/etc.
+                                    clones.push(child.cloneNode(true));
+                                });
+
+                                // Remap ids for these clones and defs to avoid collisions
+                                const allNodes = this.collectNodes(defsClones.concat(clones));
+                                const idMap = this.buildIdMapForNodes(allNodes);
+                                this.applyIdMapToNodes(allNodes, idMap);
+
+                                // Normalize coordinates and place cloned non-sugar nodes
+                                clones.forEach(childClone => {
+                                    // Remove any connection elements that might still be present inside decorations
+                                    Array.from(childClone.querySelectorAll('.connection, line[data-start][data-end]')).forEach(n => n.remove());
+
+                                    this.shiftElementCoordinates(childClone, ox, oy);
+                                    this.shiftElementCoordinates(childClone, -dx, -dy);
+
+                                    // Append into canvas
+                                    this.canvas.appendChild(childClone);
+
+                                    try {
+                                        if (childClone.getAttribute && childClone.getAttribute('id')) {
+                                            const od = this.createObjectData(childClone);
+                                            this.recordObjectAdded(od);
+                                            addedNodeIds.push(childClone.getAttribute('id'));
+                                        }
+                                        Array.from(childClone.querySelectorAll('*')).forEach(node => {
+                                            if (node.getAttribute && node.getAttribute('id')) {
+                                                const od = this.createObjectData(node);
+                                                this.recordObjectAdded(od);
+                                                addedNodeIds.push(node.getAttribute('id'));
+                                            }
+                                        });
+                                    } catch (e) {}
+                                });
+
+                                // Append defs to canvas root (after remapping ids)
+                                defsClones.forEach(defNode => {
+                                    try { this.canvas.appendChild(defNode); } catch (e) {}
+                                });
+
+                                console.debug('Preset decorations appended', clones.length, 'defs appended', defsClones.length);
+
+                                // Record a wrapper group for logical grouping in undo
+                                try {
+                                    const wrapperId = `preset-${Date.now()}`;
+                                    this.recordObjectAdded({ id: wrapperId, type: 'preset-group', children: addedNodeIds });
+                                } catch (e) {}
+
+                                this.finishStep();
+                                console.debug('Preset insertion finished, addedNodeIds:', addedNodeIds);
+                                // Exit preset mode after placing
+                                this.exitPresetMode();
+                                document.querySelectorAll('.preset-thumb').forEach(t => t.classList.remove('active'));
+                            } catch (err) {
+                                console.error('Failed to insert preset:', err);
+                                this.finishStep();
+                            }
+                        }).catch(err => {
+                            console.error('Could not load preset svg for insertion', err);
+                            this.finishStep();
+                        });
+            }
         }
     }
     
@@ -4892,6 +5442,22 @@ class GlycanDrawer {
         // Store sugar IDs for style management
         line.setAttribute('data-start', parentSugar.getAttribute('id'));
         line.setAttribute('data-end', childSugar.getAttribute('id'));
+        // Assign deterministic connection id based on sugar numbers (connection-<min>-<max>)
+        try {
+            const startId = parentSugar.getAttribute('id');
+            const endId = childSugar.getAttribute('id');
+            let connId = this.computeConnectionId(startId, endId);
+            // Avoid collision: if id already exists, append a suffix
+            if (document.getElementById(connId)) {
+                let suffix = 1;
+                while (document.getElementById(connId + `-${suffix}`)) suffix++;
+                connId = `${connId}-${suffix}`;
+            }
+            line.setAttribute('id', connId);
+        } catch (e) {
+            // fallback to generated id
+            if (!line.getAttribute('id')) line.setAttribute('id', this.generateUniqueId('connection'));
+        }
         
         // Insert line before sugars so it appears behind them
         this.canvas.insertBefore(line, this.canvas.firstChild);
@@ -5243,27 +5809,37 @@ class GlycanDrawer {
         // Get current export area dimensions
         const exportSize = this.exportSizes[this.currentExportSize];
         const { width, height } = exportSize;
-        
-        // Calculate export area bounds in canvas coordinates
-        // Export area is centered at canvas center (2000, 1400) from CSS
+        // Calculate export area bounds in canvas coordinates (default centered area)
         const canvasCenterX = 2000;
         const canvasCenterY = 1400;
-        const minX = canvasCenterX - width / 2;
-        const minY = canvasCenterY - height / 2;
-        const maxX = canvasCenterX + width / 2;
-        const maxY = canvasCenterY + height / 2;
-        
+        const defaultMinX = canvasCenterX - width / 2;
+        const defaultMinY = canvasCenterY - height / 2;
+        const defaultMaxX = canvasCenterX + width / 2;
+        const defaultMaxY = canvasCenterY + height / 2;
+
+        // Compute tight bbox of content inside the default export area
+        const tightBBox = this.computeExportBBox(defaultMinX, defaultMinY, defaultMaxX, defaultMaxY);
+
+        // If we have content, use tight bbox; otherwise fall back to default centered area
+        const useMinX = tightBBox ? tightBBox.minX : defaultMinX;
+        const useMinY = tightBBox ? tightBBox.minY : defaultMinY;
+        const useMaxX = tightBBox ? tightBBox.maxX : defaultMaxX;
+        const useMaxY = tightBBox ? tightBBox.maxY : defaultMaxY;
+
+        const exportW = Math.ceil(useMaxX - useMinX) || width;
+        const exportH = Math.ceil(useMaxY - useMinY) || height;
+
         // Create a clean SVG for export with only elements within bounds
         const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        exportSVG.setAttribute('width', width);
-        exportSVG.setAttribute('height', height);
-        exportSVG.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        exportSVG.setAttribute('width', exportW);
+        exportSVG.setAttribute('height', exportH);
+        exportSVG.setAttribute('viewBox', `0 0 ${exportW} ${exportH}`);
         exportSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
         exportSVG.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
-        
-        // Copy only elements within export bounds
-        this.copyElementsInBounds(exportSVG, minX, minY, maxX, maxY);
-        
+
+        // Copy only elements within computed bounds and translate them to origin
+        this.copyElementsInBounds(exportSVG, useMinX, useMinY, useMaxX, useMaxY);
+
         // Get the SVG string
         const svgString = new XMLSerializer().serializeToString(exportSVG);
         
@@ -5427,6 +6003,77 @@ class GlycanDrawer {
             }
         }
     }
+
+    // Compute the union bounding box (in canvas coordinates) of all elements that would be included
+    // between the provided bounds. Returns { minX, minY, maxX, maxY } or null if nothing found.
+    computeExportBBox(minX, minY, maxX, maxY) {
+        const allElements = this.canvas.children;
+        let found = false;
+        let minUsedX = Infinity, minUsedY = Infinity, maxUsedX = -Infinity, maxUsedY = -Infinity;
+
+        for (let element of allElements) {
+            if (element.classList.contains('selection-highlight') ||
+                element.classList.contains('selection-box') ||
+                element.classList.contains('connection-preview')) {
+                continue;
+            }
+
+            if (element.classList.contains('sugar')) {
+                const x = parseFloat(element.getAttribute('data-x'));
+                const y = parseFloat(element.getAttribute('data-y'));
+                const size = parseFloat(element.getAttribute('data-size')) || this.sugarRadius;
+                if (x + size >= minX && x - size <= maxX && y + size >= minY && y - size <= maxY) {
+                    found = true;
+                    if (x - size < minUsedX) minUsedX = x - size;
+                    if (y - size < minUsedY) minUsedY = y - size;
+                    if (x + size > maxUsedX) maxUsedX = x + size;
+                    if (y + size > maxUsedY) maxUsedY = y + size;
+                }
+            } else if (element.classList.contains('text-element')) {
+                const x = parseFloat(element.getAttribute('data-x'));
+                const y = parseFloat(element.getAttribute('data-y'));
+                if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                    found = true;
+                    if (x < minUsedX) minUsedX = x;
+                    if (y < minUsedY) minUsedY = y;
+                    if (x > maxUsedX) maxUsedX = x;
+                    if (y > maxUsedY) maxUsedY = y;
+                }
+            } else if (element.classList.contains('connection')) {
+                const x1 = parseFloat(element.getAttribute('x1'));
+                const y1 = parseFloat(element.getAttribute('y1'));
+                const x2 = parseFloat(element.getAttribute('x2'));
+                const y2 = parseFloat(element.getAttribute('y2'));
+                if ((x1 >= minX && x1 <= maxX && y1 >= minY && y1 <= maxY) ||
+                    (x2 >= minX && x2 <= maxX && y2 >= minY && y2 <= maxY)) {
+                    found = true;
+                    const lineMinX = Math.min(x1, x2);
+                    const lineMinY = Math.min(y1, y2);
+                    const lineMaxX = Math.max(x1, x2);
+                    const lineMaxY = Math.max(y1, y2);
+                    if (lineMinX < minUsedX) minUsedX = lineMinX;
+                    if (lineMinY < minUsedY) minUsedY = lineMinY;
+                    if (lineMaxX > maxUsedX) maxUsedX = lineMaxX;
+                    if (lineMaxY > maxUsedY) maxUsedY = lineMaxY;
+                }
+            } else if (element.tagName && element.tagName.toLowerCase() === 'text' && element.classList.contains('linkage-label')) {
+                const x = parseFloat(element.getAttribute('x'));
+                const y = parseFloat(element.getAttribute('y'));
+                if (!isNaN(x) && !isNaN(y)) {
+                    if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                        found = true;
+                        if (x < minUsedX) minUsedX = x;
+                        if (y < minUsedY) minUsedY = y;
+                        if (x > maxUsedX) maxUsedX = x;
+                        if (y > maxUsedY) maxUsedY = y;
+                    }
+                }
+            }
+        }
+
+        if (!found) return null;
+        return { minX: minUsedX, minY: minUsedY, maxX: maxUsedX, maxY: maxUsedY };
+    }
     
     addInlineStyles(svgString) {
         // Add basic styles inline for better compatibility with external programs
@@ -5487,33 +6134,42 @@ class GlycanDrawer {
         const exportSize = this.exportSizes[this.currentExportSize];
         const { width, height } = exportSize;
         
-        // Calculate export area bounds in canvas coordinates
-        const canvasCenterX = 2000;
-        const canvasCenterY = 1400;
-        const minX = canvasCenterX - width / 2;
-        const minY = canvasCenterY - height / 2;
-        const maxX = canvasCenterX + width / 2;
-        const maxY = canvasCenterY + height / 2;
-        
-        const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        exportSVG.setAttribute('width', width);
-        exportSVG.setAttribute('height', height);
-        exportSVG.setAttribute('viewBox', `0 0 ${width} ${height}`);
-        exportSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-        
-        // Copy only elements within export bounds
-        this.copyElementsInBounds(exportSVG, minX, minY, maxX, maxY);
-        
-        const svgString = new XMLSerializer().serializeToString(exportSVG);
-        const styledSVG = this.addInlineStyles(svgString);
-        
-        // Create canvas element
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        // Use export area dimensions instead of main canvas dimensions
-        const svgWidth = width;
-        const svgHeight = height;
+    // Calculate export area bounds in canvas coordinates (default centered area)
+    const canvasCenterX = 2000;
+    const canvasCenterY = 1400;
+    const defaultMinX = canvasCenterX - width / 2;
+    const defaultMinY = canvasCenterY - height / 2;
+    const defaultMaxX = canvasCenterX + width / 2;
+    const defaultMaxY = canvasCenterY + height / 2;
+
+    const tightBBox = this.computeExportBBox(defaultMinX, defaultMinY, defaultMaxX, defaultMaxY);
+    const useMinX = tightBBox ? tightBBox.minX : defaultMinX;
+    const useMinY = tightBBox ? tightBBox.minY : defaultMinY;
+    const useMaxX = tightBBox ? tightBBox.maxX : defaultMaxX;
+    const useMaxY = tightBBox ? tightBBox.maxY : defaultMaxY;
+
+    const exportW = Math.ceil(useMaxX - useMinX) || width;
+    const exportH = Math.ceil(useMaxY - useMinY) || height;
+
+    const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    exportSVG.setAttribute('width', exportW);
+    exportSVG.setAttribute('height', exportH);
+    exportSVG.setAttribute('viewBox', `0 0 ${exportW} ${exportH}`);
+    exportSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+    // Copy only elements within computed bounds
+    this.copyElementsInBounds(exportSVG, useMinX, useMinY, useMaxX, useMaxY);
+
+    const svgString = new XMLSerializer().serializeToString(exportSVG);
+    const styledSVG = this.addInlineStyles(svgString);
+
+    // Create canvas element
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Use export area dimensions (tight bbox) instead of main canvas dimensions
+    const svgWidth = exportW;
+    const svgHeight = exportH;
         
         // Set canvas size with higher resolution for better quality
         const scale = 2;
@@ -5525,10 +6181,9 @@ class GlycanDrawer {
         
         const img = new Image();
         img.onload = () => {
-            // Clear canvas with white background
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, svgWidth, svgHeight);
-            
+            // Clear canvas (keep transparent background for PNG)
+            ctx.clearRect(0, 0, svgWidth, svgHeight);
+
             // Draw the SVG image at the correct size
             ctx.drawImage(img, 0, 0, svgWidth, svgHeight);
             
@@ -5555,48 +6210,57 @@ class GlycanDrawer {
         const exportSize = this.exportSizes[this.currentExportSize];
         const { width, height } = exportSize;
         
-        // Calculate export area bounds in canvas coordinates
+        // Calculate export area bounds in canvas coordinates (default centered area)
         const canvasCenterX = 2000;
         const canvasCenterY = 1400;
-        const minX = canvasCenterX - width / 2;
-        const minY = canvasCenterY - height / 2;
-        const maxX = canvasCenterX + width / 2;
-        const maxY = canvasCenterY + height / 2;
-        
+        const defaultMinX = canvasCenterX - width / 2;
+        const defaultMinY = canvasCenterY - height / 2;
+        const defaultMaxX = canvasCenterX + width / 2;
+        const defaultMaxY = canvasCenterY + height / 2;
+
+        const tightBBox = this.computeExportBBox(defaultMinX, defaultMinY, defaultMaxX, defaultMaxY);
+        const useMinX = tightBBox ? tightBBox.minX : defaultMinX;
+        const useMinY = tightBBox ? tightBBox.minY : defaultMinY;
+        const useMaxX = tightBBox ? tightBBox.maxX : defaultMaxX;
+        const useMaxY = tightBBox ? tightBBox.maxY : defaultMaxY;
+
+        const exportW = Math.ceil(useMaxX - useMinX) || width;
+        const exportH = Math.ceil(useMaxY - useMinY) || height;
+
         const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        exportSVG.setAttribute('width', width);
-        exportSVG.setAttribute('height', height);
-        exportSVG.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        exportSVG.setAttribute('width', exportW);
+        exportSVG.setAttribute('height', exportH);
+        exportSVG.setAttribute('viewBox', `0 0 ${exportW} ${exportH}`);
         exportSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-        
-        // Copy only elements within export bounds
-        this.copyElementsInBounds(exportSVG, minX, minY, maxX, maxY);
-        
+
+        // Copy only elements within computed bounds
+        this.copyElementsInBounds(exportSVG, useMinX, useMinY, useMaxX, useMaxY);
+
         const svgString = new XMLSerializer().serializeToString(exportSVG);
         const styledSVG = this.addInlineStyles(svgString);
-        
+
         // Create canvas element
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        
-        // Use export area dimensions
-        const svgWidth = width;
-        const svgHeight = height;
-        
+
+        // Use export area dimensions (tight bbox)
+        const svgWidth = exportW;
+        const svgHeight = exportH;
+
         // Set canvas size with higher resolution for better quality
         const scale = 2;
         canvas.width = svgWidth * scale;
         canvas.height = svgHeight * scale;
-        
+
         // Scale context for high resolution and set white background
         ctx.scale(scale, scale);
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, svgWidth, svgHeight);
-        
+
         const img = new Image();
         img.onload = () => {
             ctx.drawImage(img, 0, 0);
-            
+
             // Convert to JPG and download
             canvas.toBlob((blob) => {
                 const url = URL.createObjectURL(blob);
@@ -5609,7 +6273,7 @@ class GlycanDrawer {
                 URL.revokeObjectURL(url);
             }, 'image/jpeg', 0.9);
         };
-        
+
         const svgBlob = new Blob([styledSVG], { type: 'image/svg+xml;charset=utf-8' });
         const svgUrl = URL.createObjectURL(svgBlob);
         img.src = svgUrl;
@@ -6031,8 +6695,20 @@ class GlycanDrawer {
             console.log('updateRightPanel: Calling updateLinkageControlValues');
             this.updateLinkageControlValues();
         }
-        if (!showSugarControls && !showTextControls && !showLinkageControls && emptyControlsSection) {
+        // Only show the empty state when no other control sections should be visible
+        // and we are NOT in preset mode (preset has its own UI)
+        const isPresetMode = this.currentTool === 'preset';
+        if (!showSugarControls && !showTextControls && !showLinkageControls && !isPresetMode && emptyControlsSection) {
             emptyControlsSection.style.display = 'block';
+        }
+        // Preset glycan section: only visible in dedicated 'preset' mode
+        const presetGlycanSection = document.getElementById('presetGlycanSection');
+        if (presetGlycanSection) {
+            if (this.currentTool === 'preset') {
+                presetGlycanSection.style.display = 'block';
+            } else {
+                presetGlycanSection.style.display = 'none';
+            }
         }
         
         // Update connection status
