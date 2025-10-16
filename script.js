@@ -16,7 +16,7 @@ class GlycanDrawer {
         this.currentSugarConfig = {
             type: 'custom',
             shape: 'circle',
-            color: '#3498db',
+            color: '#0072bc',
             size: 20,
             borderWidth: 2,
             borderColor: '#333333',
