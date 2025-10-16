@@ -670,6 +670,28 @@
                             <span id="linkageTextSizeAddValue">12</span>
                         </div>
                         <div class="control-group">
+                            <label for="linkageTextFontFamilyAdd">标注字体:</label>
+                            <select id="linkageTextFontFamilyAdd">
+                                <option value="Arial">Arial</option>
+                                <option value="Times New Roman">Times New Roman</option>
+                                <option value="Helvetica">Helvetica</option>
+                                <option value="Georgia">Georgia</option>
+                                <option value="Verdana">Verdana</option>
+                                <option value="SimSun">宋体</option>
+                                <option value="SimHei">黑体</option>
+                                <option value="KaiTi">楷体</option>
+                            </select>
+                        </div>
+
+                        <div class="control-group">
+                            <label>标注样式:</label>
+                            <div class="linkage-text-style-buttons">
+                                <button class="linkage-text-style-btn-add" id="linkageTextBoldBtnAdd" data-style="bold" title="粗体"><strong>B</strong></button>
+                                <button class="linkage-text-style-btn-add" id="linkageTextItalicBtnAdd" data-style="italic" title="斜体"><em>I</em></button>
+                                <button class="linkage-text-style-btn-add" id="linkageTextUnderlineBtnAdd" data-style="underline" title="下划线"><u>U</u></button>
+                            </div>
+                        </div>
+                        <div class="control-group">
                             <label>标注颜色:</label>
                             <div class="color-grid-compact">
                                 <button class="color-btn-compact active" data-target="linkageTextColorAdd" data-color="#000000" style="background-color: #000000;" title="黑色"></button>
@@ -685,6 +707,12 @@
                                 <input type="color" id="linkageTextColorAdd" value="#000000">
                                 <input type="text" id="linkageTextColorAddHex" value="#000000" maxlength="7" placeholder="#000000">
                             </div>
+                        </div>
+                        
+                        <div class="control-group">
+                            <label for="linkageTextOpacityAdd">标注透明度:</label>
+                            <input type="range" id="linkageTextOpacityAdd" min="0" max="1" value="1" step="0.1">
+                            <span id="linkageTextOpacityAddValue">100%</span>
                         </div>
                     </div>
                 </div>
@@ -821,6 +849,33 @@
                             <span id="linkageTextSizeValue">12</span>
                         </div>
                         <div class="control-group">
+                            <label for="linkageTextFontFamily">标注字体:</label>
+                            <select id="linkageTextFontFamily">
+                                <option value="Arial">Arial</option>
+                                <option value="Times New Roman">Times New Roman</option>
+                                <option value="Helvetica">Helvetica</option>
+                                <option value="Georgia">Georgia</option>
+                                <option value="Verdana">Verdana</option>
+                                <option value="SimSun">宋体</option>
+                                <option value="SimHei">黑体</option>
+                                <option value="KaiTi">楷体</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>标注样式:</label>
+                            <div class="linkage-text-style-buttons">
+                                <button class="linkage-text-style-btn" id="linkageTextBoldBtn" data-style="bold" title="粗体">
+                                    <strong>B</strong>
+                                </button>
+                                <button class="linkage-text-style-btn" id="linkageTextItalicBtn" data-style="italic" title="斜体">
+                                    <em>I</em>
+                                </button>
+                                <button class="linkage-text-style-btn" id="linkageTextUnderlineBtn" data-style="underline" title="下划线">
+                                    <u>U</u>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="control-group">
                             <label>标注颜色:</label>
                             <div class="color-grid-compact">
                                 <button class="color-btn-compact active" data-target="linkageTextColor" data-color="#000000" style="background-color: #000000;" title="黑色"></button>
@@ -836,6 +891,11 @@
                                 <input type="color" id="linkageTextColor" value="#000000">
                                 <input type="text" id="linkageTextColorHex" value="#000000" maxlength="7" placeholder="#000000">
                             </div>
+                        </div>
+                        <div class="control-group">
+                            <label for="linkageTextOpacity">标注透明度:</label>
+                            <input type="range" id="linkageTextOpacity" min="0" max="1" value="1" step="0.1">
+                            <span id="linkageTextOpacityValue">100%</span>
                         </div>
                     </div>
                 </div>

@@ -18,7 +18,7 @@ body {
     left: 0;
     width: 100vw;
     height: 100vh;
-    background-color: rgba(245, 245, 245, 0.98);
+    background-color: #F5F5F5FA;  /* rgba(245, 245, 245, 0.98) */
     display: flex;
     justify-content: center;
     align-items: center;
@@ -175,8 +175,8 @@ h1 {
 }
 
 .size-btn.active {
-    border-color: #18d1ff;
-    background-color: #18d1ff;
+    border-color: #3498db;
+    background-color: #3498db;
     color: white;
 }
 
@@ -281,7 +281,7 @@ h1 {
     left: 0;
     background-color: white;
     min-width: 200px;
-    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+    box-shadow: 0px 8px 16px 0px #00000033;  /* rgba(0,0,0,0.2) */
     border: 1px solid #ddd;
     border-radius: 4px;
     z-index: 1000;
@@ -890,6 +890,7 @@ h1 {
     gap: 8px;
     align-items: center;
     margin-top: 8px;
+    margin-bottom: 8px;
 }
 
 .custom-color-section input[type="color"] {
@@ -973,7 +974,7 @@ h1 {
 
 /* Sliders and Values */
 .control-group input[type="range"] {
-    width: 100%;
+    /* width: 100%; */
     margin-bottom: 4px;
 }
 
@@ -1097,6 +1098,53 @@ input[type="text"] {
     justify-content: center;
     font-size: 14px;
     padding: 0;
+}
+
+/* Linkage text style buttons */
+.linkage-text-style-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+.linkage-text-style-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.linkage-text-style-btn:hover {
+    border-color: #3498db;
+    background-color: #f8f9fa;
+}
+
+.linkage-text-style-btn.active {
+    border-color: #3498db;
+    background-color: #3498db;
+    color: white;
+}
+
+.linkage-text-style-btn.mixed {
+    border-color: #f39c12;
+    background-color: #f39c12;
+    color: white;
+    position: relative;
+}
+
+.linkage-text-style-btn.mixed::after {
+    content: '?';
+    position: absolute;
+    font-size: 10px;
+    top: 2px;
+    right: 2px;
 }
 
 /* Mixed state for color inputs - using subtle gray styling */
@@ -1454,6 +1502,211 @@ span.mixed {
     grid-template-columns: repeat(3, 1fr);
     gap: 5px;
     margin-top: 5px;
+}
+
+.linkage-text-style-btn-add {
+    background: #f0f0f0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-right: 4px;
+    transition: all 0.2s ease;
+    color: #333;
+}
+.linkage-text-style-btn-add.active {
+    background: #18d1ff;
+    color: white;
+    border-color: #18d1ff;
+}
+
+#linkageTextFontFamily {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 13px;
+    background: white;
+}
+
+#linkageTextFontFamilyAdd {
+    width: 100%;
+    padding: 4px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    font-size: 13px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+#customSugarOpacity {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#customSugarOpacityValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#sugarSize {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#sugarSizeValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#sugarBorderWidth {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#sugarBorderWidthValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#sugarBorderOpacity {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#sugarBorderOpacityValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#connectionWidthAdd {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#connectionWidthAddValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#connectionOpacityAdd {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#connectionOpacityAddValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#connectionStrokeWidth {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#connectionStrokeWidthValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#linkageOpacity {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#linkageOpacityValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#linkageTextSize {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#linkageTextSizeValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#linkageTextOpacity {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#linkageTextOpacityValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#linkageTextSizeAdd {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#linkageTextSizeAddValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#linkageTextOpacityAdd {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#linkageTextOpacityAddValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#fontSize {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#fontSizeValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#textOpacity {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#textOpacityValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
 }
 
 .linkage-btn {
