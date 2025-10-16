@@ -484,6 +484,148 @@ h1 {
     margin-bottom: 10px;
 }
 
+/* Shape Selector Grid */
+.shape-selector-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 8px;
+}
+
+/* Shape Category Container */
+.shape-category {
+    position: relative;
+    display: flex;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    background-color: white;
+    height: auto;
+    aspect-ratio: 4/3;
+}
+
+/* Main Shape Button */
+.shape-main-btn {
+    flex: 3;
+    height: 100%;
+    border: none;
+    background-color: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    color: #000;
+    font-size: 16px;
+    border-radius: 4px 0 0 4px;
+}
+
+.shape-main-btn .shape-icon {
+    font-size: 18px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.shape-main-btn .shape-icon svg {
+    display: block;
+    margin: 0 auto;
+}
+
+/* Dropdown Button */
+.shape-dropdown-btn {
+    flex: 1;
+    height: 100%;
+    border: none;
+    border-left: 2px solid #ddd;
+    background-color: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    color: #000;
+    border-radius: 0 4px 4px 0;
+}
+
+.shape-dropdown-btn .dropdown-arrow {
+    font-size: 10px;
+    line-height: 1;
+}
+
+/* Hover States */
+.shape-category:hover {
+    background-color: rgba(52, 152, 219, 0.1);
+}
+
+.shape-main-btn:hover,
+.shape-dropdown-btn:hover {
+    background-color: rgba(52, 152, 219, 0.1);
+}
+
+/* Active States */
+.shape-category.active {
+    background-color: rgba(52, 152, 219, 0.2);
+    border-color: #3498db;
+    border-width: 2px;
+}
+
+.shape-main-btn.active {
+    background-color: rgba(52, 152, 219, 0.2);
+}
+
+/* Dropdown Menu */
+.shape-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background-color: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    display: none;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.shape-dropdown-menu.show {
+    display: block;
+}
+
+/* Dropdown Item */
+.shape-dropdown-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    color: #000;
+    font-size: 16px;
+    border-bottom: 1px solid #eee;
+}
+
+.shape-dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.shape-dropdown-item svg {
+    display: block;
+    margin: 0 auto;
+}
+
+.shape-dropdown-item:hover {
+    background-color: rgba(52, 152, 219, 0.1);
+}
+
+.shape-dropdown-item.active {
+    background-color: rgba(52, 152, 219, 0.2);
+    border-left: 3px solid #3498db;
+}
+
+/* Legacy shape-btn class for backward compatibility */
 .shape-btn {
     width: 40px;
     height: 40px;
@@ -997,9 +1139,10 @@ span.mixed {
 
 /* Box Selection */
 .selection-box {
-    fill: rgba(0, 123, 255, 0.15);
-    stroke: #007bff;
-    stroke-width: 2;
+    fill: rgba(52, 152, 219, 0.1);
+    stroke: #3498db;
+    stroke-width: 1;
+    stroke-dasharray: 3,3;
     pointer-events: none;
 }
 
@@ -1014,12 +1157,11 @@ span.mixed {
 /* HTML Overlay Selection Box (can extend beyond export area) */
 .selection-box-overlay {
     position: absolute;
-    background-color: rgba(0, 123, 255, 0.15);
-    border: 2px solid #007bff;
+    background-color: rgba(52, 152, 219, 0.1);
+    border: 1px dashed #3498db;
     pointer-events: none;
     z-index: 1000; /* Above all other elements */
     box-sizing: border-box;
-    border-radius: 2px;
 }
 
 .box-selection-preview {

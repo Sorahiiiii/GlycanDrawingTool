@@ -603,7 +603,10 @@ class GlycanDrawer {
             }
         });
         
-        // Shape selection buttons
+        // New Shape Selector System
+        this.initializeShapeSelector();
+        
+        // Legacy shape selection buttons (for backward compatibility)
         const shapeButtons = document.querySelectorAll('.shape-btn');
         shapeButtons.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1579,10 +1582,27 @@ class GlycanDrawer {
         
         switch (shape) {
             case 'circle':
+            case 'circle-filled':
                 element = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
                 element.setAttribute('cx', x);
                 element.setAttribute('cy', y);
                 element.setAttribute('r', actualSize);
+                break;
+                
+            case 'circle-flat':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+                element.setAttribute('cx', x);
+                element.setAttribute('cy', y);
+                element.setAttribute('rx', actualSize * 1.4); // 宽度较大
+                element.setAttribute('ry', actualSize * 0.7); // 高度较小
+                break;
+                
+            case 'circle-narrow':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+                element.setAttribute('cx', x);
+                element.setAttribute('cy', y);
+                element.setAttribute('rx', actualSize * 0.7); // 宽度较小
+                element.setAttribute('ry', actualSize * 1.4); // 高度较大
                 break;
                 
             case 'square':
@@ -1606,9 +1626,40 @@ class GlycanDrawer {
                 break;
                 
             case 'star':
+            case 'star-5':
                 element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-                const starPoints = this.generateStarPoints(x, y, actualSize, 5);
+                const starPoints = this.generateStarPoints(x, y, actualSize, 5, 0);
                 element.setAttribute('points', starPoints);
+                break;
+                
+            case 'star-5-inverted':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                const starInvertedPoints = this.generateStarPoints(x, y, actualSize, 5, Math.PI);
+                element.setAttribute('points', starInvertedPoints);
+                break;
+                
+            case 'star-4':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                const star4Points = this.generateStarPoints(x, y, actualSize, 4, 0);
+                element.setAttribute('points', star4Points);
+                break;
+                
+            case 'star-4-tilted':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                const star4TiltedPoints = this.generateStarPoints(x, y, actualSize, 4, Math.PI/4);
+                element.setAttribute('points', star4TiltedPoints);
+                break;
+                
+            case 'star-6':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                const star6Points = this.generateStarPoints(x, y, actualSize, 6, 0);
+                element.setAttribute('points', star6Points);
+                break;
+                
+            case 'star-6-tilted':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                const star6TiltedPoints = this.generateStarPoints(x, y, actualSize, 6, Math.PI/6);
+                element.setAttribute('points', star6TiltedPoints);
                 break;
                 
             case 'hexagon':
@@ -1658,13 +1709,13 @@ class GlycanDrawer {
         return points.join(' ');
     }
     
-    generateStarPoints(centerX, centerY, radius, points) {
+    generateStarPoints(centerX, centerY, radius, points, rotation = 0) {
         const outerRadius = radius;
         const innerRadius = radius * 0.4;
         const pointsArray = [];
         
         for (let i = 0; i < points * 2; i++) {
-            const angle = (Math.PI * i / points) - Math.PI / 2;
+            const angle = (Math.PI * i / points) - Math.PI / 2 + rotation;
             const r = i % 2 === 0 ? outerRadius : innerRadius;
             const x = centerX + r * Math.cos(angle);
             const y = centerY + r * Math.sin(angle);
@@ -1938,30 +1989,12 @@ class GlycanDrawer {
         // 获取所有选中元素的糖数据
         const sugarDataList = selectedElements
             .filter(element => element && element.classList && element.classList.contains('sugar'))
-            .map(element => {
-                const shape = element.getAttribute('data-shape');
-                const preset = element.getAttribute('data-preset');
-                const size = parseFloat(element.getAttribute('data-size')) || 20;
-                
-                // 获取实际当前颜色（从糖形状元素的fill属性）
-                const shapeElement = element.querySelector('.sugar-shape');
-                let currentColor = element.getAttribute('data-color'); // 默认使用初始颜色
-                
-                if (shapeElement) {
-                    // 优先使用style.fill，其次使用fill属性
-                    const fillColor = shapeElement.style.fill || shapeElement.getAttribute('fill');
-                    if (fillColor && fillColor !== 'none') {
-                        currentColor = this.normalizeColorToHex(fillColor);
-                    }
-                }
-                
-                return {
-                    shape: shape,
-                    color: currentColor,
-                    preset: preset,
-                    size: size
-                };
-            })
+            .map(element => ({
+                shape: element.getAttribute('data-shape'),
+                color: element.getAttribute('data-color'),
+                preset: element.getAttribute('data-preset'),
+                size: parseFloat(element.getAttribute('data-size')) || 20
+            }))
             .filter(data => data.shape && data.color);
             
         if (sugarDataList.length === 0) {
@@ -2001,12 +2034,17 @@ class GlycanDrawer {
             customColorPicker.value = sugarData.color;
         }
         
-        // 更新形状按钮
+        // 更新形状按钮 - 兼容新旧系统
         document.querySelectorAll('.shape-btn').forEach(btn => {
             if (btn.dataset.shape === sugarData.shape) {
                 btn.classList.add('active');
             }
         });
+        
+        // 更新新的形状选择器
+        if (this.updateShapeSelectorFromSelection) {
+            this.updateShapeSelectorFromSelection([sugarData.shape]);
+        }
         
         // 更新颜色按钮 - 只有在默认调色板中的颜色才显示选中
         document.querySelectorAll('.color-btn').forEach(btn => {
@@ -2079,6 +2117,11 @@ class GlycanDrawer {
             });
         }
         
+        // 更新新的形状选择器
+        if (this.updateShapeSelectorFromSelection) {
+            this.updateShapeSelectorFromSelection(shapes);
+        }
+        
         // 更新颜色按钮 - 只有当所有选中元素颜色相同且在默认调色板中时才显示选中
         if (colors.length === 1 && defaultColors.includes(colors[0])) {
             document.querySelectorAll('.color-btn').forEach(btn => {
@@ -2135,6 +2178,10 @@ class GlycanDrawer {
         document.querySelectorAll('.shape-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.snfg-btn, .preset-item').forEach(btn => btn.classList.remove('active'));
+        
+        // 清除新形状选择器的选择状态
+        document.querySelectorAll('.shape-category').forEach(cat => cat.classList.remove('active'));
+        document.querySelectorAll('.shape-main-btn').forEach(btn => btn.classList.remove('active'));
         
         const sizeDisplay = document.getElementById('sugarSizeDisplay');
         if (sizeDisplay) sizeDisplay.textContent = '20';
@@ -4224,6 +4271,299 @@ class GlycanDrawer {
         connections.forEach(conn => {
             conn.style.setProperty('stroke-opacity', opacity, 'important');
         });
+    }
+    
+    // Initialize the new shape selector system
+    initializeShapeSelector() {
+        // Shape categories configuration
+        this.shapeCategories = {
+            circle: {
+                name: '圆形',
+                shapes: [
+                    { id: 'circle-filled', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="6.75" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '正圆形' },
+                    { id: 'circle-flat', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><ellipse cx="9" cy="9" rx="9.45" ry="4.725" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '扁椭圆形' },
+                    { id: 'circle-narrow', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><ellipse cx="9" cy="9" rx="4.725" ry="9.45" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '窄椭圆形' }
+                ]
+            },
+            square: {
+                name: '方形',
+                shapes: [
+                    { id: 'square', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><rect x="2.7" y="2.7" width="12.6" height="12.6" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '方形' },
+                    { id: 'square-filled', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><rect x="2.7" y="2.7" width="12.6" height="12.6" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '实心方形' },
+                    { id: 'square-rounded', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><rect x="2.7" y="2.7" width="12.6" height="12.6" rx="2" ry="2" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '圆角方形' },
+                    { id: 'square-double', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><rect x="2.7" y="2.7" width="12.6" height="12.6" fill="none" stroke="#888888" stroke-width="2"/></svg>', name: '双线方形' }
+                ]
+            },
+            diamond: {
+                name: '菱形',
+                shapes: [
+                    { id: 'diamond', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,2.7 15.3,9 9,15.3 2.7,9" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '菱形' },
+                    { id: 'diamond-filled', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,2.7 15.3,9 9,15.3 2.7,9" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '实心菱形' },
+                    { id: 'diamond-outline', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,2.7 15.3,9 9,15.3 2.7,9" fill="none" stroke="#888888" stroke-width="1"/></svg>', name: '空心菱形' },
+                    { id: 'diamond-small', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,4.5 13.5,9 9,13.5 4.5,9" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '小菱形' }
+                ]
+            },
+            triangle: {
+                name: '三角形',
+                shapes: [
+                    { id: 'triangle', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,2.7 14.4558,12.15 3.5442,12.15" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '三角形' },
+                    { id: 'triangle-filled', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,2.7 14.4558,12.15 3.5442,12.15" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '实心三角形' },
+                    { id: 'triangle-outline', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,2.7 14.4558,12.15 3.5442,12.15" fill="none" stroke="#888888" stroke-width="1"/></svg>', name: '空心三角形' },
+                    { id: 'triangle-down', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="3.5442,5.85 14.4558,5.85 9,15.3" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '倒三角形' }
+                ]
+            },
+            star: {
+                name: '星形',
+                shapes: [
+                    { id: 'star-5', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.8 10.5,7.0 14.9,7.1 11.4,9.8 12.6,14.0 9.0,11.5 5.4,14.0 6.6,9.8 3.1,7.1 7.5,7.0" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '正五角星' },
+                    { id: 'star-5-inverted', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,15.2 7.5,11.0 3.1,10.9 6.6,8.2 5.4,4.0 9.0,6.5 12.6,4.0 11.4,8.2 14.9,10.9 10.5,11.0" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '倒立五角星' },
+                    { id: 'star-4', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.8 10.8,7.2 15.2,9.0 10.8,10.8 9.0,15.2 7.2,10.8 2.8,9.0 7.2,7.2" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '正四角星' },
+                    { id: 'star-4-tilted', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="13.4,4.6 11.5,9.0 13.4,13.4 9.0,11.5 4.6,13.4 6.5,9.0 4.6,4.6 9.0,6.5" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '斜四角星' },
+                    { id: 'star-6', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.8 10.2,6.9 14.4,5.9 11.5,9.0 14.4,12.1 10.2,11.1 9.0,15.2 7.8,11.1 3.6,12.1 6.5,9.0 3.6,5.9 7.8,6.9" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '正六角星' },
+                    { id: 'star-6-tilted', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="12.1,3.6 11.1,7.8 15.2,9.0 11.1,10.2 12.1,14.4 9.0,11.5 5.9,14.4 6.9,10.2 2.8,9.0 6.9,7.8 5.9,3.6 9.0,6.5" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '斜六角星' }
+                ]
+            },
+            pentagon: {
+                name: '正五边形',
+                shapes: [
+                    { id: 'pentagon', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 15.0,7.1 12.7,14.1 5.3,14.1 3.0,7.1" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '正五边形' },
+                    { id: 'pentagon-filled', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 15.0,7.1 12.7,14.1 5.3,14.1 3.0,7.1" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '实心五边形' },
+                    { id: 'pentagon-outline', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 15.0,7.1 12.7,14.1 5.3,14.1 3.0,7.1" fill="none" stroke="#888888" stroke-width="1"/></svg>', name: '空心五边形' },
+                    { id: 'pentagon-double', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 15.0,7.1 12.7,14.1 5.3,14.1 3.0,7.1" fill="none" stroke="#888888" stroke-width="2"/></svg>', name: '双线五边形' }
+                ]
+            },
+            hexagon: {
+                name: '正六边形',
+                shapes: [
+                    { id: 'hexagon', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 14.5,5.8 14.5,12.1 9.0,15.3 3.5,12.2 3.5,5.8" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '正六边形' },
+                    { id: 'hexagon-filled', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 14.5,5.8 14.5,12.1 9.0,15.3 3.5,12.2 3.5,5.8" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '实心六边形' },
+                    { id: 'hexagon-outline', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 14.5,5.8 14.5,12.1 9.0,15.3 3.5,12.2 3.5,5.8" fill="none" stroke="#888888" stroke-width="1"/></svg>', name: '空心六边形' },
+                    { id: 'hexagon-bold', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 14.5,5.8 14.5,12.1 9.0,15.3 3.5,12.2 3.5,5.8" fill="none" stroke="#888888" stroke-width="2"/></svg>', name: '粗边六边形' }
+                ]
+            },
+            check: {
+                name: '对勾形状',
+                shapes: [
+                    { id: 'check', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><path d="M3 9l4 4 8-8" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round"/></svg>', name: '对勾' },
+                    { id: 'check-bold', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><path d="M3 9l4 4 8-8" fill="none" stroke="#888888" stroke-width="3" stroke-linecap="round"/></svg>', name: '粗对勾' },
+                    { id: 'check-box', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><rect x="2" y="2" width="14" height="14" fill="none" stroke="#888888" stroke-width="1"/><path d="M5 9l3 3 5-5" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round"/></svg>', name: '方框对勾' },
+                    { id: 'check-circle', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="none" stroke="#888888" stroke-width="1"/><path d="M5 9l3 3 5-5" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round"/></svg>', name: '圆圈对勾' }
+                ]
+            },
+            wave: {
+                name: '波浪线',
+                shapes: [
+                    { id: 'wave', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 9 Q5 6 8 9 T14 9" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round"/></svg>', name: '波浪线' },
+                    { id: 'wave-double', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 7 Q5 4 8 7 T14 7" fill="none" stroke="#888888" stroke-width="1.5" stroke-linecap="round"/><path d="M2 11 Q5 8 8 11 T14 11" fill="none" stroke="#888888" stroke-width="1.5" stroke-linecap="round"/></svg>', name: '双波浪线' },
+                    { id: 'wave-sine', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><path d="M1 9 Q4.5 4 9 9 Q13.5 14 17 9" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round"/></svg>', name: '正弦波' },
+                    { id: 'wave-zigzag', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 12 L6 6 L10 12 L14 6" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round"/></svg>', name: '锯齿波' }
+                ]
+            }
+        };
+
+        // Current selected shapes for each category (default to first shape)
+        this.selectedShapes = {};
+        Object.keys(this.shapeCategories).forEach(category => {
+            this.selectedShapes[category] = this.shapeCategories[category].shapes[0].id;
+        });
+
+        // Initialize event listeners
+        this.setupShapeSelectorEventListeners();
+    }
+
+    setupShapeSelectorEventListeners() {
+        // Main shape button clicks
+        document.querySelectorAll('.shape-main-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.selectShape(btn.dataset.shape);
+            });
+        });
+
+        // Dropdown button clicks
+        document.querySelectorAll('.shape-dropdown-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleDropdown(btn.dataset.category);
+            });
+        });
+
+        // Dropdown item clicks
+        document.querySelectorAll('.shape-dropdown-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.selectShapeFromDropdown(item.dataset.shape);
+            });
+        });
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.shape-category')) {
+                this.closeAllDropdowns();
+            }
+        });
+    }
+
+    selectShape(shape) {
+        // Update visual state
+        this.updateShapeSelection(shape);
+        
+        // Clear SNFG preset selection (manual override)
+        this.clearPresetSelection();
+        
+        // Update configuration for add mode or apply to selected sugars
+        if (this.currentTool === 'add') {
+            if (!this.currentSugarConfig) {
+                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+            }
+            this.currentSugarConfig.shape = shape;
+            this.currentSugarConfig.type = 'custom';
+            this.currentSugarConfig.preset = null;
+        } else if (this.currentTool === 'select') {
+            this.applySugarShape(shape);
+        }
+    }
+
+    selectShapeFromDropdown(shape) {
+        // Find which category this shape belongs to
+        let category = null;
+        for (const [cat, config] of Object.entries(this.shapeCategories)) {
+            if (config.shapes.some(s => s.id === shape)) {
+                category = cat;
+                break;
+            }
+        }
+
+        if (category) {
+            // Update the selected shape for this category
+            this.selectedShapes[category] = shape;
+            
+            // Update the main button icon
+            const categoryElement = document.querySelector(`.shape-category[data-category="${category}"]`);
+            const mainBtn = categoryElement?.querySelector('.shape-main-btn');
+            if (mainBtn) {
+                const shapeConfig = this.shapeCategories[category].shapes.find(s => s.id === shape);
+                if (shapeConfig) {
+                    mainBtn.querySelector('.shape-icon').innerHTML = shapeConfig.icon;
+                    mainBtn.dataset.shape = shape;
+                }
+            }
+
+            // Update dropdown item active states
+            const dropdown = document.querySelector(`.shape-dropdown-menu[data-category="${category}"]`);
+            if (dropdown) {
+                dropdown.querySelectorAll('.shape-dropdown-item').forEach(item => {
+                    item.classList.toggle('active', item.dataset.shape === shape);
+                });
+            }
+        }
+
+        // Close dropdown
+        this.closeAllDropdowns();
+        
+        // Select the shape
+        this.selectShape(shape);
+    }
+
+    updateShapeSelection(shape) {
+        // Find the category for this shape
+        let targetCategory = null;
+        for (const [category, config] of Object.entries(this.shapeCategories)) {
+            if (config.shapes.some(s => s.id === shape)) {
+                targetCategory = category;
+                break;
+            }
+        }
+
+        // Clear all active states
+        document.querySelectorAll('.shape-category').forEach(cat => {
+            cat.classList.remove('active');
+        });
+        document.querySelectorAll('.shape-main-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+
+        // Set active state for the target category
+        if (targetCategory) {
+            const categoryElement = document.querySelector(`.shape-category[data-category="${targetCategory}"]`);
+            const mainBtn = categoryElement?.querySelector('.shape-main-btn');
+            
+            if (categoryElement && mainBtn) {
+                categoryElement.classList.add('active');
+                mainBtn.classList.add('active');
+            }
+        }
+    }
+
+    toggleDropdown(category) {
+        // Close other dropdowns first
+        document.querySelectorAll('.shape-dropdown-menu').forEach(menu => {
+            if (menu.dataset.category !== category) {
+                menu.classList.remove('show');
+            }
+        });
+
+        // Toggle the target dropdown
+        const dropdown = document.querySelector(`.shape-dropdown-menu[data-category="${category}"]`);
+        if (dropdown) {
+            dropdown.classList.toggle('show');
+        }
+    }
+
+    closeAllDropdowns() {
+        document.querySelectorAll('.shape-dropdown-menu').forEach(menu => {
+            menu.classList.remove('show');
+        });
+    }
+
+    // Get the base category for a shape (for selection mode compatibility)
+    getShapeCategory(shape) {
+        for (const [category, config] of Object.entries(this.shapeCategories)) {
+            if (config.shapes.some(s => s.id === shape)) {
+                return category;
+            }
+        }
+        return null;
+    }
+
+    // Update shape selector based on selected elements (for selection mode)
+    updateShapeSelectorFromSelection(shapes) {
+        // Clear all active states first
+        document.querySelectorAll('.shape-category').forEach(cat => {
+            cat.classList.remove('active');
+        });
+        document.querySelectorAll('.shape-main-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+
+        // If all selected elements have the same base category, highlight it
+        if (shapes.length === 1) {
+            const category = this.getShapeCategory(shapes[0]);
+            if (category) {
+                const categoryElement = document.querySelector(`.shape-category[data-category="${category}"]`);
+                const mainBtn = categoryElement?.querySelector('.shape-main-btn');
+                
+                if (categoryElement && mainBtn) {
+                    categoryElement.classList.add('active');
+                    mainBtn.classList.add('active');
+                }
+            }
+        } else if (shapes.length > 1) {
+            // Check if all shapes belong to the same category
+            const categories = shapes.map(shape => this.getShapeCategory(shape));
+            const uniqueCategories = [...new Set(categories)];
+            
+            if (uniqueCategories.length === 1 && uniqueCategories[0]) {
+                const category = uniqueCategories[0];
+                const categoryElement = document.querySelector(`.shape-category[data-category="${category}"]`);
+                const mainBtn = categoryElement?.querySelector('.shape-main-btn');
+                
+                if (categoryElement && mainBtn) {
+                    categoryElement.classList.add('active');
+                    mainBtn.classList.add('active');
+                }
+            }
+        }
     }
     
     applySugarShape(shape) {

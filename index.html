@@ -160,22 +160,332 @@
                         <!-- Shape Selection -->
                         <div class="control-group">
                             <label>形状:</label>
-                            <div class="shape-grid" id="shapeGrid">
+                            <div class="shape-selector-grid" id="shapeSelectorGrid">
                                 <!-- Row 1 -->
-                                <button class="shape-btn active" data-shape="circle" title="圆形">●</button>
-                                <button class="shape-btn" data-shape="square" title="方形">■</button>
-                                <button class="shape-btn" data-shape="triangle" title="三角形">▲</button>
-                                <button class="shape-btn" data-shape="diamond" title="菱形">♦</button>
+                                <div class="shape-category" data-category="circle">
+                                    <button class="shape-main-btn active" data-shape="circle-filled" title="圆形">
+                                        <span class="shape-icon">
+                                            <svg width="18" height="18" viewBox="0 0 18 18">
+                                                <circle cx="9" cy="9" r="6.75" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </span>
+                                    </button>
+                                    <button class="shape-dropdown-btn" data-category="circle">
+                                        <span class="dropdown-arrow">▼</span>
+                                    </button>
+                                    <div class="shape-dropdown-menu" data-category="circle">
+                                        <div class="shape-dropdown-item active" data-shape="circle-filled" title="正圆形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <circle cx="8" cy="8" r="6" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="circle-flat" title="扁椭圆形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <ellipse cx="8" cy="8" rx="8.4" ry="4.2" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="circle-narrow" title="窄椭圆形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <ellipse cx="8" cy="8" rx="4.2" ry="8.4" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="shape-category" data-category="square">
+                                    <button class="shape-main-btn" data-shape="square" title="方形">
+                                        <span class="shape-icon">
+                                            <svg width="18" height="18" viewBox="0 0 18 18">
+                                                <rect x="2.7" y="2.7" width="12.6" height="12.6" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </span>
+                                    </button>
+                                    <button class="shape-dropdown-btn" data-category="square">
+                                        <span class="dropdown-arrow">▼</span>
+                                    </button>
+                                    <div class="shape-dropdown-menu" data-category="square">
+                                        <div class="shape-dropdown-item active" data-shape="square" title="方形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <rect x="2.4" y="2.4" width="11.2" height="11.2" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="square-filled" title="实心方形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <rect x="2.4" y="2.4" width="11.2" height="11.2" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="square-rounded" title="圆角方形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <rect x="2.4" y="2.4" width="11.2" height="11.2" rx="1.8" ry="1.8" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="square-double" title="双线方形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <rect x="2.4" y="2.4" width="11.2" height="11.2" fill="none" stroke="#888888" stroke-width="2"/>
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="shape-category" data-category="diamond">
+                                    <button class="shape-main-btn" data-shape="diamond" title="菱形">
+                                        <span class="shape-icon">
+                                            <svg width="18" height="18" viewBox="0 0 18 18">
+                                                <polygon points="9,2.7 15.3,9 9,15.3 2.7,9" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </span>
+                                    </button>
+                                    <button class="shape-dropdown-btn" data-category="diamond">
+                                        <span class="dropdown-arrow">▼</span>
+                                    </button>
+                                    <div class="shape-dropdown-menu" data-category="diamond">
+                                        <div class="shape-dropdown-item active" data-shape="diamond" title="菱形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8,2.4 13.6,8 8,13.6 2.4,8" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="diamond-filled" title="实心菱形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8,2.4 13.6,8 8,13.6 2.4,8" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="diamond-outline" title="空心菱形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8,2.4 13.6,8 8,13.6 2.4,8" fill="none" stroke="#888888" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="diamond-small" title="小菱形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8,4 12,8 8,12 4,8" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                
                                 <!-- Row 2 -->
-                                <button class="shape-btn" data-shape="star" title="星形">★</button>
-                                <button class="shape-btn disabled" data-shape="" title="预留位置"></button>
-                                <button class="shape-btn disabled" data-shape="" title="预留位置"></button>
-                                <button class="shape-btn disabled" data-shape="" title="预留位置"></button>
+                                <div class="shape-category" data-category="triangle">
+                                    <button class="shape-main-btn" data-shape="triangle" title="三角形">
+                                        <span class="shape-icon">
+                                            <svg width="18" height="18" viewBox="0 0 18 18">
+                                                <polygon points="9,2.7 14.4558,12.15 3.5442,12.15" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </span>
+                                    </button>
+                                    <button class="shape-dropdown-btn" data-category="triangle">
+                                        <span class="dropdown-arrow">▼</span>
+                                    </button>
+                                    <div class="shape-dropdown-menu" data-category="triangle">
+                                        <div class="shape-dropdown-item active" data-shape="triangle" title="三角形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8,2.4 12.849,10.8 3.151,10.8" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="triangle-filled" title="实心三角形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8,2.4 12.849,10.8 3.151,10.8" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="triangle-outline" title="空心三角形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8,2.4 12.849,10.8 3.151,10.8" fill="none" stroke="#888888" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="triangle-down" title="倒三角形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="3.151,5.2 12.849,5.2 8,13.6" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="shape-category" data-category="star">
+                                    <button class="shape-main-btn" data-shape="star-5" title="星形">
+                                        <span class="shape-icon">
+                                            <svg width="18" height="18" viewBox="0 0 18 18">
+                                                <polygon points="9.0,2.8 10.5,7.0 14.9,7.1 11.4,9.8 12.6,14.0 9.0,11.5 5.4,14.0 6.6,9.8 3.1,7.1 7.5,7.0" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </span>
+                                    </button>
+                                    <button class="shape-dropdown-btn" data-category="star">
+                                        <span class="dropdown-arrow">▼</span>
+                                    </button>
+                                    <div class="shape-dropdown-menu" data-category="star">
+                                        <div class="shape-dropdown-item active" data-shape="star-5" title="正五角星">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8.0,2.5 9.3,6.2 13.2,6.3 10.1,8.7 11.2,12.4 8.0,10.2 4.8,12.4 5.9,8.7 2.8,6.3 6.7,6.2" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="star-5-inverted" title="倒立五角星">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8.0,13.5 6.7,9.8 2.8,9.7 5.9,7.3 4.8,3.6 8.0,5.8 11.2,3.6 10.1,7.3 13.2,9.7 9.3,9.8" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="star-4" title="正四角星">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8.0,2.5 9.6,6.4 13.5,8.0 9.6,9.6 8.0,13.5 6.4,9.6 2.5,8.0 6.4,6.4" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="star-4-tilted" title="斜四角星">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="11.9,4.1 10.2,8.0 11.9,11.9 8.0,10.2 4.1,11.9 5.8,8.0 4.1,4.1 8.0,5.8" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="star-6" title="正六角星">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8.0,2.5 9.1,6.1 12.8,5.2 10.2,8.0 12.8,10.8 9.1,9.9 8.0,13.5 6.9,9.9 3.2,10.8 5.8,8.0 3.2,5.3 6.9,6.1" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="star-6-tilted" title="斜六角星">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="10.8,3.2 9.9,6.9 13.5,8.0 9.9,9.1 10.8,12.8 8.0,10.2 5.3,12.8 6.1,9.1 2.5,8.0 6.1,6.9 5.2,3.2 8.0,5.8" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="shape-category" data-category="pentagon">
+                                    <button class="shape-main-btn" data-shape="pentagon" title="正五边形">
+                                        <span class="shape-icon">
+                                            <svg width="18" height="18" viewBox="0 0 18 18">
+                                                <polygon points="9.0,2.7 15.0,7.1 12.7,14.1 5.3,14.1 3.0,7.1" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </span>
+                                    </button>
+                                    <button class="shape-dropdown-btn" data-category="pentagon">
+                                        <span class="dropdown-arrow">▼</span>
+                                    </button>
+                                    <div class="shape-dropdown-menu" data-category="pentagon">
+                                        <div class="shape-dropdown-item active" data-shape="pentagon" title="正五边形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8.0,2.4 13.3,6.3 11.3,12.5 4.7,12.5 2.7,6.3" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="pentagon-filled" title="实心五边形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8.0,2.4 13.3,6.3 11.3,12.5 4.7,12.5 2.7,6.3" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="pentagon-outline" title="空心五边形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8.0,2.4 13.3,6.3 11.3,12.5 4.7,12.5 2.7,6.3" fill="none" stroke="#888888" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="pentagon-double" title="双线五边形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8.0,2.4 13.3,6.3 11.3,12.5 4.7,12.5 2.7,6.3" fill="none" stroke="#888888" stroke-width="2"/>
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                
                                 <!-- Row 3 -->
-                                <button class="shape-btn disabled" data-shape="" title="预留位置"></button>
-                                <button class="shape-btn disabled" data-shape="" title="预留位置"></button>
-                                <button class="shape-btn disabled" data-shape="" title="预留位置"></button>
-                                <button class="shape-btn disabled" data-shape="" title="预留位置"></button>
+                                <div class="shape-category" data-category="hexagon">
+                                    <button class="shape-main-btn" data-shape="hexagon" title="正六边形">
+                                        <span class="shape-icon">
+                                            <svg width="18" height="18" viewBox="0 0 18 18">
+                                                <polygon points="9.0,2.7 14.5,5.8 14.5,12.1 9.0,15.3 3.5,12.2 3.5,5.8" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </span>
+                                    </button>
+                                    <button class="shape-dropdown-btn" data-category="hexagon">
+                                        <span class="dropdown-arrow">▼</span>
+                                    </button>
+                                    <div class="shape-dropdown-menu" data-category="hexagon">
+                                        <div class="shape-dropdown-item active" data-shape="hexagon" title="正六边形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8.0,2.4 12.8,5.2 12.8,10.8 8.0,13.6 3.2,10.8 3.2,5.2" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="hexagon-filled" title="实心六边形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8.0,2.4 12.8,5.2 12.8,10.8 8.0,13.6 3.2,10.8 3.2,5.2" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="hexagon-outline" title="空心六边形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8.0,2.4 12.8,5.2 12.8,10.8 8.0,13.6 3.2,10.8 3.2,5.2" fill="none" stroke="#888888" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="hexagon-bold" title="粗边六边形">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <polygon points="8.0,2.4 12.8,5.2 12.8,10.8 8.0,13.6 3.2,10.8 3.2,5.2" fill="none" stroke="#888888" stroke-width="2"/>
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="shape-category" data-category="check">
+                                    <button class="shape-main-btn" data-shape="check" title="对勾形状">
+                                        <span class="shape-icon">
+                                            <svg width="18" height="18" viewBox="0 0 18 18">
+                                                <path d="M3 9l4 4 8-8" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round"/>
+                                            </svg>
+                                        </span>
+                                    </button>
+                                    <button class="shape-dropdown-btn" data-category="check">
+                                        <span class="dropdown-arrow">▼</span>
+                                    </button>
+                                    <div class="shape-dropdown-menu" data-category="check">
+                                        <div class="shape-dropdown-item active" data-shape="check" title="对勾">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <path d="M2.5 8l3.5 3.5 7-7" fill="none" stroke="#888888" stroke-width="1.5" stroke-linecap="round"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="check-bold" title="粗对勾">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <path d="M2.5 8l3.5 3.5 7-7" fill="none" stroke="#888888" stroke-width="2.5" stroke-linecap="round"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="check-box" title="方框对勾">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <rect x="1.5" y="1.5" width="13" height="13" fill="none" stroke="#888888" stroke-width="1"/>
+                                                <path d="M4 8l2.5 2.5 5-5" fill="none" stroke="#888888" stroke-width="1.5" stroke-linecap="round"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="check-circle" title="圆圈对勾">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <circle cx="8" cy="8" r="6.5" fill="none" stroke="#888888" stroke-width="1"/>
+                                                <path d="M4 8l2.5 2.5 5-5" fill="none" stroke="#888888" stroke-width="1.5" stroke-linecap="round"/>
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="shape-category" data-category="wave">
+                                    <button class="shape-main-btn" data-shape="wave" title="波浪线">
+                                        <span class="shape-icon">
+                                            <svg width="18" height="18" viewBox="0 0 18 18">
+                                                <path d="M2 9 Q5 6 8 9 T14 9" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round"/>
+                                            </svg>
+                                        </span>
+                                    </button>
+                                    <button class="shape-dropdown-btn" data-category="wave">
+                                        <span class="dropdown-arrow">▼</span>
+                                    </button>
+                                    <div class="shape-dropdown-menu" data-category="wave">
+                                        <div class="shape-dropdown-item active" data-shape="wave" title="波浪线">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <path d="M1.5 8 Q4 5.5 7 8 T12.5 8" fill="none" stroke="#888888" stroke-width="1.5" stroke-linecap="round"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="wave-double" title="双波浪线">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <path d="M1.5 6 Q4 3.5 7 6 T12.5 6" fill="none" stroke="#888888" stroke-width="1.2" stroke-linecap="round"/>
+                                                <path d="M1.5 10 Q4 7.5 7 10 T12.5 10" fill="none" stroke="#888888" stroke-width="1.2" stroke-linecap="round"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="wave-sine" title="正弦波">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <path d="M1 8 Q4 3.5 8 8 Q12 12.5 15 8" fill="none" stroke="#888888" stroke-width="1.5" stroke-linecap="round"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="wave-zigzag" title="锯齿波">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <path d="M1.5 11 L5 5 L8.5 11 L12 5" fill="none" stroke="#888888" stroke-width="1.5" stroke-linecap="round"/>
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         
