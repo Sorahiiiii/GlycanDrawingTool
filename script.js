@@ -88,6 +88,20 @@ class GlycanDrawer {
             connections: []
         };
         
+        // Workspace properties
+        this.workspace = null;
+        this.exportArea = null;
+        this.zoomLevel = 1;
+
+        this.minZoom = 0.1;
+        this.maxZoom = 5;
+        this.exportSizes = {
+            small: { width: 800, height: 600 },
+            medium: { width: 1000, height: 700 },
+            large: { width: 1200, height: 800 }
+        };
+        this.currentExportSize = 'medium';
+        
         // SNFG Presets Configuration
         this.snfgPresets = {
             'glc': { shape: 'circle', color: '#3498db', name: 'Glucose' },
@@ -151,14 +165,20 @@ class GlycanDrawer {
             });
         });
         
-        // Add canvas size control listener
-        const canvasSizeSelect = document.getElementById('canvasSizeSelect');
-        if (canvasSizeSelect) {
-            canvasSizeSelect.addEventListener('change', (e) => this.changeCanvasSize(e.target.value));
+        // Add canvas size control listeners
+        const sizeButtons = document.querySelectorAll('.size-btn');
+        sizeButtons.forEach(btn => {
+            btn.addEventListener('click', () => this.setExportAreaSize(btn.dataset.size));
+        });
+        
+        // Add center button listener
+        const centerBtn = document.getElementById('centerCanvas');
+        if (centerBtn) {
+            centerBtn.addEventListener('click', () => this.centerWorkspace());
         }
         
-        // Set default tool
-        this.setTool('add');
+        // Set default tool to select
+        this.setTool('select');
         
         // Initialize style panels (should be hidden by default)
         this.updateStylePanel();
@@ -168,6 +188,9 @@ class GlycanDrawer {
         
         // Initialize undo/redo button states
         this.updateUndoRedoButtons();
+        
+        // Initialize workspace
+        this.initializeWorkspace();
     }
     
     setupToolbar() {
@@ -614,10 +637,19 @@ class GlycanDrawer {
     
     // Helper method to get SVG coordinates
     getSVGCoordinates(e) {
-        const rect = this.canvas.getBoundingClientRect();
+        // Use SVG's native transformation which should handle all transforms
+        const pt = this.canvas.createSVGPoint();
+        pt.x = e.clientX;
+        pt.y = e.clientY;
+
+        // getScreenCTM() accounts for all transformations including CSS transforms
+        const svgPt = pt.matrixTransform(this.canvas.getScreenCTM().inverse());
+
+
+
         return {
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top
+            x: svgPt.x,
+            y: svgPt.y
         };
     }
     
@@ -736,6 +768,18 @@ class GlycanDrawer {
                 // Calculate movement delta from initial drag position
                 let deltaX = x - this.dragStartX;  
                 let deltaY = y - this.dragStartY;
+                
+                if (this.debugCoordinates) {
+                    console.log('Drag delta:', {
+                        currentX: x,
+                        currentY: y,
+                        dragStartX: this.dragStartX,
+                        dragStartY: this.dragStartY,
+                        deltaX: deltaX,
+                        deltaY: deltaY,
+                        zoomLevel: this.zoomLevel
+                    });
+                }
                 
                 // Apply Shift constraint for axis-aligned movement
                 if (this.dragWithShift) {
@@ -1889,15 +1933,23 @@ class GlycanDrawer {
     }
     
     downloadSVG() {
-        // Clone the SVG to avoid modifying the original
-        const svgClone = this.canvas.cloneNode(true);
+        // Get current export area dimensions
+        const exportSize = this.exportSizes[this.currentExportSize];
+        const { width, height } = exportSize;
         
-        // Add XML namespace and other necessary attributes
-        svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-        svgClone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+        // Create a clean SVG for export with only elements within bounds
+        const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        exportSVG.setAttribute('width', width);
+        exportSVG.setAttribute('height', height);
+        exportSVG.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        exportSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        exportSVG.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+        
+        // Copy only elements within export bounds
+        this.copyElementsInBounds(exportSVG, 0, 0, width, height);
         
         // Get the SVG string
-        const svgString = new XMLSerializer().serializeToString(svgClone);
+        const svgString = new XMLSerializer().serializeToString(exportSVG);
         
         // Add CSS styles inline for better compatibility
         const styledSVG = this.addInlineStyles(svgString);
@@ -1914,6 +1966,56 @@ class GlycanDrawer {
         document.body.removeChild(link);
         
         URL.revokeObjectURL(url);
+    }
+    
+    // Copy only elements that are within the export bounds
+    copyElementsInBounds(targetSVG, minX, minY, maxX, maxY) {
+        const allElements = this.canvas.children;
+        
+        for (let element of allElements) {
+            // Skip temporary UI elements
+            if (element.classList.contains('selection-highlight') || 
+                element.classList.contains('selection-box') ||
+                element.classList.contains('connection-preview')) {
+                continue;
+            }
+            
+            let shouldInclude = false;
+            
+            if (element.classList.contains('sugar')) {
+                const x = parseFloat(element.getAttribute('data-x'));
+                const y = parseFloat(element.getAttribute('data-y'));
+                const size = parseFloat(element.getAttribute('data-size')) || this.sugarRadius;
+                
+                // Include if sugar is at least partially within bounds
+                if (x + size >= minX && x - size <= maxX && y + size >= minY && y - size <= maxY) {
+                    shouldInclude = true;
+                }
+            } else if (element.classList.contains('text-element')) {
+                const x = parseFloat(element.getAttribute('data-x'));
+                const y = parseFloat(element.getAttribute('data-y'));
+                
+                // Include if text position is within bounds
+                if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                    shouldInclude = true;
+                }
+            } else if (element.classList.contains('connection')) {
+                // Include connections if either endpoint is within bounds
+                const x1 = parseFloat(element.getAttribute('x1'));
+                const y1 = parseFloat(element.getAttribute('y1'));
+                const x2 = parseFloat(element.getAttribute('x2'));
+                const y2 = parseFloat(element.getAttribute('y2'));
+                
+                if ((x1 >= minX && x1 <= maxX && y1 >= minY && y1 <= maxY) ||
+                    (x2 >= minX && x2 <= maxX && y2 >= minY && y2 <= maxY)) {
+                    shouldInclude = true;
+                }
+            }
+            
+            if (shouldInclude) {
+                targetSVG.appendChild(element.cloneNode(true));
+            }
+        }
     }
     
     addInlineStyles(svgString) {
@@ -1957,10 +2059,20 @@ class GlycanDrawer {
     }
     
     exportAsPNG() {
-        const svgClone = this.canvas.cloneNode(true);
-        svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        // Create export SVG with only export area content
+        const exportSize = this.exportSizes[this.currentExportSize];
+        const { width, height } = exportSize;
         
-        const svgString = new XMLSerializer().serializeToString(svgClone);
+        const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        exportSVG.setAttribute('width', width);
+        exportSVG.setAttribute('height', height);
+        exportSVG.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        exportSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        
+        // Copy only elements within export bounds
+        this.copyElementsInBounds(exportSVG, 0, 0, width, height);
+        
+        const svgString = new XMLSerializer().serializeToString(exportSVG);
         const styledSVG = this.addInlineStyles(svgString);
         
         // Create canvas element
@@ -2003,10 +2115,20 @@ class GlycanDrawer {
     }
     
     exportAsJPG() {
-        const svgClone = this.canvas.cloneNode(true);
-        svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        // Create export SVG with only export area content
+        const exportSize = this.exportSizes[this.currentExportSize];
+        const { width, height } = exportSize;
         
-        const svgString = new XMLSerializer().serializeToString(svgClone);
+        const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        exportSVG.setAttribute('width', width);
+        exportSVG.setAttribute('height', height);
+        exportSVG.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        exportSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        
+        // Copy only elements within export bounds
+        this.copyElementsInBounds(exportSVG, 0, 0, width, height);
+        
+        const svgString = new XMLSerializer().serializeToString(exportSVG);
         const styledSVG = this.addInlineStyles(svgString);
         
         // Create canvas element
@@ -2085,20 +2207,44 @@ class GlycanDrawer {
         this.textCount = 0;
     }
     
+    // Helper method to convert SVG coordinates to screen coordinates
+    svgToScreenCoordinates(svgX, svgY) {
+        const pt = this.canvas.createSVGPoint();
+        pt.x = svgX;
+        pt.y = svgY;
+        
+        // Transform SVG coordinates to screen coordinates
+        const screenPt = pt.matrixTransform(this.canvas.getScreenCTM());
+        
+        return {
+            x: screenPt.x,
+            y: screenPt.y
+        };
+    }
+    
     // Box selection methods
     startBoxSelection(x, y) {
         this.isBoxSelecting = true;
         this.boxSelectionStart = { x, y };
         
-        // Create selection box element
-        this.selectionBox = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        this.selectionBox.classList.add('selection-box');
-        this.selectionBox.setAttribute('x', x);
-        this.selectionBox.setAttribute('y', y);
-        this.selectionBox.setAttribute('width', 0);
-        this.selectionBox.setAttribute('height', 0);
+        // Create selection box as HTML overlay instead of SVG element
+        this.selectionBox = document.createElement('div');
+        this.selectionBox.classList.add('selection-box-overlay');
         
-        this.canvas.appendChild(this.selectionBox);
+        // Convert SVG coordinates to screen coordinates, then to workspace coordinates
+        const screenCoords = this.svgToScreenCoordinates(x, y);
+        const workspaceRect = document.getElementById('workspace').getBoundingClientRect();
+        
+        const workspaceX = screenCoords.x - workspaceRect.left;
+        const workspaceY = screenCoords.y - workspaceRect.top;
+        
+        this.selectionBox.style.left = workspaceX + 'px';
+        this.selectionBox.style.top = workspaceY + 'px';
+        this.selectionBox.style.width = '0px';
+        this.selectionBox.style.height = '0px';
+        
+        // Add to workspace instead of canvas
+        document.getElementById('workspace').appendChild(this.selectionBox);
         
         // Add global event listeners for box selection outside canvas
         this.globalBoxSelectionMouseMove = (e) => this.handleGlobalBoxSelectionMove(e);
@@ -2114,28 +2260,27 @@ class GlycanDrawer {
         const startX = this.boxSelectionStart.x;
         const startY = this.boxSelectionStart.y;
         
-        // Get canvas dimensions for boundary limiting
-        const canvasRect = this.canvas.getBoundingClientRect();
-        const canvasWidth = canvasRect.width;
-        const canvasHeight = canvasRect.height;
-        
-        // Calculate rectangle bounds (unclamped for selection logic)
+        // Calculate rectangle bounds in SVG coordinates
         const selectionX = Math.min(startX, currentX);
         const selectionY = Math.min(startY, currentY);
         const selectionWidth = Math.abs(currentX - startX);
         const selectionHeight = Math.abs(currentY - startY);
         
-        // Clamp the visual box to canvas boundaries
-        const clampedX = Math.max(0, Math.min(selectionX, canvasWidth));
-        const clampedY = Math.max(0, Math.min(selectionY, canvasHeight));
-        const clampedWidth = Math.max(0, Math.min(selectionWidth, canvasWidth - clampedX));
-        const clampedHeight = Math.max(0, Math.min(selectionHeight, canvasHeight - clampedY));
+        // Convert SVG coordinates to workspace coordinates for the HTML overlay
+        const startScreenCoords = this.svgToScreenCoordinates(selectionX, selectionY);
+        const endScreenCoords = this.svgToScreenCoordinates(selectionX + selectionWidth, selectionY + selectionHeight);
+        const workspaceRect = document.getElementById('workspace').getBoundingClientRect();
+
+        const workspaceX = startScreenCoords.x - workspaceRect.left;
+        const workspaceY = startScreenCoords.y - workspaceRect.top;
+        const workspaceWidth = endScreenCoords.x - startScreenCoords.x;
+        const workspaceHeight = endScreenCoords.y - startScreenCoords.y;
         
-        // Update visual selection box (clamped to canvas)
-        this.selectionBox.setAttribute('x', clampedX);
-        this.selectionBox.setAttribute('y', clampedY);
-        this.selectionBox.setAttribute('width', clampedWidth);
-        this.selectionBox.setAttribute('height', clampedHeight);
+        // Update visual selection box (HTML overlay can extend across full workspace)
+        this.selectionBox.style.left = workspaceX + 'px';
+        this.selectionBox.style.top = workspaceY + 'px';
+        this.selectionBox.style.width = workspaceWidth + 'px';
+        this.selectionBox.style.height = workspaceHeight + 'px';
         
         // Store unclamped bounds for selection logic
         this.currentSelectionBounds = {
@@ -2152,12 +2297,10 @@ class GlycanDrawer {
     handleGlobalBoxSelectionMove(e) {
         if (!this.isBoxSelecting) return;
         
-        // Convert global coordinates to canvas-relative coordinates
-        const canvasRect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - canvasRect.left;
-        const y = e.clientY - canvasRect.top;
+        // Convert global coordinates to SVG coordinates
+        const coords = this.getSVGCoordinates(e);
         
-        this.updateBoxSelection(x, y);
+        this.updateBoxSelection(coords.x, coords.y);
         e.preventDefault();
     }
     
@@ -2176,10 +2319,10 @@ class GlycanDrawer {
     handleGlobalDragMove(e) {
         if (!this.isDragging || this.currentTool !== 'select') return;
         
-        // Convert global coordinates to canvas-relative coordinates
-        const canvasRect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - canvasRect.left;
-        const y = e.clientY - canvasRect.top;
+        // Convert global coordinates to SVG coordinates
+        const coords = this.getSVGCoordinates(e);
+        const x = coords.x;
+        const y = coords.y;
         
         // Use the existing drag logic from handleMouseMove
         if (this.isDraggingMultiple && this.selectedElements.size > 0) {
@@ -2270,7 +2413,8 @@ class GlycanDrawer {
     
     clearSelectionBox() {
         if (this.selectionBox) {
-            this.canvas.removeChild(this.selectionBox);
+            // Remove HTML overlay from workspace
+            document.getElementById('workspace').removeChild(this.selectionBox);
             this.selectionBox = null;
         }
         this.currentSelectionBounds = null; // Clear stored bounds
@@ -2329,7 +2473,8 @@ class GlycanDrawer {
         this.clearBoxSelectionPreviews();
         this.hoveredElements.clear();
         if (this.selectionBox) {
-            this.canvas.removeChild(this.selectionBox);
+            // Remove HTML overlay from workspace
+            document.getElementById('workspace').removeChild(this.selectionBox);
             this.selectionBox = null;
         }
         this.currentSelectionBounds = null; // Clear stored bounds
@@ -3689,7 +3834,102 @@ class GlycanDrawer {
         }
     }
     
-    // Canvas size adjustment
+    // Workspace Management
+    initializeWorkspace() {
+        this.workspace = document.getElementById('workspace');
+        this.exportArea = document.getElementById('exportArea');
+        
+        if (!this.workspace || !this.exportArea) {
+            console.error('Workspace elements not found');
+            return;
+        }
+        
+        // Set initial export area size (medium)
+        this.setExportAreaSize('medium');
+        
+        // Add zoom functionality
+        this.workspace.addEventListener('wheel', (e) => this.handleWorkspaceWheel(e));
+        
+        // Center the workspace initially
+        setTimeout(() => this.centerWorkspace(), 100);
+        
+        console.log('Workspace initialized');
+    }
+    
+    setExportAreaSize(size) {
+        if (!this.exportSizes[size]) return;
+        
+        const { width, height } = this.exportSizes[size];
+        this.currentExportSize = size;
+        
+        // Update canvas dimensions
+        this.canvas.setAttribute('width', width);
+        this.canvas.setAttribute('height', height);
+        this.canvas.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        
+        // Update export area size
+        if (this.exportArea) {
+            this.exportArea.style.width = width + 'px';
+            this.exportArea.style.height = height + 'px';
+        }
+        
+        // Update button states
+        document.querySelectorAll('.size-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.size === size);
+        });
+        
+        console.log(`Export area size changed to ${size}: ${width}×${height}`);
+    }
+    
+    centerWorkspace() {
+        if (!this.workspace) return;
+        
+        // Reset zoom and center the workspace
+        this.zoomLevel = 1;
+        this.workspace.style.transform = `scale(${this.zoomLevel})`;
+        
+        // Scroll to center
+        const rect = this.workspace.getBoundingClientRect();
+        const scrollX = (this.workspace.scrollWidth - rect.width) / 2;
+        const scrollY = (this.workspace.scrollHeight - rect.height) / 2;
+        
+        this.workspace.scrollLeft = scrollX;
+        this.workspace.scrollTop = scrollY;
+        
+        console.log('Workspace centered');
+    }
+    
+    handleWorkspaceWheel(e) {
+        // Only zoom when Ctrl is pressed
+        if (!e.ctrlKey) return;
+        
+        e.preventDefault();
+        
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        const newZoom = Math.max(this.minZoom, Math.min(this.maxZoom, this.zoomLevel * delta));
+        
+        if (newZoom !== this.zoomLevel) {
+            const rect = this.workspace.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            // Calculate zoom origin
+            const zoomOriginX = (mouseX + this.workspace.scrollLeft) / this.zoomLevel;
+            const zoomOriginY = (mouseY + this.workspace.scrollTop) / this.zoomLevel;
+            
+            this.zoomLevel = newZoom;
+            this.workspace.style.transform = `scale(${this.zoomLevel})`;
+            
+            // Adjust scroll to maintain zoom origin
+            const newScrollX = zoomOriginX * this.zoomLevel - mouseX;
+            const newScrollY = zoomOriginY * this.zoomLevel - mouseY;
+            
+            this.workspace.scrollLeft = newScrollX;
+            this.workspace.scrollTop = newScrollY;
+        }
+    }
+    
+    // Legacy canvas size adjustment (kept for compatibility)
     changeCanvasSize(sizeValue) {
         const [width, height] = sizeValue.split(',').map(Number);
         
@@ -4591,6 +4831,7 @@ class GlycanDrawer {
         }, duration);
     }
     
+
 
 
 }

@@ -30,13 +30,11 @@
                 
                 <!-- Canvas Size Controls -->
                 <div class="canvas-size-controls">
-                    <label>画布尺寸:</label>
-                    <select id="canvasSizeSelect" class="size-select">
-                        <option value="800,600">小 (800×600)</option>
-                        <option value="1000,700" selected>中 (1000×700)</option>
-                        <option value="1200,800">大 (1200×800)</option>
-                        <option value="1500,1000">特大 (1500×1000)</option>
-                    </select>
+                    <label>导出区域:</label>
+                    <button id="canvasSmall" class="size-btn" data-size="small">小</button>
+                    <button id="canvasMedium" class="size-btn active" data-size="medium">中</button>
+                    <button id="canvasLarge" class="size-btn" data-size="large">大</button>
+                    <button id="centerCanvas" class="action-btn center">居中</button>
                 </div>
             </div>
         </div>
@@ -47,17 +45,17 @@
                 <div class="panel-section">
                     <h3>工具</h3>
                     <div class="tool-buttons">
-                        <button class="tool-btn active" data-tool="add" title="添加糖">
-                            <span>🍬</span>
-                            添加糖
-                        </button>
-                        <button class="tool-btn" data-tool="select" title="选择">
+                        <button class="tool-btn active" data-tool="select" title="选择">
                             <span>↖️</span>
                             选择
                         </button>
+                        <button class="tool-btn" data-tool="add" title="添加糖">
+                            <span>🍬</span>
+                            添加糖
+                        </button>
                         <button class="tool-btn" data-tool="text" title="添加文字">
                             <span>📝</span>
-                            文字
+                            添加文字
                         </button>
                         <button class="tool-btn" data-tool="delete" title="橡皮擦">
                             <span>🧽</span>
@@ -67,11 +65,16 @@
                 </div>
             </div>
             
-            <!-- Center: Canvas -->
+            <!-- Center: Workspace -->
             <div class="center-panel">
-                <svg id="canvas" width="1000" height="700" viewBox="0 0 1000 700">
-                    <!-- SVG content will be added here -->
-                </svg>
+                <div id="workspace" class="workspace">
+                    <!-- Export area visual background (not a container) -->
+                    <div id="exportArea" class="export-area"></div>
+                    <!-- SVG canvas spans entire workspace -->
+                    <svg id="canvas" class="workspace-canvas" viewBox="-500 -350 2000 1400">
+                        <!-- SVG content will be added here -->
+                    </svg>
+                </div>
             </div>
             
             <!-- Right Panel: Sugar Presets and Customization -->
