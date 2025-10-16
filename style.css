@@ -175,6 +175,13 @@ h1 {
     border-color: #2980b9;
 }
 
+/* Visual indicator when dropdown is open */
+.export-dropdown.open .action-btn.export {
+    background-color: #2980b9;
+    border-color: #2980b9;
+    transform: translateY(1px);
+}
+
 .export-options {
     display: none;
     position: absolute;
@@ -189,7 +196,8 @@ h1 {
     margin-top: 2px;
 }
 
-.export-dropdown:hover .export-options {
+/* Change from hover to click-based with class toggle */
+.export-dropdown.open .export-options {
     display: block;
 }
 

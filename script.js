@@ -173,8 +173,28 @@ class GlycanDrawer {
             option.addEventListener('click', (e) => {
                 const format = e.target.getAttribute('data-format');
                 this.exportCanvas(format);
+                // Close dropdown after selection
+                this.closeExportDropdown();
             });
         });
+        
+        // Add export button click handler for dropdown toggle
+        const exportBtn = document.getElementById('exportBtn');
+        const exportDropdown = document.querySelector('.export-dropdown');
+        
+        if (exportBtn && exportDropdown) {
+            exportBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                exportDropdown.classList.toggle('open');
+            });
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!exportDropdown.contains(e.target)) {
+                    exportDropdown.classList.remove('open');
+                }
+            });
+        }
         
         // Add canvas size control listeners
         const sizeButtons = document.querySelectorAll('.size-btn');
@@ -3314,6 +3334,14 @@ class GlycanDrawer {
         
         // Insert styles after the opening svg tag
         return svgString.replace('>', '>' + styleString);
+    }
+    
+    // Helper method to close export dropdown
+    closeExportDropdown() {
+        const exportDropdown = document.querySelector('.export-dropdown');
+        if (exportDropdown) {
+            exportDropdown.classList.remove('open');
+        }
     }
     
     exportCanvas(format) {
