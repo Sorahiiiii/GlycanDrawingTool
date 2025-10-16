@@ -294,8 +294,6 @@ class GlycanDrawer {
                     } else if (this.currentTool === 'select') {
                         // 选择模式：只应用到选中元素，不更新配置
                         this.applySugarColor(normalizedColor);
-                        // Update UI to reflect the new color
-                        this.updateSelectionUI();
                     }
                 } else {
                     // Reset to current color if invalid
@@ -649,16 +647,6 @@ class GlycanDrawer {
                 colorButtons.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 
-                // Update custom color picker to match
-                const customColorPicker = document.getElementById('customSugarColor');
-                const customColorHex = document.getElementById('customSugarColorHex');
-                if (customColorPicker) {
-                    customColorPicker.value = btn.dataset.color;
-                }
-                if (customColorHex) {
-                    customColorHex.value = btn.dataset.color;
-                }
-                
                 // Clear SNFG preset selection (manual override)
                 this.clearPresetSelection();
                 
@@ -672,24 +660,16 @@ class GlycanDrawer {
                     this.currentSugarConfig.preset = null;
                 } else if (this.currentTool === 'select') {
                     this.applySugarColor(btn.dataset.color);
-                    // Update UI to reflect the new color
-                    this.updateSelectionUI();
                 }
             });
         });
         
         // Custom color picker
-        const customColorPicker = document.getElementById('customSugarColor');
+        const customColorPicker = document.getElementById('customColor');
         if (customColorPicker) {
             customColorPicker.addEventListener('input', (e) => {
                 // Deactivate preset color buttons
                 colorButtons.forEach(b => b.classList.remove('active'));
-                
-                // Update hex input to match
-                const customColorHex = document.getElementById('customSugarColorHex');
-                if (customColorHex) {
-                    customColorHex.value = e.target.value;
-                }
                 
                 // Clear SNFG preset selection (manual override)
                 this.clearPresetSelection();
@@ -704,8 +684,6 @@ class GlycanDrawer {
                     this.currentSugarConfig.preset = null;
                 } else if (this.currentTool === 'select') {
                     this.applySugarColor(e.target.value);
-                    // Update UI to reflect the new color
-                    this.updateSelectionUI();
                 }
             });
         }
@@ -813,8 +791,6 @@ class GlycanDrawer {
                 if (selectedSugars.length > 0) {
                     this.applySugarShape(this.snfgPresets[preset].shape);
                     this.applySugarColor(this.snfgPresets[preset].color);
-                    // Update UI to reflect the new shape and color
-                    this.updateSelectionUI();
                 }
             } else {
                 // In add mode, apply full preset configuration
@@ -838,13 +814,9 @@ class GlycanDrawer {
         });
         
         // Update custom color picker to match preset color
-        const customColorPicker = document.getElementById('customSugarColor');
-        const customColorHex = document.getElementById('customSugarColorHex');
+        const customColorPicker = document.getElementById('customColor');
         if (customColorPicker) {
             customColorPicker.value = presetConfig.color;
-        }
-        if (customColorHex) {
-            customColorHex.value = presetConfig.color;
         }
     }
     
@@ -2290,10 +2262,24 @@ class GlycanDrawer {
         
         switch (shapeType) {
             case 'circle':
+            case 'circle-filled':
                 shape.setAttribute('cx', x);
                 shape.setAttribute('cy', y);
                 break;
                 
+            case 'circle-flat':
+                shape.setAttribute('cx', x);
+                shape.setAttribute('cy', y);
+                shape.setAttribute('rx', size * 1.4);
+                shape.setAttribute('ry', size * 0.7);
+                break;
+                
+            case 'circle-narrow':
+                shape.setAttribute('cx', x);
+                shape.setAttribute('cy', y);
+                shape.setAttribute('rx', size * 0.7);
+                shape.setAttribute('ry', size * 1.4);
+                break;
 
             case 'square':
                 shape.setAttribute('x', x - size);
@@ -2436,8 +2422,34 @@ class GlycanDrawer {
                 break;
                 
             case 'star':
-                const starPoints = this.generateStarPoints(x, y, size, 5);
+            case 'star-5':
+                const starPoints = this.generateStarPoints(x, y, size, 5, 0);
                 shape.setAttribute('points', starPoints);
+                break;
+                
+            case 'star-5-inverted':
+                const starInvertedPoints = this.generateStarPoints(x, y, size, 5, Math.PI);
+                shape.setAttribute('points', starInvertedPoints);
+                break;
+                
+            case 'star-4':
+                const star4Points = this.generateStarPoints(x, y, size, 4, 0);
+                shape.setAttribute('points', star4Points);
+                break;
+                
+            case 'star-4-tilted':
+                const star4TiltedPoints = this.generateStarPoints(x, y, size, 4, Math.PI/4);
+                shape.setAttribute('points', star4TiltedPoints);
+                break;
+                
+            case 'star-6':
+                const star6Points = this.generateStarPoints(x, y, size, 6, 0);
+                shape.setAttribute('points', star6Points);
+                break;
+                
+            case 'star-6-tilted':
+                const star6TiltedPoints = this.generateStarPoints(x, y, size, 6, Math.PI/6);
+                shape.setAttribute('points', star6TiltedPoints);
                 break;
                 
             case 'hexagon':
@@ -2576,13 +2588,13 @@ class GlycanDrawer {
         this.clearUISelections();
         
         // 更新颜色选择器
-        const customColorPicker = document.getElementById('customSugarColor');
-        const customColorHex = document.getElementById('customSugarColorHex');
+        const colorPicker = document.getElementById('sugarColor');
+        const customColorPicker = document.getElementById('customColor');
+        if (colorPicker && sugarData.color) {
+            colorPicker.value = sugarData.color;
+        }
         if (customColorPicker && sugarData.color) {
             customColorPicker.value = sugarData.color;
-        }
-        if (customColorHex && sugarData.color) {
-            customColorHex.value = sugarData.color;
         }
         
         // 更新形状按钮 - 兼容新旧系统
@@ -2598,15 +2610,11 @@ class GlycanDrawer {
         }
         
         // 更新颜色按钮 - 只有在默认调色板中的颜色才显示选中
-        let colorButtonFound = false;
         document.querySelectorAll('.color-btn').forEach(btn => {
             if (btn.dataset.color === sugarData.color && defaultColors.includes(sugarData.color)) {
                 btn.classList.add('active');
-                colorButtonFound = true;
             }
         });
-        
-        console.log(`Sugar color: ${sugarData.color}, Found matching preset button: ${colorButtonFound}`);
         
         // 查找匹配的SNFG预设
         let matchingPreset = null;
@@ -2705,15 +2713,15 @@ class GlycanDrawer {
         });
         
         // 更新颜色选择器 - 如果颜色一致则显示该颜色，否则显示第一个
-        const customColorPicker = document.getElementById('customSugarColor');
-        const customColorHex = document.getElementById('customSugarColorHex');
+        const colorPicker = document.getElementById('sugarColor');
+        const customColorPicker = document.getElementById('customColor');
         const displayColor = colors.length === 1 ? colors[0] : colors[0];
         
+        if (colorPicker) {
+            colorPicker.value = displayColor;
+        }
         if (customColorPicker) {
             customColorPicker.value = displayColor;
-        }
-        if (customColorHex) {
-            customColorHex.value = displayColor;
         }
         
         // 更新尺寸显示 - 如果尺寸一致则显示该尺寸，否则显示混合状态
