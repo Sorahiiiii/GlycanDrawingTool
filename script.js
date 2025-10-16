@@ -82,6 +82,13 @@ class GlycanDrawer {
         this.isDraggingMultiple = false;
         this.isDraggingMultipleTexts = false;
         
+        // Linkage assign mode properties
+        this.currentLinkageConfig = {
+            strokeWidth: 2,
+            strokeColor: '#000000',
+            textSize: 12
+        };
+        
         // Keyboard state tracking
         this.isCtrlPressed = false;
         this.isShiftPressed = false;
@@ -626,6 +633,46 @@ class GlycanDrawer {
             }
         });
         
+        // Linkage mode style controls
+        const connectionStrokeWidth = document.getElementById('connectionStrokeWidth');
+        const connectionStrokeWidthValue = document.getElementById('connectionStrokeWidthValue');
+        const linkageConnectionColor = document.getElementById('connectionColor'); // Same as above, but for linkage mode
+        const linkageTextSize = document.getElementById('linkageTextSize');
+        const linkageTextSizeValue = document.getElementById('linkageTextSizeValue');
+        
+        if (connectionStrokeWidth && connectionStrokeWidthValue) {
+            connectionStrokeWidth.addEventListener('input', (e) => {
+                const value = e.target.value;
+                connectionStrokeWidthValue.textContent = value;
+                this.applyConnectionStyle();
+            });
+        }
+        
+        if (linkageTextSize && linkageTextSizeValue) {
+            linkageTextSize.addEventListener('input', (e) => {
+                const value = e.target.value;
+                linkageTextSizeValue.textContent = value;
+                this.applyConnectionStyle();
+            });
+        }
+        
+        // Color buttons for linkage mode
+        const linkageColorButtons = document.querySelectorAll('[data-target="connectionColor"]');
+        linkageColorButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const color = e.target.dataset.color;
+                if (linkageConnectionColor) {
+                    linkageConnectionColor.value = color;
+                    const connectionColorHex = document.getElementById('connectionColorHex');
+                    if (connectionColorHex) connectionColorHex.value = color;
+                }
+                // Update active state
+                linkageColorButtons.forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                this.applyConnectionStyle();
+            });
+        });
+        
         // New Shape Selector System
         this.initializeShapeSelector();
         
@@ -747,11 +794,29 @@ class GlycanDrawer {
             return;
         }
         
+        // Store previous tool before changing
+        const previousTool = this.currentTool;
         this.currentTool = tool;
         
-        // If switching away from select tool, deselect any selected elements
-        if (tool !== 'select') {
+        // Clear selections when switching to non-selection modes OR when switching between selection modes
+        if (tool === 'add' || tool === 'delete' || tool === 'text') {
             this.deselectAll();
+            if (this.selectedConnections) {
+                this.clearConnectionSelections();
+            }
+        }
+        
+        // Clear selections when switching from select to linkage or vice versa
+        if ((previousTool === 'select' && tool === 'linkage') || (previousTool === 'linkage' && tool === 'select')) {
+            this.deselectAll();
+            if (this.selectedConnections) {
+                this.clearConnectionSelections();
+            }
+        }
+        
+        // If switching away from linkage tool, clear connection selections
+        if (previousTool === 'linkage' && tool !== 'linkage' && this.selectedConnections) {
+            this.clearConnectionSelections();
         }
         
         // If switching away from text tool and currently editing, close any open text inputs
@@ -773,6 +838,13 @@ class GlycanDrawer {
         
         // Update canvas cursor
         this.updateCanvasCursor();
+        
+        // Show/hide linkage controls based on tool
+        if (tool === 'linkage') {
+            this.showLinkageControls();
+        } else {
+            this.hideLinkageControls();
+        }
         
         // Update style panels visibility
         this.updateStylePanel();
@@ -1054,15 +1126,32 @@ class GlycanDrawer {
     }
     
     updateCanvasCursor() {
-        this.canvas.className = '';
+        // Remove all cursor-related classes
+        this.canvas.classList.remove('select-mode', 'delete-mode', 'text-mode', 'linkage-mode', 'add-mode', 'add-on-sugar');
         if (this.currentTool === 'select') {
             this.canvas.classList.add('select-mode');
         } else if (this.currentTool === 'delete') {
             this.canvas.classList.add('delete-mode');
         } else if (this.currentTool === 'text') {
             this.canvas.classList.add('text-mode');
+        } else if (this.currentTool === 'linkage') {
+            this.canvas.classList.add('linkage-mode');
+        } else if (this.currentTool === 'add') {
+            this.canvas.classList.add('add-mode');
         }
-        // Default cursor (crosshair) for add mode
+    }
+    
+    updateAddModeCursor(x, y) {
+        const clickedElement = this.getElementAtPoint(x, y);
+        
+        // Remove previous add cursor classes
+        this.canvas.classList.remove('add-on-sugar');
+        
+        if (clickedElement && clickedElement.classList.contains('sugar')) {
+            // Mouse is over a sugar - show crosshair for directional addition
+            this.canvas.classList.add('add-on-sugar');
+        }
+        // When not over sugar, default add-mode class shows hand pointer
     }
     
     // Helper method to get SVG coordinates
@@ -1153,9 +1242,9 @@ class GlycanDrawer {
             }
         } else if (this.currentTool === 'add') {
             this.resetPasteCounter();
-            if (clickedSugar) {
+            if (clickedElement) {
                 // Start long press detection for connection dragging
-                this.startLongPress(clickedSugar, e);
+                this.startLongPress(clickedElement, e);
                 e.preventDefault();
             }
         } else if (this.currentTool === 'delete') {
@@ -1163,6 +1252,19 @@ class GlycanDrawer {
             // Start erasing on mouse down
             this.startErasing(x, y);
             e.preventDefault();
+        } else if (this.currentTool === 'linkage') {
+            this.resetPasteCounter();
+            // Handle connection selection in linkage mode
+            const clickedConnection = this.getConnectionAtPoint(x, y);
+            if (clickedConnection) {
+                this.selectConnection(clickedConnection, e.ctrlKey);
+                e.preventDefault();
+            } else {
+                // Start box selection for connections
+                this.clearConnectionSelections();
+                this.startBoxSelection(x, y);
+                e.preventDefault();
+            }
         }
     }
     
@@ -1170,6 +1272,11 @@ class GlycanDrawer {
         const coords = this.getSVGCoordinates(e);
         const x = coords.x;
         const y = coords.y;
+        
+        // Handle dynamic cursor in add mode
+        if (this.currentTool === 'add' && !this.isDragging) {
+            this.updateAddModeCursor(x, y);
+        }
         
         // Handle hover preview in select mode (when not dragging)
         if (this.currentTool === 'select' && !this.isDragging && !this.isBoxSelecting) {
@@ -1187,7 +1294,7 @@ class GlycanDrawer {
         }
 
         // Handle box selection
-        if (this.isBoxSelecting && this.currentTool === 'select') {
+        if (this.isBoxSelecting && (this.currentTool === 'select' || this.currentTool === 'linkage')) {
             this.updateBoxSelection(x, y);
             e.preventDefault();
         }
@@ -3231,6 +3338,15 @@ class GlycanDrawer {
         const exportSize = this.exportSizes[this.currentExportSize];
         const { width, height } = exportSize;
         
+        // Calculate export area bounds in canvas coordinates
+        // Export area is centered at canvas center (2000, 1400) from CSS
+        const canvasCenterX = 2000;
+        const canvasCenterY = 1400;
+        const minX = canvasCenterX - width / 2;
+        const minY = canvasCenterY - height / 2;
+        const maxX = canvasCenterX + width / 2;
+        const maxY = canvasCenterY + height / 2;
+        
         // Create a clean SVG for export with only elements within bounds
         const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         exportSVG.setAttribute('width', width);
@@ -3240,7 +3356,7 @@ class GlycanDrawer {
         exportSVG.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
         
         // Copy only elements within export bounds
-        this.copyElementsInBounds(exportSVG, 0, 0, width, height);
+        this.copyElementsInBounds(exportSVG, minX, minY, maxX, maxY);
         
         // Get the SVG string
         const svgString = new XMLSerializer().serializeToString(exportSVG);
@@ -3307,7 +3423,68 @@ class GlycanDrawer {
             }
             
             if (shouldInclude) {
-                targetSVG.appendChild(element.cloneNode(true));
+                const clonedElement = element.cloneNode(true);
+                
+                // Translate coordinates relative to export area bounds
+                if (clonedElement.classList.contains('sugar')) {
+                    const x = parseFloat(clonedElement.getAttribute('data-x'));
+                    const y = parseFloat(clonedElement.getAttribute('data-y'));
+                    const newX = x - minX;
+                    const newY = y - minY;
+                    
+                    clonedElement.setAttribute('data-x', newX);
+                    clonedElement.setAttribute('data-y', newY);
+                    
+                    // Update all child shape elements' coordinates
+                    const childShapes = clonedElement.querySelectorAll('circle, rect, polygon, ellipse, path');
+                    childShapes.forEach(shape => {
+                        if (shape.hasAttribute('cx') && shape.hasAttribute('cy')) {
+                            // Circle or ellipse
+                            const cx = parseFloat(shape.getAttribute('cx'));
+                            const cy = parseFloat(shape.getAttribute('cy'));
+                            shape.setAttribute('cx', cx - minX);
+                            shape.setAttribute('cy', cy - minY);
+                        }
+                        if (shape.hasAttribute('x') && shape.hasAttribute('y')) {
+                            // Rectangle
+                            const shapeX = parseFloat(shape.getAttribute('x'));
+                            const shapeY = parseFloat(shape.getAttribute('y'));
+                            shape.setAttribute('x', shapeX - minX);
+                            shape.setAttribute('y', shapeY - minY);
+                        }
+                        if (shape.hasAttribute('points')) {
+                            // Polygon
+                            const points = shape.getAttribute('points');
+                            const newPoints = points.split(' ').map(point => {
+                                const [px, py] = point.split(',').map(parseFloat);
+                                return `${px - minX},${py - minY}`;
+                            }).join(' ');
+                            shape.setAttribute('points', newPoints);
+                        }
+                    });
+                } else if (clonedElement.classList.contains('text-element')) {
+                    const x = parseFloat(clonedElement.getAttribute('data-x'));
+                    const y = parseFloat(clonedElement.getAttribute('data-y'));
+                    const newX = x - minX;
+                    const newY = y - minY;
+                    
+                    clonedElement.setAttribute('data-x', newX);
+                    clonedElement.setAttribute('data-y', newY);
+                    clonedElement.setAttribute('x', newX);
+                    clonedElement.setAttribute('y', newY);
+                } else if (clonedElement.classList.contains('connection')) {
+                    const x1 = parseFloat(clonedElement.getAttribute('x1'));
+                    const y1 = parseFloat(clonedElement.getAttribute('y1'));
+                    const x2 = parseFloat(clonedElement.getAttribute('x2'));
+                    const y2 = parseFloat(clonedElement.getAttribute('y2'));
+                    
+                    clonedElement.setAttribute('x1', x1 - minX);
+                    clonedElement.setAttribute('y1', y1 - minY);
+                    clonedElement.setAttribute('x2', x2 - minX);
+                    clonedElement.setAttribute('y2', y2 - minY);
+                }
+                
+                targetSVG.appendChild(clonedElement);
             }
         }
     }
@@ -3315,25 +3492,31 @@ class GlycanDrawer {
     addInlineStyles(svgString) {
         // Add basic styles inline for better compatibility with external programs
         const styleString = `
-            <style>
-                .sugar .sugar-shape {
-                    stroke-width: 2;
-                }
-                .connection {
-                    stroke: #808080;
-                    stroke-width: 2;
-                    fill: none;
-                }
-                .text-element {
-                    font-family: Arial, sans-serif;
-                    font-size: 14px;
-                    fill: #2c3e50;
-                }
-            </style>
+            <defs>
+                <style>
+                    .sugar .sugar-shape {
+                        stroke-width: 2;
+                    }
+                    .connection {
+                        stroke: #808080;
+                        stroke-width: 2;
+                        fill: none;
+                    }
+                    .text-element {
+                        font-family: Arial, sans-serif;
+                        font-size: 14px;
+                        fill: #2c3e50;
+                    }
+                </style>
+            </defs>
         `;
         
-        // Insert styles after the opening svg tag
-        return svgString.replace('>', '>' + styleString);
+        // Insert styles after the opening svg tag but before content
+        const svgTagEndIndex = svgString.indexOf('>');
+        if (svgTagEndIndex !== -1) {
+            return svgString.slice(0, svgTagEndIndex + 1) + styleString + svgString.slice(svgTagEndIndex + 1);
+        }
+        return svgString;
     }
     
     // Helper method to close export dropdown
@@ -3365,6 +3548,14 @@ class GlycanDrawer {
         const exportSize = this.exportSizes[this.currentExportSize];
         const { width, height } = exportSize;
         
+        // Calculate export area bounds in canvas coordinates
+        const canvasCenterX = 2000;
+        const canvasCenterY = 1400;
+        const minX = canvasCenterX - width / 2;
+        const minY = canvasCenterY - height / 2;
+        const maxX = canvasCenterX + width / 2;
+        const maxY = canvasCenterY + height / 2;
+        
         const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         exportSVG.setAttribute('width', width);
         exportSVG.setAttribute('height', height);
@@ -3372,7 +3563,7 @@ class GlycanDrawer {
         exportSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
         
         // Copy only elements within export bounds
-        this.copyElementsInBounds(exportSVG, 0, 0, width, height);
+        this.copyElementsInBounds(exportSVG, minX, minY, maxX, maxY);
         
         const svgString = new XMLSerializer().serializeToString(exportSVG);
         const styledSVG = this.addInlineStyles(svgString);
@@ -3381,10 +3572,9 @@ class GlycanDrawer {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
-        // Get SVG dimensions
-        const svgRect = this.canvas.getBoundingClientRect();
-        const svgWidth = parseInt(this.canvas.getAttribute('width')) || svgRect.width;
-        const svgHeight = parseInt(this.canvas.getAttribute('height')) || svgRect.height;
+        // Use export area dimensions instead of main canvas dimensions
+        const svgWidth = width;
+        const svgHeight = height;
         
         // Set canvas size with higher resolution for better quality
         const scale = 2;
@@ -3396,7 +3586,12 @@ class GlycanDrawer {
         
         const img = new Image();
         img.onload = () => {
-            ctx.drawImage(img, 0, 0);
+            // Clear canvas with white background
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, svgWidth, svgHeight);
+            
+            // Draw the SVG image at the correct size
+            ctx.drawImage(img, 0, 0, svgWidth, svgHeight);
             
             // Convert to PNG and download
             canvas.toBlob((blob) => {
@@ -3421,6 +3616,14 @@ class GlycanDrawer {
         const exportSize = this.exportSizes[this.currentExportSize];
         const { width, height } = exportSize;
         
+        // Calculate export area bounds in canvas coordinates
+        const canvasCenterX = 2000;
+        const canvasCenterY = 1400;
+        const minX = canvasCenterX - width / 2;
+        const minY = canvasCenterY - height / 2;
+        const maxX = canvasCenterX + width / 2;
+        const maxY = canvasCenterY + height / 2;
+        
         const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         exportSVG.setAttribute('width', width);
         exportSVG.setAttribute('height', height);
@@ -3428,7 +3631,7 @@ class GlycanDrawer {
         exportSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
         
         // Copy only elements within export bounds
-        this.copyElementsInBounds(exportSVG, 0, 0, width, height);
+        this.copyElementsInBounds(exportSVG, minX, minY, maxX, maxY);
         
         const svgString = new XMLSerializer().serializeToString(exportSVG);
         const styledSVG = this.addInlineStyles(svgString);
@@ -3437,20 +3640,17 @@ class GlycanDrawer {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
-        // Get SVG dimensions
-        const svgRect = this.canvas.getBoundingClientRect();
-        const svgWidth = parseInt(this.canvas.getAttribute('width')) || svgRect.width;
-        const svgHeight = parseInt(this.canvas.getAttribute('height')) || svgRect.height;
+        // Use export area dimensions
+        const svgWidth = width;
+        const svgHeight = height;
         
         // Set canvas size with higher resolution for better quality
         const scale = 2;
         canvas.width = svgWidth * scale;
         canvas.height = svgHeight * scale;
         
-        // Scale context for high resolution
+        // Scale context for high resolution and set white background
         ctx.scale(scale, scale);
-        
-        // Fill with white background for JPG
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, svgWidth, svgHeight);
         
@@ -3681,35 +3881,53 @@ class GlycanDrawer {
         this.clearBoxSelectionPreviews();
         this.hoveredElements.clear();
         
-        // Find all elements within the selection box
-        const sugars = this.canvas.querySelectorAll('.sugar');
-        const texts = this.canvas.querySelectorAll('.text-element');
-        
-        // Check sugars
-        sugars.forEach(sugar => {
-            const sugarX = parseFloat(sugar.getAttribute('data-x'));
-            const sugarY = parseFloat(sugar.getAttribute('data-y'));
+        if (this.currentTool === 'linkage') {
+            // In linkage mode, only check connections
+            const connections = this.canvas.querySelectorAll('.connection');
+            connections.forEach(line => {
+                // Get line endpoints
+                const x1 = parseFloat(line.getAttribute('x1'));
+                const y1 = parseFloat(line.getAttribute('y1'));
+                const x2 = parseFloat(line.getAttribute('x2'));
+                const y2 = parseFloat(line.getAttribute('y2'));
+                
+                // Check if line intersects with selection box
+                if (this.lineIntersectsBox(x1, y1, x2, y2, boxX, boxY, boxX + boxWidth, boxY + boxHeight)) {
+                    line.classList.add('box-selection-preview');
+                    this.hoveredElements.add(line);
+                }
+            });
+        } else {
+            // In select mode, check sugars and texts
+            const sugars = this.canvas.querySelectorAll('.sugar');
+            const texts = this.canvas.querySelectorAll('.text-element');
             
-            // Check if sugar center is within the selection box
-            if (sugarX >= boxX && sugarX <= boxX + boxWidth &&
-                sugarY >= boxY && sugarY <= boxY + boxHeight) {
-                sugar.classList.add('box-selection-preview');
-                this.hoveredElements.add(sugar);
-            }
-        });
-        
-        // Check texts
-        texts.forEach(text => {
-            const textX = parseFloat(text.getAttribute('data-x'));
-            const textY = parseFloat(text.getAttribute('data-y'));
+            // Check sugars
+            sugars.forEach(sugar => {
+                const sugarX = parseFloat(sugar.getAttribute('data-x'));
+                const sugarY = parseFloat(sugar.getAttribute('data-y'));
+                
+                // Check if sugar center is within the selection box
+                if (sugarX >= boxX && sugarX <= boxX + boxWidth &&
+                    sugarY >= boxY && sugarY <= boxY + boxHeight) {
+                    sugar.classList.add('box-selection-preview');
+                    this.hoveredElements.add(sugar);
+                }
+            });
             
-            // Check if text position is within the selection box
-            if (textX >= boxX && textX <= boxX + boxWidth &&
-                textY >= boxY && textY <= boxY + boxHeight) {
-                text.classList.add('box-selection-preview');
-                this.hoveredElements.add(text);
-            }
-        });
+            // Check texts
+            texts.forEach(text => {
+                const textX = parseFloat(text.getAttribute('data-x'));
+                const textY = parseFloat(text.getAttribute('data-y'));
+                
+                // Check if text position is within the selection box
+                if (textX >= boxX && textX <= boxX + boxWidth &&
+                    textY >= boxY && textY <= boxY + boxHeight) {
+                    text.classList.add('box-selection-preview');
+                    this.hoveredElements.add(text);
+                }
+            });
+        }
     }
     
     clearBoxSelectionPreviews() {
@@ -3739,6 +3957,12 @@ class GlycanDrawer {
     
     finishBoxSelection(isShiftKey = false) {
         if (!this.isBoxSelecting || !this.selectionBox) return;
+        
+        if (this.currentTool === 'linkage') {
+            // Linkage mode - select connections that intersect with the box
+            this.finishLinkageBoxSelection(isShiftKey);
+            return;
+        }
         
         // Get elements that were previewed during box selection
         const elementsInBox = Array.from(this.hoveredElements);
@@ -3799,6 +4023,90 @@ class GlycanDrawer {
         
         // Update right panel to show controls for selected elements
         this.updateRightPanel();
+    }
+    
+    finishLinkageBoxSelection(isShiftKey = false) {
+        // Get connections that were previewed during box selection
+        const connectionsInBox = Array.from(this.hoveredElements);
+        
+        if (!isShiftKey) {
+            // Clear previous selections
+            this.clearConnectionSelections();
+        }
+        
+        // Handle Shift box selection logic for connections
+        if (isShiftKey && connectionsInBox.length > 0) {
+            // Check if ALL connections in box are already selected
+            const allConnectionsSelected = connectionsInBox.every(connection => 
+                this.selectedConnections.has(connection)
+            );
+            
+            if (allConnectionsSelected) {
+                // All connections are selected - remove them from selection
+                connectionsInBox.forEach(connection => {
+                    this.deselectConnection(connection);
+                });
+            } else {
+                // Some connections are not selected - add all unselected to selection
+                connectionsInBox.forEach(connection => {
+                    if (!this.selectedConnections.has(connection)) {
+                        this.selectConnection(connection, true);
+                    }
+                });
+            }
+        } else {
+            // Normal selection - select all connections in box
+            connectionsInBox.forEach(connection => {
+                this.selectConnection(connection, true);
+            });
+        }
+        
+        // Clean up box selection
+        this.clearBoxSelectionPreviews();
+        this.hoveredElements.clear();
+        if (this.selectionBox) {
+            document.getElementById('workspace').removeChild(this.selectionBox);
+            this.selectionBox = null;
+        }
+        this.currentSelectionBounds = null;
+        
+        // Remove global event listeners
+        if (this.globalBoxSelectionMouseMove) {
+            document.removeEventListener('mousemove', this.globalBoxSelectionMouseMove);
+            this.globalBoxSelectionMouseMove = null;
+        }
+        if (this.globalBoxSelectionMouseUp) {
+            document.removeEventListener('mouseup', this.globalBoxSelectionMouseUp);
+            this.globalBoxSelectionMouseUp = null;
+        }
+        
+        this.isBoxSelecting = false;
+    }
+    
+    lineIntersectsBox(x1, y1, x2, y2, boxLeft, boxTop, boxRight, boxBottom) {
+        // Check if a line segment intersects with a rectangle
+        // First check if either endpoint is inside the box
+        if ((x1 >= boxLeft && x1 <= boxRight && y1 >= boxTop && y1 <= boxBottom) ||
+            (x2 >= boxLeft && x2 <= boxRight && y2 >= boxTop && y2 <= boxBottom)) {
+            return true;
+        }
+        
+        // Check if line intersects any of the box edges
+        return this.lineIntersectsLine(x1, y1, x2, y2, boxLeft, boxTop, boxRight, boxTop) ||     // top edge
+               this.lineIntersectsLine(x1, y1, x2, y2, boxRight, boxTop, boxRight, boxBottom) || // right edge
+               this.lineIntersectsLine(x1, y1, x2, y2, boxRight, boxBottom, boxLeft, boxBottom) || // bottom edge
+               this.lineIntersectsLine(x1, y1, x2, y2, boxLeft, boxBottom, boxLeft, boxTop);     // left edge
+    }
+    
+    lineIntersectsLine(x1, y1, x2, y2, x3, y3, x4, y4) {
+        // Check if two line segments intersect
+        const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+        if (Math.abs(denom) < 1e-10) return false; // Lines are parallel
+        
+        const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+        const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+        
+        return t >= 0 && t <= 1 && u >= 0 && u <= 1;
     }
     
     // Left panel control methods (now controls right panel in new layout)
@@ -4936,14 +5244,27 @@ class GlycanDrawer {
     }
     
     applyConnectionStyle() {
-        if (this.currentTool !== 'select') return;
+        // Allow both select and linkage modes
+        if (this.currentTool !== 'select' && this.currentTool !== 'linkage') return;
         
-        const width = document.getElementById('connectionWidth').value;
-        const color = document.getElementById('connectionColor').value;
+        let width, color;
+        
+        if (this.currentTool === 'linkage') {
+            // Use linkage mode controls
+            width = document.getElementById('connectionStrokeWidth')?.value || '2';
+            color = document.getElementById('connectionColor')?.value || '#000000';
+        } else {
+            // Use select mode controls
+            width = document.getElementById('connectionWidth')?.value || '2';
+            color = document.getElementById('connectionColor')?.value || '#000000';
+        }
+        
         const styleBtn = document.querySelector('.connection-style-btn.active');
         const style = styleBtn ? styleBtn.dataset.style : 'solid';
         
-        const connections = this.getConnectionsForSelection();
+        const connections = this.currentTool === 'linkage' ? 
+            Array.from(this.selectedConnections) : 
+            this.getConnectionsForSelection();
 
         connections.forEach(conn => {
             // Use style property with important to override CSS
@@ -4961,6 +5282,19 @@ class GlycanDrawer {
                 default: // solid
                     conn.style.removeProperty('stroke-dasharray');
             }
+            
+            // Apply linkage text styling in linkage mode
+            if (this.currentTool === 'linkage') {
+                const textSize = document.getElementById('linkageTextSize')?.value || '12';
+                const linkageId = conn.getAttribute('data-linkage-id');
+                if (linkageId) {
+                    const labelElement = document.querySelector(`[data-linkage-for="${linkageId}"]`);
+                    if (labelElement) {
+                        labelElement.style.setProperty('font-size', textSize + 'px', 'important');
+                        labelElement.style.setProperty('fill', color, 'important');
+                    }
+                }
+            }
         });
     }
     
@@ -4972,6 +5306,31 @@ class GlycanDrawer {
 
         connections.forEach(conn => {
             conn.style.setProperty('stroke-opacity', opacity, 'important');
+        });
+    }
+    
+    applyLinkageStyle() {
+        if (this.currentTool !== 'linkage') return;
+        
+        const width = document.getElementById('connectionStrokeWidth')?.value || '2';
+        const color = document.getElementById('connectionColor')?.value || '#000000';
+        const textSize = document.getElementById('linkageTextSize')?.value || '12';
+        
+        // Apply styles to selected connections
+        this.selectedConnections.forEach(conn => {
+            // Apply connection line styles
+            conn.style.setProperty('stroke-width', width, 'important');
+            conn.style.setProperty('stroke', color, 'important');
+            
+            // Apply text styles to linkage labels
+            const linkageId = conn.getAttribute('data-linkage-id');
+            if (linkageId) {
+                const labelElement = document.querySelector(`[data-linkage-for="${linkageId}"]`);
+                if (labelElement) {
+                    labelElement.style.setProperty('font-size', textSize + 'px', 'important');
+                    labelElement.style.setProperty('fill', color, 'important');
+                }
+            }
         });
     }
     
@@ -6293,6 +6652,179 @@ class GlycanDrawer {
     }
     
     // Undo system methods
+    pointToLineDistance(px, py, x1, y1, x2, y2) {
+        // Calculate distance from point (px, py) to line segment (x1, y1) to (x2, y2)
+        const A = px - x1;
+        const B = py - y1;
+        const C = x2 - x1;
+        const D = y2 - y1;
+        
+        const dot = A * C + B * D;
+        const lenSq = C * C + D * D;
+        
+        let param = -1;
+        if (lenSq !== 0) {
+            param = dot / lenSq;
+        }
+        
+        let xx, yy;
+        
+        if (param < 0) {
+            xx = x1;
+            yy = y1;
+        } else if (param > 1) {
+            xx = x2;
+            yy = y2;
+        } else {
+            xx = x1 + param * C;
+            yy = y1 + param * D;
+        }
+        
+        const dx = px - xx;
+        const dy = py - yy;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+    
+    getConnectionAtPoint(x, y) {
+        // Find the closest connection line to the point
+        const connections = this.canvas.querySelectorAll('.connection');
+        let closestConnection = null;
+        let minDistance = Infinity;
+        const threshold = 10; // pixels
+        
+        for (const connection of connections) {
+            const x1 = parseFloat(connection.getAttribute('x1'));
+            const y1 = parseFloat(connection.getAttribute('y1'));
+            const x2 = parseFloat(connection.getAttribute('x2'));
+            const y2 = parseFloat(connection.getAttribute('y2'));
+            
+            // Calculate distance from point to line segment
+            const distance = this.pointToLineDistance(x, y, x1, y1, x2, y2);
+            
+            if (distance < threshold && distance < minDistance) {
+                minDistance = distance;
+                closestConnection = connection;
+            }
+        }
+        
+        return closestConnection;
+    }
+    
+    pointToLineDistance(px, py, x1, y1, x2, y2) {
+        // Calculate the distance from point (px, py) to line segment from (x1,y1) to (x2,y2)
+        const A = px - x1;
+        const B = py - y1;
+        const C = x2 - x1;
+        const D = y2 - y1;
+        
+        const dot = A * C + B * D;
+        const lenSq = C * C + D * D;
+        
+        if (lenSq === 0) {
+            // Line segment is actually a point
+            return Math.sqrt(A * A + B * B);
+        }
+        
+        let param = dot / lenSq;
+        
+        let xx, yy;
+        
+        if (param < 0) {
+            xx = x1;
+            yy = y1;
+        } else if (param > 1) {
+            xx = x2;
+            yy = y2;
+        } else {
+            xx = x1 + param * C;
+            yy = y1 + param * D;
+        }
+        
+        const dx = px - xx;
+        const dy = py - yy;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+    
+    selectConnection(connection, multiSelect = false) {
+        if (!multiSelect) {
+            this.clearConnectionSelections();
+        }
+        
+        // Add to selection
+        this.selectedConnections.add(connection);
+        connection.classList.add('selected');
+        
+        // Show linkage controls
+        this.showLinkageControls();
+        
+        // Update linkage input field
+        this.updateLinkageInput();
+    }
+    
+    updateLinkageInput() {
+        const linkageInput = document.getElementById('linkageInput');
+        if (!linkageInput) return;
+        
+        if (this.selectedConnections.size === 1) {
+            // Single selection - show current linkage
+            const connection = Array.from(this.selectedConnections)[0];
+            const linkage = connection.getAttribute('data-linkage') || '';
+            linkageInput.value = linkage;
+        } else if (this.selectedConnections.size > 1) {
+            // Multi-selection - check if all have same linkage
+            const linkages = Array.from(this.selectedConnections).map(conn => 
+                conn.getAttribute('data-linkage') || ''
+            );
+            const allSame = linkages.every(l => l === linkages[0]);
+            linkageInput.value = allSame ? linkages[0] : '';
+        } else {
+            linkageInput.value = '';
+        }
+    }
+
+    deselectConnection(connection) {
+        // Remove from selection
+        this.selectedConnections.delete(connection);
+        connection.classList.remove('selected');
+        
+        // Update linkage input field
+        this.updateLinkageInput();
+        
+        // Hide linkage controls if no connections selected
+        if (this.selectedConnections.size === 0) {
+            this.hideLinkageControls();
+        }
+    }
+
+    clearConnectionSelections() {
+        // Clear any selected connections
+        this.selectedConnections.clear();
+        
+        // Remove visual selection highlighting from connections
+        document.querySelectorAll('.connection.selected').forEach(conn => {
+            conn.classList.remove('selected');
+        });
+        
+        // Hide linkage controls if no connections selected
+        if (this.selectedConnections.size === 0) {
+            this.hideLinkageControls();
+        }
+    }
+    
+    hideLinkageControls() {
+        const linkageControls = document.getElementById('linkageControlsSection');
+        if (linkageControls) {
+            linkageControls.style.display = 'none';
+        }
+    }
+    
+    showLinkageControls() {
+        const linkageControls = document.getElementById('linkageControlsSection');
+        if (linkageControls) {
+            linkageControls.style.display = 'block';
+        }
+    }
+
     saveState() {
         // Save current canvas state for undo
         const state = {
