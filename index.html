@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glycan Drawing Tool</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <h1>Glycan Drawing Tool</h1>
+        
+        <div class="main-content">
+            <!-- Left Panel: Sugar Presets and Customization -->
+            <div class="left-panel">
+                <!-- SFNG Presets Section -->
+                <div class="panel-section">
+                    <h3>SFNG 糖预设</h3>
+                    <div class="preset-grid" id="presetGrid">
+                        <!-- SFNG presets will be populated here -->
+                        <div class="preset-item" data-preset="glc">
+                            <svg width="40" height="40" viewBox="0 0 40 40">
+                                <circle cx="20" cy="20" r="15" fill="#3498db" stroke="#2980b9" stroke-width="2"/>
+                            </svg>
+                            <span>Glc</span>
+                        </div>
+                        <div class="preset-item" data-preset="gal">
+                            <svg width="40" height="40" viewBox="0 0 40 40">
+                                <circle cx="20" cy="20" r="15" fill="#e74c3c" stroke="#c0392b" stroke-width="2"/>
+                            </svg>
+                            <span>Gal</span>
+                        </div>
+                        <div class="preset-item" data-preset="man">
+                            <svg width="40" height="40" viewBox="0 0 40 40">
+                                <circle cx="20" cy="20" r="15" fill="#2ecc71" stroke="#27ae60" stroke-width="2"/>
+                            </svg>
+                            <span>Man</span>
+                        </div>
+                        <div class="preset-item" data-preset="fuc">
+                            <svg width="40" height="40" viewBox="0 0 40 40">
+                                <polygon points="20,5 35,20 20,35 5,20" fill="#f39c12" stroke="#e67e22" stroke-width="2"/>
+                            </svg>
+                            <span>Fuc</span>
+                        </div>
+                        <div class="preset-item" data-preset="xyl">
+                            <svg width="40" height="40" viewBox="0 0 40 40">
+                                <polygon points="20,8 30,28 10,28" fill="#9b59b6" stroke="#8e44ad" stroke-width="2"/>
+                            </svg>
+                            <span>Xyl</span>
+                        </div>
+                        <div class="preset-item" data-preset="glcnac">
+                            <svg width="40" height="40" viewBox="0 0 40 40">
+                                <rect x="5" y="5" width="30" height="30" fill="#3498db" stroke="#2980b9" stroke-width="2"/>
+                            </svg>
+                            <span>GlcNAc</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Custom Sugar Section -->
+                <div class="panel-section">
+                    <h3>自定义糖型</h3>
+                    
+                    <!-- Shape Selection -->
+                    <div class="custom-subsection">
+                        <h4>形状</h4>
+                        <div class="shape-grid" id="shapeGrid">
+                            <button class="shape-btn active" data-shape="circle">
+                                <svg width="30" height="30" viewBox="0 0 30 30">
+                                    <circle cx="15" cy="15" r="12" fill="currentColor" stroke="#333" stroke-width="1"/>
+                                </svg>
+                            </button>
+                            <button class="shape-btn" data-shape="square">
+                                <svg width="30" height="30" viewBox="0 0 30 30">
+                                    <rect x="3" y="3" width="24" height="24" fill="currentColor" stroke="#333" stroke-width="1"/>
+                                </svg>
+                            </button>
+                            <button class="shape-btn" data-shape="triangle">
+                                <svg width="30" height="30" viewBox="0 0 30 30">
+                                    <polygon points="15,3 27,25 3,25" fill="currentColor" stroke="#333" stroke-width="1"/>
+                                </svg>
+                            </button>
+                            <button class="shape-btn" data-shape="diamond">
+                                <svg width="30" height="30" viewBox="0 0 30 30">
+                                    <polygon points="15,3 27,15 15,27 3,15" fill="currentColor" stroke="#333" stroke-width="1"/>
+                                </svg>
+                            </button>
+                            <button class="shape-btn" data-shape="star">
+                                <svg width="30" height="30" viewBox="0 0 30 30">
+                                    <polygon points="15,2 18,12 28,12 20,18 23,28 15,22 7,28 10,18 2,12 12,12" fill="currentColor" stroke="#333" stroke-width="1"/>
+                                </svg>
+                            </button>
+                            <button class="shape-btn" data-shape="hexagon">
+                                <svg width="30" height="30" viewBox="0 0 30 30">
+                                    <polygon points="15,3 25,9 25,21 15,27 5,21 5,9" fill="currentColor" stroke="#333" stroke-width="1"/>
+                                </svg>
+                            </button>
+                            <button class="shape-btn" data-shape="flat-hexagon">
+                                <svg width="30" height="30" viewBox="0 0 30 30">
+                                    <polygon points="5,15 9,5 21,5 25,15 21,25 9,25" fill="currentColor" stroke="#333" stroke-width="1"/>
+                                </svg>
+                            </button>
+                            <button class="shape-btn" data-shape="flat-diamond">
+                                <svg width="30" height="30" viewBox="0 0 30 30">
+                                    <polygon points="8,15 15,8 22,15 15,22" fill="currentColor" stroke="#333" stroke-width="1"/>
+                                </svg>
+                            </button>
+                            <button class="shape-btn" data-shape="pentagon">
+                                <svg width="30" height="30" viewBox="0 0 30 30">
+                                    <polygon points="15,3 26,11 21,25 9,25 4,11" fill="currentColor" stroke="#333" stroke-width="1"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Color Selection -->
+                    <div class="custom-subsection">
+                        <h4>颜色</h4>
+                        <div class="color-section">
+                            <div class="color-grid" id="colorGrid">
+                                <button class="color-btn active" data-color="#3498db" style="background-color: #3498db;"></button>
+                                <button class="color-btn" data-color="#e74c3c" style="background-color: #e74c3c;"></button>
+                                <button class="color-btn" data-color="#2ecc71" style="background-color: #2ecc71;"></button>
+                                <button class="color-btn" data-color="#f39c12" style="background-color: #f39c12;"></button>
+                                <button class="color-btn" data-color="#9b59b6" style="background-color: #9b59b6;"></button>
+                                <button class="color-btn" data-color="#1abc9c" style="background-color: #1abc9c;"></button>
+                                <button class="color-btn" data-color="#34495e" style="background-color: #34495e;"></button>
+                                <button class="color-btn" data-color="#e67e22" style="background-color: #e67e22;"></button>
+                            </div>
+                            <div class="custom-color">
+                                <input type="text" id="customColorInput" placeholder="#000000" maxlength="7">
+                                <button id="applyCustomColor">应用</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Canvas Area -->
+            <div class="canvas-container">
+                <svg id="canvas" width="700" height="600" viewBox="0 0 700 600">
+                    <!-- Sugars will be added here -->
+                </svg>
+            </div>
+            
+            <!-- Right Panel: Tools -->
+            <div class="right-panel">
+                <div class="panel-section">
+                    <h3>工具</h3>
+                    <button id="addTool" class="tool-btn active" data-tool="add">
+                        <span class="tool-icon">➕</span>
+                        添加糖模式
+                    </button>
+                    <button id="textTool" class="tool-btn" data-tool="text">
+                        <span class="tool-icon">T</span>
+                        添加文字
+                    </button>
+                    <button id="selectTool" class="tool-btn" data-tool="select">
+                        <span class="tool-icon">↖</span>
+                        选择工具
+                    </button>
+                    <button id="deleteTool" class="tool-btn" data-tool="delete">
+                        <span class="tool-icon">🧽</span>
+                        橡皮擦
+                    </button>
+                </div>
+                
+                <div class="panel-section">
+                    <h3>操作</h3>
+                    <button id="downloadBtn" class="action-btn">导出 SVG</button>
+                    <button id="clearBtn" class="action-btn clear">清空画布</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <p>选择SFNG预设或自定义糖型，然后在画布上点击放置。点击现有糖可以连接新糖。</p>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,459 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f5f5f5;
+    color: #333;
+}
+
+.app-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 20px;
+    color: #2c3e50;
+}
+
+.main-content {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+/* Left Panel */
+.left-panel {
+    width: 250px;
+    background-color: white;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    height: fit-content;
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.panel-section {
+    padding: 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.panel-section:last-child {
+    border-bottom: none;
+}
+
+.panel-section h3 {
+    font-size: 16px;
+    color: #2c3e50;
+    margin-bottom: 15px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #3498db;
+}
+
+/* SFNG Presets Grid */
+.preset-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+.preset-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background-color: white;
+}
+
+.preset-item:hover {
+    border-color: #3498db;
+    background-color: #f8f9fa;
+}
+
+.preset-item.active {
+    background-color: #3498db;
+    color: white;
+    border-color: #2980b9;
+}
+
+.preset-item span {
+    font-size: 10px;
+    margin-top: 4px;
+    font-weight: bold;
+}
+
+/* Custom Sugar Section */
+.custom-subsection {
+    margin-bottom: 20px;
+}
+
+.custom-subsection:last-child {
+    margin-bottom: 0;
+}
+
+.custom-subsection h4 {
+    font-size: 14px;
+    color: #34495e;
+    margin-bottom: 10px;
+}
+
+.shape-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+}
+
+.shape-btn {
+    width: 40px;
+    height: 40px;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    background-color: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #7f8c8d;
+}
+
+.shape-btn:hover {
+    border-color: #3498db;
+    color: #3498db;
+}
+
+.shape-btn.active {
+    background-color: #3498db;
+    color: white;
+    border-color: #2980b9;
+}
+
+/* Color Section */
+.color-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.color-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+}
+
+.color-btn {
+    width: 30px;
+    height: 30px;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.color-btn:hover {
+    border-color: #333;
+    transform: scale(1.1);
+}
+
+.color-btn.active {
+    border-color: #333;
+    border-width: 3px;
+    transform: scale(1.1);
+}
+
+.custom-color {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+.custom-color input {
+    flex: 1;
+    padding: 5px 8px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.custom-color button {
+    padding: 5px 10px;
+    border: none;
+    border-radius: 3px;
+    background-color: #3498db;
+    color: white;
+    cursor: pointer;
+    font-size: 11px;
+}
+
+.custom-color button:hover {
+    background-color: #2980b9;
+}
+
+/* Canvas Area */
+.canvas-container {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+}
+
+/* Right Panel */
+.right-panel {
+    width: 150px;
+    background-color: white;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    height: fit-content;
+}
+
+/* Tool Buttons */
+.tool-btn, .action-btn {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid #ddd;
+    border-radius: 5px;
+    background-color: white;
+    cursor: pointer;
+    font-size: 12px;
+    margin-bottom: 8px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tool-btn:last-child, .action-btn:last-child {
+    margin-bottom: 0;
+}
+
+.tool-btn:hover {
+    border-color: #3498db;
+    background-color: #f8f9fa;
+}
+
+.tool-btn.active {
+    background-color: #3498db;
+    color: white;
+    border-color: #2980b9;
+}
+
+.tool-icon {
+    font-size: 14px;
+}
+
+.action-btn {
+    background-color: #3498db;
+    color: white;
+    border-color: #2980b9;
+    justify-content: center;
+}
+
+.action-btn:hover {
+    background-color: #2980b9;
+}
+
+.action-btn.clear {
+    background-color: #e74c3c;
+    border-color: #c0392b;
+}
+
+.action-btn.clear:hover {
+    background-color: #c0392b;
+}
+
+#canvas {
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    background-color: white;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    cursor: crosshair;
+}
+
+#canvas.select-mode {
+    cursor: default;
+}
+
+#canvas.delete-mode {
+    cursor: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTkuNSAxM0wxMy41IDlMMjAuNSAxNkwxNi41IDIwTDkuNSAxM1oiIGZpbGw9IiNmZjY2NjYiIHN0cm9rZT0iIzMzMzMzMyIgc3Ryb2tlLXdpZHRoPSIxLjUiLz4KPHBhdGggZD0iTTMuNSAxOS41SDE2LjUiIHN0cm9rZT0iIzMzMzMzMyIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4K') 12 12, auto;
+}
+
+/* Delete mode hover effects */
+#canvas.delete-mode .sugar:hover .sugar-shape {
+    stroke: #e74c3c !important;
+    stroke-width: 3 !important;
+    filter: brightness(0.8) !important;
+}
+
+#canvas.delete-mode .text-element:hover {
+    fill: #e74c3c !important;
+    filter: brightness(0.8) !important;
+}
+
+/* Sugar Styles */
+.sugar {
+    cursor: pointer;
+}
+
+/* Disable transitions during dragging for immediate response */
+.sugar.dragging {
+    transition: none !important;
+}
+
+.sugar.dragging .sugar-shape {
+    transition: none !important;
+}
+
+.sugar:hover .sugar-shape {
+    stroke-width: 3;
+    filter: brightness(1.1);
+}
+
+.sugar.selected .sugar-shape {
+    stroke-width: 3;
+    filter: brightness(1.2);
+}
+
+.sugar-shape {
+    transition: none;
+}
+
+/* Selection highlight - no animation, just static highlight */
+.selection-highlight {
+    opacity: 0.8;
+}
+
+/* Connection drag highlight styles - no animation */
+.connection-start-highlight {
+    opacity: 0.9;
+}
+
+.connection-target-highlight {
+    opacity: 0.8;
+}
+
+/* Sugar Type Colors */
+.sugar[data-type="circle"] .sugar-shape {
+    fill: #3498db;
+    stroke: #2980b9;
+    stroke-width: 2;
+}
+
+.sugar[data-type="square"] .sugar-shape {
+    fill: #e74c3c;
+    stroke: #c0392b;
+    stroke-width: 2;
+}
+
+.sugar[data-type="diamond"] .sugar-shape {
+    fill: #f39c12;
+    stroke: #e67e22;
+    stroke-width: 2;
+}
+
+.sugar[data-type="triangle"] .sugar-shape {
+    fill: #9b59b6;
+    stroke: #8e44ad;
+    stroke-width: 2;
+}
+
+/* Connection Lines */
+.connection {
+    stroke: #34495e;
+    stroke-width: 2;
+    fill: none;
+    pointer-events: none;
+}
+
+/* Text Elements */
+.text-element {
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    fill: #2c3e50;
+    cursor: pointer;
+    user-select: none;
+    pointer-events: all;
+}
+
+.text-element.selected {
+    fill: #3498db;
+}
+
+.text-element:hover {
+    fill: #3498db;
+}
+
+/* Text Input Box */
+.text-input-box {
+    position: absolute;
+    border: 2px solid #3498db;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    background-color: white;
+    z-index: 1000;
+    min-width: 100px;
+}
+
+/* Instructions */
+.instructions {
+    text-align: center;
+    color: #7f8c8d;
+    font-style: italic;
+}
+
+.instructions p {
+    margin: 5px 0;
+}
+
+/* Selection box for drag selection */
+.selection-box {
+    fill: rgba(0, 123, 255, 0.1);
+    stroke: #007bff;
+    stroke-width: 1;
+    stroke-dasharray: 5,5;
+    pointer-events: none;
+}
+
+/* Box selection preview styling */
+.box-selection-preview {
+    stroke: #007bff !important;
+    stroke-width: 2 !important;
+    stroke-dasharray: 3,3 !important;
+}
+
+/* Eraser cursor for delete mode */
+.canvas-eraser {
+    cursor: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTkuNSAxM0wxMy41IDlMMjAuNSAxNkwxNi41IDIwTDkuNSAxM1oiIGZpbGw9IiNmZjY2NjYiIHN0cm9rZT0iIzMzMzMzMyIgc3Ryb2tlLXdpZHRoPSIxLjUiLz4KPHBhdGggZD0iTTMuNSAxOS41SDE2LjUiIHN0cm9rZT0iIzMzMzMzMyIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4K') 12 12, auto;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    .main-content {
+        flex-direction: column;
+    }
+    
+    .sidebar-toolbar {
+        width: 100%;
+        display: flex;
+        gap: 20px;
+        overflow-x: auto;
+    }
+    
+    .tool-section {
+        min-width: 150px;
+        margin-bottom: 0;
+    }
+}
