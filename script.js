@@ -16,7 +16,7 @@ class GlycanDrawer {
         this.currentSugarConfig = {
             type: 'custom',
             shape: 'circle',
-            color: '#0072bc',
+            color: '#0072BC',
             size: 20,
             borderWidth: 2,
             borderColor: '#333333',
@@ -112,12 +112,12 @@ class GlycanDrawer {
         
         // SNFG Presets Configuration
         this.snfgPresets = {
-            'glc': { shape: 'circle', color: '#3498db', name: 'Glucose' },
-            'gal': { shape: 'circle', color: '#e74c3c', name: 'Galactose' },
-            'man': { shape: 'circle', color: '#2ecc71', name: 'Mannose' },
-            'fuc': { shape: 'diamond', color: '#f39c12', name: 'Fucose' },
-            'xyl': { shape: 'triangle', color: '#9b59b6', name: 'Xylose' },
-            'glcnac': { shape: 'square', color: '#3498db', name: 'GlcNAc' }
+            'glc': { shape: 'circle', color: '#0072BC', name: 'Glucose' },
+            'gal': { shape: 'circle', color: '#ED1C24', name: 'Galactose' },
+            'man': { shape: 'circle', color: '#00A651', name: 'Mannose' },
+            'fuc': { shape: 'diamond', color: '#F47920', name: 'Fucose' },
+            'xyl': { shape: 'triangle', color: '#A54399', name: 'Xylose' },
+            'glcnac': { shape: 'square', color: '#0072BC', name: 'GlcNAc' }
         };
         
         // 8 directional positions around a sugar (N, NE, E, SE, S, SW, W, NW)
@@ -625,7 +625,7 @@ class GlycanDrawer {
                 // Update configuration for add mode or apply to selected sugars
                 if (this.currentTool === 'add') {
                     if (!this.currentSugarConfig) {
-                        this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+                        this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#0072BC' };
                     }
                     this.currentSugarConfig.shape = btn.dataset.shape;
                     this.currentSugarConfig.type = 'custom';
@@ -650,7 +650,7 @@ class GlycanDrawer {
                 // Update configuration for add mode or apply to selected sugars
                 if (this.currentTool === 'add') {
                     if (!this.currentSugarConfig) {
-                        this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+                        this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#0072BC' };
                     }
                     this.currentSugarConfig.color = btn.dataset.color;
                     this.currentSugarConfig.type = 'custom';
@@ -674,7 +674,7 @@ class GlycanDrawer {
                 // Update configuration for add mode or apply to selected sugars
                 if (this.currentTool === 'add') {
                     if (!this.currentSugarConfig) {
-                        this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+                        this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#0072BC' };
                     }
                     this.currentSugarConfig.color = e.target.value;
                     this.currentSugarConfig.type = 'custom';
@@ -765,7 +765,7 @@ class GlycanDrawer {
         if (this.snfgPresets[preset]) {
             // Initialize config if it doesn't exist
             if (!this.currentSugarConfig) {
-                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#0072BC' };
             }
             
             // Only update type, preset, shape, and color - keep other settings
@@ -860,7 +860,7 @@ class GlycanDrawer {
         if (this.currentTool === 'add') {
             // 添加模式：更新配置
             if (!this.currentSugarConfig) {
-                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#0072BC' };
             }
             this.currentSugarConfig.color = normalizedColor;
             this.currentSugarConfig.type = 'custom';
@@ -1615,8 +1615,92 @@ class GlycanDrawer {
                 
             case 'triangle':
                 element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-                const triPoints = `${x},${y-actualSize} ${x+actualSize*0.866},${y+actualSize*0.5} ${x-actualSize*0.866},${y+actualSize*0.5}`;
+                const triPoints = this.generatePolygonPoints(x, y, actualSize, 3, -Math.PI/2);
                 element.setAttribute('points', triPoints);
+                break;
+                
+            case 'triangle-inverted':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                const invertedTriPoints = this.generatePolygonPoints(x, y, actualSize, 3, Math.PI/2);
+                element.setAttribute('points', invertedTriPoints);
+                break;
+                
+            case 'triangle-divided':
+                // 使用组合方式：多边形 + 渐变 + 分割线
+                const dividedGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                
+                // 主三角形多边形
+                const triangleElement = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                const dividedTriPoints = this.generatePolygonPoints(x, y, actualSize, 3, -Math.PI/2);
+                triangleElement.setAttribute('points', dividedTriPoints);
+                
+                // 创建唯一的渐变ID
+                const gradientId = `triangle-divided-gradient-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                
+                // 创建渐变定义
+                const defs = this.canvas.querySelector('defs') || this.canvas.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'defs'));
+                const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+                gradient.id = gradientId;
+                gradient.setAttribute('x1', '0%');
+                gradient.setAttribute('y1', '0%');
+                gradient.setAttribute('x2', '100%');
+                gradient.setAttribute('y2', '0%');
+                
+                // 左半部分：白色
+                const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+                stop1.setAttribute('offset', '50%');
+                stop1.setAttribute('stop-color', 'white');
+                stop1.setAttribute('stop-opacity', '1');
+                
+                // 右半部分：用户颜色 - 确保颜色正确传递
+                const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+                stop2.setAttribute('offset', '50%');
+                stop2.setAttribute('stop-color', color || '#4CAF50'); // 使用更明显的默认颜色进行调试
+                stop2.setAttribute('stop-opacity', '1');
+                
+                // 调试信息
+                console.log('Creating triangle-divided with color:', color, 'gradientId:', gradientId);
+                console.log('Current sugar config:', this.currentSugarConfig);
+                
+                gradient.appendChild(stop1);
+                gradient.appendChild(stop2);
+                defs.appendChild(gradient);
+                
+                // 应用渐变到三角形
+                triangleElement.setAttribute('fill', `url(#${gradientId})`);
+                triangleElement.setAttribute('stroke', strokeColor);
+                triangleElement.setAttribute('stroke-width', '2');
+                
+                // 计算分割线坐标（从顶点到底边中点）
+                const vertices = this.parsePolygonPoints(dividedTriPoints);
+                if (vertices.length >= 3) {
+                    // 顶点（第一个点）
+                    const topVertex = vertices[0];
+                    // 底边中点（第二个和第三个点的中点）
+                    const bottomMidX = (vertices[1].x + vertices[2].x) / 2;
+                    const bottomMidY = (vertices[1].y + vertices[2].y) / 2;
+                    
+                    // 创建分割线
+                    const dividingLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    dividingLine.setAttribute('x1', topVertex.x);
+                    dividingLine.setAttribute('y1', topVertex.y);
+                    dividingLine.setAttribute('x2', bottomMidX);
+                    dividingLine.setAttribute('y2', bottomMidY);
+                    dividingLine.setAttribute('stroke', strokeColor);
+                    dividingLine.setAttribute('stroke-width', '2');
+                    dividingLine.classList.add('dividing-line');
+                    
+                    dividedGroup.appendChild(triangleElement);
+                    dividedGroup.appendChild(dividingLine);
+                } else {
+                    // 如果解析失败，只添加三角形
+                    dividedGroup.appendChild(triangleElement);
+                }
+                
+                // 存储渐变信息用于后续颜色更新
+                dividedGroup.setAttribute('data-gradient-id', gradientId);
+                dividedGroup.classList.add('triangle-divided-group');
+                element = dividedGroup;
                 break;
                 
             case 'diamond':
@@ -1674,6 +1758,18 @@ class GlycanDrawer {
                 element.setAttribute('points', flatHexPoints);
                 break;
                 
+            case 'hexagon-compressed':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                const compressedHexPoints = this.generateCompressedPolygonPoints(x, y, actualSize, 6, 0, 0.7);
+                element.setAttribute('points', compressedHexPoints);
+                break;
+                
+            case 'flat-hexagon-compressed':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                const compressedFlatHexPoints = this.generateCompressedPolygonPoints(x, y, actualSize, 6, Math.PI/6, 0.7);
+                element.setAttribute('points', compressedFlatHexPoints);
+                break;
+                
             case 'flat-diamond':
                 element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
                 const flatDiamondPoints = `${x-actualSize*0.7},${y} ${x},${y-actualSize*0.7} ${x+actualSize*0.7},${y} ${x},${y+actualSize*0.7}`;
@@ -1686,14 +1782,25 @@ class GlycanDrawer {
                 element.setAttribute('points', pentPoints);
                 break;
                 
+            case 'pentagon-inverted':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                const pentInvertedPoints = this.generatePolygonPoints(x, y, actualSize, 5, Math.PI/2);
+                element.setAttribute('points', pentInvertedPoints);
+                break;
+                
             default:
                 return this.createSugarShape(x, y, 'circle', color);
         }
         
         // Set fill and stroke
-        element.setAttribute('fill', color);
-        element.setAttribute('stroke', strokeColor);
-        element.setAttribute('stroke-width', '2');
+        if (shape === 'triangle-divided') {
+            // 分割三角形的特殊处理已经在case中完成（渐变填充和分割线）
+            // 组级别不需要额外的填充和描边设置
+        } else {
+            element.setAttribute('fill', color);
+            element.setAttribute('stroke', strokeColor);
+            element.setAttribute('stroke-width', '2');
+        }
         
         return element;
     }
@@ -1707,6 +1814,69 @@ class GlycanDrawer {
             points.push(`${x},${y}`);
         }
         return points.join(' ');
+    }
+    
+    generateCompressedPolygonPoints(centerX, centerY, radius, sides, rotation = 0, heightScale = 0.7) {
+        const points = [];
+        for (let i = 0; i < sides; i++) {
+            const angle = (2 * Math.PI * i / sides) + rotation;
+            const x = centerX + radius * Math.cos(angle);
+            const y = centerY + radius * Math.sin(angle) * heightScale;
+            points.push(`${x},${y}`);
+        }
+        return points.join(' ');
+    }
+    
+    generateDividedTriangleParts(centerX, centerY, radius, rotation = -Math.PI/2) {
+        // 使用与generatePolygonPoints相同的计算方法，确保大小一致
+        // 计算三角形的三个顶点（与普通三角形完全相同）
+        const vertices = [];
+        for (let i = 0; i < 3; i++) {
+            const angle = (2 * Math.PI * i / 3) + rotation;
+            const x = centerX + radius * Math.cos(angle);
+            const y = centerY + radius * Math.sin(angle);
+            vertices.push({x, y});
+        }
+        
+        // 顶点、左底角、右底角
+        const topVertex = vertices[0];
+        const leftBottomVertex = vertices[1];
+        const rightBottomVertex = vertices[2];
+        
+        // 底边中点（垂直分割线的底部点）
+        const bottomMidX = (leftBottomVertex.x + rightBottomVertex.x) / 2;
+        const bottomMidY = (leftBottomVertex.y + rightBottomVertex.y) / 2;
+        
+        // 左半部分：顶点 + 左底角 + 底边中点（稳定白色）
+        const leftPoints = [
+            `${topVertex.x},${topVertex.y}`,
+            `${leftBottomVertex.x},${leftBottomVertex.y}`,
+            `${bottomMidX},${bottomMidY}`
+        ].join(' ');
+        
+        // 右半部分：顶点 + 底边中点 + 右底角（跟随用户颜色）
+        const rightPoints = [
+            `${topVertex.x},${topVertex.y}`,
+            `${bottomMidX},${bottomMidY}`,
+            `${rightBottomVertex.x},${rightBottomVertex.y}`
+        ].join(' ');
+        
+        return {leftPoints, rightPoints};
+    }
+    
+    parsePolygonPoints(pointsStr) {
+        // 解析多边形点字符串，返回坐标数组
+        const points = [];
+        const coords = pointsStr.trim().split(/\s+/);
+        
+        for (const coord of coords) {
+            const [x, y] = coord.split(',').map(Number);
+            if (!isNaN(x) && !isNaN(y)) {
+                points.push({x, y});
+            }
+        }
+        
+        return points;
     }
     
     generateStarPoints(centerX, centerY, radius, points, rotation = 0) {
@@ -1779,7 +1949,7 @@ class GlycanDrawer {
         const actualSize = this.getSugarSize(sugar);
         highlight.setAttribute('r', actualSize + 5);
         highlight.setAttribute('fill', 'none');
-        highlight.setAttribute('stroke', '#3498db');
+        highlight.setAttribute('stroke', '#0072BC');
         highlight.setAttribute('stroke-width', '2');
         highlight.setAttribute('stroke-dasharray', '5,5');
         highlight.setAttribute('pointer-events', 'none');
@@ -1828,8 +1998,8 @@ class GlycanDrawer {
         highlight.setAttribute('y', bbox.y - 2);
         highlight.setAttribute('width', bbox.width + 8);
         highlight.setAttribute('height', bbox.height + 4);
-        highlight.setAttribute('fill', 'rgba(52, 152, 219, 0.2)');
-        highlight.setAttribute('stroke', '#3498db');
+        highlight.setAttribute('fill', 'rgba(0, 114, 188, 0.2)');
+        highlight.setAttribute('stroke', '#0072BC');
         highlight.setAttribute('stroke-width', '2');
         highlight.setAttribute('stroke-dasharray', '5,5');
         highlight.setAttribute('rx', '3');
@@ -1891,8 +2061,43 @@ class GlycanDrawer {
                 break;
                 
             case 'triangle':
-                const triPoints = `${x},${y-size} ${x+size*0.866},${y+size*0.5} ${x-size*0.866},${y+size*0.5}`;
+                const triPoints = this.generatePolygonPoints(x, y, size, 3, -Math.PI/2);
                 shape.setAttribute('points', triPoints);
+                break;
+                
+            case 'triangle-inverted':
+                const invertedTriPoints = this.generatePolygonPoints(x, y, size, 3, Math.PI/2);
+                shape.setAttribute('points', invertedTriPoints);
+                break;
+                
+            case 'triangle-divided':
+                // 新的分割三角形结构：group包含polygon+line
+                if (shape.classList.contains('triangle-divided-group')) {
+                    // 重新计算三角形点
+                    const newTriPoints = this.generatePolygonPoints(x, y, size, 3, -Math.PI/2);
+                    
+                    // 更新多边形
+                    const polygon = shape.querySelector('polygon');
+                    if (polygon) {
+                        polygon.setAttribute('points', newTriPoints);
+                    }
+                    
+                    // 更新分割线
+                    const line = shape.querySelector('.dividing-line');
+                    if (line) {
+                        const vertices = this.parsePolygonPoints(newTriPoints);
+                        if (vertices.length >= 3) {
+                            const topVertex = vertices[0];
+                            const bottomMidX = (vertices[1].x + vertices[2].x) / 2;
+                            const bottomMidY = (vertices[1].y + vertices[2].y) / 2;
+                            
+                            line.setAttribute('x1', topVertex.x);
+                            line.setAttribute('y1', topVertex.y);
+                            line.setAttribute('x2', bottomMidX);
+                            line.setAttribute('y2', bottomMidY);
+                        }
+                    }
+                }
                 break;
                 
             case 'diamond':
@@ -1915,6 +2120,16 @@ class GlycanDrawer {
                 shape.setAttribute('points', flatHexPoints);
                 break;
                 
+            case 'hexagon-compressed':
+                const compressedHexPoints = this.generateCompressedPolygonPoints(x, y, size, 6, 0, 0.7);
+                shape.setAttribute('points', compressedHexPoints);
+                break;
+                
+            case 'flat-hexagon-compressed':
+                const compressedFlatHexPoints = this.generateCompressedPolygonPoints(x, y, size, 6, Math.PI/6, 0.7);
+                shape.setAttribute('points', compressedFlatHexPoints);
+                break;
+                
             case 'flat-diamond':
                 const flatDiamondPoints = `${x-size*0.7},${y} ${x},${y-size*0.7} ${x+size*0.7},${y} ${x},${y+size*0.7}`;
                 shape.setAttribute('points', flatDiamondPoints);
@@ -1923,6 +2138,11 @@ class GlycanDrawer {
             case 'pentagon':
                 const pentPoints = this.generatePolygonPoints(x, y, size, 5, -Math.PI/2);
                 shape.setAttribute('points', pentPoints);
+                break;
+                
+            case 'pentagon-inverted':
+                const pentInvertedPoints = this.generatePolygonPoints(x, y, size, 5, Math.PI/2);
+                shape.setAttribute('points', pentInvertedPoints);
                 break;
         }
     }
@@ -2017,8 +2237,9 @@ class GlycanDrawer {
         
         // 定义默认调色板颜色
         const defaultColors = [
-            '#3498db', '#e74c3c', '#2ecc71', '#f39c12', 
-            '#9b59b6', '#34495e', '#1abc9c', '#f1c40f'
+            '#0072BC', '#00A651', '#FFD400', '#8FCCE9', 
+            '#F69EA1', '#A54399', '#A17A4D', '#F47920',
+            '#ED1C24', '#FFFFFF', '#808080', '#000000'
         ];
         
         // 清除所有UI选择状态
@@ -2096,8 +2317,9 @@ class GlycanDrawer {
         
         // 定义默认调色板颜色
         const defaultColors = [
-            '#3498db', '#e74c3c', '#2ecc71', '#f39c12', 
-            '#9b59b6', '#34495e', '#1abc9c', '#f1c40f'
+            '#0072BC', '#00A651', '#FFD400', '#8FCCE9', 
+            '#F69EA1', '#A54399', '#A17A4D', '#F47920',
+            '#ED1C24', '#FFFFFF', '#808080', '#000000'
         ];
         
         // 清除所有UI选择状态
@@ -2422,7 +2644,7 @@ class GlycanDrawer {
         const actualSize = this.getSugarSize(sugar);
         highlight.setAttribute('r', actualSize + 8);
         highlight.setAttribute('fill', 'none');
-        highlight.setAttribute('stroke', '#2ecc71');
+        highlight.setAttribute('stroke', '#00A651');
         highlight.setAttribute('stroke-width', '3');
         highlight.setAttribute('stroke-dasharray', '8,4');
         highlight.setAttribute('pointer-events', 'none');
@@ -2449,7 +2671,7 @@ class GlycanDrawer {
         const actualSize = this.getSugarSize(sugar);
         highlight.setAttribute('r', actualSize + 6);
         highlight.setAttribute('fill', 'none');
-        highlight.setAttribute('stroke', '#f39c12');
+        highlight.setAttribute('stroke', '#F47920');
         highlight.setAttribute('stroke-width', '3');
         highlight.setAttribute('stroke-dasharray', '6,3');
         highlight.setAttribute('pointer-events', 'none');
@@ -2645,7 +2867,7 @@ class GlycanDrawer {
                     stroke-width: 2;
                 }
                 .connection {
-                    stroke: #34495e;
+                    stroke: #808080;
                     stroke-width: 2;
                     fill: none;
                 }
@@ -3289,7 +3511,7 @@ class GlycanDrawer {
         const firstBorderWidth = firstShape ? (parseFloat(firstShape.style.strokeWidth || firstShape.getAttribute('stroke-width')) || 2) : 2;
         const firstBorderColor = firstShape ? (firstShape.style.stroke || firstShape.getAttribute('stroke') || '#333333') : '#333333';
         const firstBorderOpacity = firstShape ? (parseFloat(firstShape.style.strokeOpacity || firstShape.getAttribute('stroke-opacity')) || 1) : 1;
-        const firstFillColor = firstShape ? (firstShape.style.fill || firstShape.getAttribute('fill') || firstSugar.getAttribute('data-color') || '#3498db') : '#3498db';
+        const firstFillColor = firstShape ? (firstShape.style.fill || firstShape.getAttribute('fill') || firstSugar.getAttribute('data-color') || '#0072BC') : '#0072BC';
         const firstFillOpacity = firstShape ? (parseFloat(firstShape.style.fillOpacity || firstShape.getAttribute('fill-opacity')) || 1) : 1;
         
         // Check if all selected sugars have same values for detailed controls
@@ -3306,7 +3528,7 @@ class GlycanDrawer {
                 const borderWidth = parseFloat(shape.style.strokeWidth || shape.getAttribute('stroke-width')) || 2;
                 const borderColor = shape.style.stroke || shape.getAttribute('stroke') || '#333333';
                 const borderOpacity = parseFloat(shape.style.strokeOpacity || shape.getAttribute('stroke-opacity')) || 1;
-                const fillColor = shape.style.fill || shape.getAttribute('fill') || sugar.getAttribute('data-color') || '#3498db';
+                const fillColor = shape.style.fill || shape.getAttribute('fill') || sugar.getAttribute('data-color') || '#0072BC';
                 const fillOpacity = parseFloat(shape.style.fillOpacity || shape.getAttribute('fill-opacity')) || 1;
                 if (borderWidth !== firstBorderWidth) mixedBorderWidth = true;
                 if (borderColor !== firstBorderColor) mixedBorderColor = true;
@@ -3713,7 +3935,7 @@ class GlycanDrawer {
             
             // Update custom sugar color from config
             if (customColorPicker && customColorHex) {
-                const configFillColor = config.color || '#3498db';
+                const configFillColor = config.color || '#0072BC';
                 const hexFillColor = this.normalizeColorToHex(configFillColor);
                 customColorPicker.value = hexFillColor;
                 customColorHex.value = hexFillColor;
@@ -3762,7 +3984,7 @@ class GlycanDrawer {
                     }
                     
                     // Update custom sugar color from selected sugar
-                    const currentFillColor = shape.style.fill || shape.getAttribute('fill') || referenceSugar.getAttribute('data-color') || '#3498db';
+                    const currentFillColor = shape.style.fill || shape.getAttribute('fill') || referenceSugar.getAttribute('data-color') || '#0072BC';
                     const hexFillColor = this.normalizeColorToHex(currentFillColor);
                     if (customColorPicker && customColorHex) {
                         customColorPicker.value = hexFillColor;
@@ -3966,7 +4188,7 @@ class GlycanDrawer {
         // Update current configuration for add mode
         if (this.currentTool === 'add') {
             if (!this.currentSugarConfig) {
-                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#0072BC' };
             }
             this.currentSugarConfig.size = size;
             return;
@@ -4021,12 +4243,17 @@ class GlycanDrawer {
                 break;
                 
             case 'triangle':
+            case 'triangle-inverted':
+            case 'triangle-divided':
             case 'diamond':
             case 'star':
             case 'hexagon':
             case 'flat-hexagon':
+            case 'hexagon-compressed':
+            case 'flat-hexagon-compressed':
             case 'flat-diamond':
             case 'pentagon':
+            case 'pentagon-inverted':
                 // For polygons, we need to recalculate points
                 const sugar = shape.closest('.sugar');
                 if (sugar) {
@@ -4062,7 +4289,7 @@ class GlycanDrawer {
         // Update current configuration for add mode
         if (this.currentTool === 'add') {
             if (!this.currentSugarConfig) {
-                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#0072BC' };
             }
             this.currentSugarConfig.borderWidth = width;
             this.currentSugarConfig.borderColor = color;
@@ -4113,7 +4340,7 @@ class GlycanDrawer {
         // Update current configuration for add mode
         if (this.currentTool === 'add') {
             if (!this.currentSugarConfig) {
-                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#0072BC' };
             }
             this.currentSugarConfig.borderWidth = width;
             return;
@@ -4145,7 +4372,7 @@ class GlycanDrawer {
         // Update current configuration for add mode
         if (this.currentTool === 'add') {
             if (!this.currentSugarConfig) {
-                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#0072BC' };
             }
             this.currentSugarConfig.borderColor = color;
             return;
@@ -4179,7 +4406,7 @@ class GlycanDrawer {
         // Update current configuration for add mode
         if (this.currentTool === 'add') {
             if (!this.currentSugarConfig) {
-                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#0072BC' };
             }
             this.currentSugarConfig.borderOpacity = opacity;
             return;
@@ -4213,7 +4440,7 @@ class GlycanDrawer {
         // Update current configuration for add mode
         if (this.currentTool === 'add') {
             if (!this.currentSugarConfig) {
-                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#0072BC' };
             }
             this.currentSugarConfig.fillOpacity = opacity;
             return;
@@ -4306,10 +4533,9 @@ class GlycanDrawer {
             triangle: {
                 name: '三角形',
                 shapes: [
-                    { id: 'triangle', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,2.7 14.4558,12.15 3.5442,12.15" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '三角形' },
-                    { id: 'triangle-filled', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,2.7 14.4558,12.15 3.5442,12.15" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '实心三角形' },
-                    { id: 'triangle-outline', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,2.7 14.4558,12.15 3.5442,12.15" fill="none" stroke="#888888" stroke-width="1"/></svg>', name: '空心三角形' },
-                    { id: 'triangle-down', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="3.5442,5.85 14.4558,5.85 9,15.3" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '倒三角形' }
+                    { id: 'triangle', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.8 14.4,12.1 3.6,12.1" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '正三角形' },
+                    { id: 'triangle-inverted', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,15.2 3.6,5.9 14.4,5.9" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '倒立三角形' },
+                    { id: 'triangle-divided', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><defs><linearGradient id="icon-divided-gradient" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="50%" stop-color="white" stop-opacity="1"/><stop offset="50%" stop-color="#888888" stop-opacity="1"/></linearGradient></defs><polygon points="9.0,2.8 14.4,12.1 3.6,12.1" fill="url(#icon-divided-gradient)" stroke="#000000" stroke-width="1"/><line x1="9.0" y1="2.8" x2="9.0" y2="12.1" stroke="#000000" stroke-width="1"/></svg>', name: '分割三角形' }
                 ]
             },
             star: {
@@ -4327,18 +4553,16 @@ class GlycanDrawer {
                 name: '正五边形',
                 shapes: [
                     { id: 'pentagon', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 15.0,7.1 12.7,14.1 5.3,14.1 3.0,7.1" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '正五边形' },
-                    { id: 'pentagon-filled', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 15.0,7.1 12.7,14.1 5.3,14.1 3.0,7.1" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '实心五边形' },
-                    { id: 'pentagon-outline', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 15.0,7.1 12.7,14.1 5.3,14.1 3.0,7.1" fill="none" stroke="#888888" stroke-width="1"/></svg>', name: '空心五边形' },
-                    { id: 'pentagon-double', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 15.0,7.1 12.7,14.1 5.3,14.1 3.0,7.1" fill="none" stroke="#888888" stroke-width="2"/></svg>', name: '双线五边形' }
+                    { id: 'pentagon-inverted', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,15.3 3.0,10.9 5.3,3.9 12.7,3.9 15.0,10.9" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '倒立五边形' }
                 ]
             },
             hexagon: {
-                name: '正六边形',
+                name: '六边形',
                 shapes: [
-                    { id: 'hexagon', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 14.5,5.8 14.5,12.1 9.0,15.3 3.5,12.2 3.5,5.8" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '正六边形' },
-                    { id: 'hexagon-filled', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 14.5,5.8 14.5,12.1 9.0,15.3 3.5,12.2 3.5,5.8" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '实心六边形' },
-                    { id: 'hexagon-outline', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 14.5,5.8 14.5,12.1 9.0,15.3 3.5,12.2 3.5,5.8" fill="none" stroke="#888888" stroke-width="1"/></svg>', name: '空心六边形' },
-                    { id: 'hexagon-bold', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9.0,2.7 14.5,5.8 14.5,12.1 9.0,15.3 3.5,12.2 3.5,5.8" fill="none" stroke="#888888" stroke-width="2"/></svg>', name: '粗边六边形' }
+                    { id: 'hexagon', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="15.3,9.0 12.2,14.4 5.8,14.4 2.7,9.0 5.8,3.6 12.2,3.6" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '正六边形' },
+                    { id: 'flat-hexagon', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="14.4,12.2 9.0,15.3 3.6,12.2 3.6,5.8 9.0,2.7 14.4,5.8" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '平躺六边形' },
+                    { id: 'hexagon-compressed', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="15.3,9.0 12.2,12.8 5.8,12.8 2.7,9.0 5.8,5.2 12.2,5.2" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '扁的正六边形' },
+                    { id: 'flat-hexagon-compressed', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="14.4,11.2 9.0,13.3 3.6,11.2 3.6,6.8 9.0,4.7 14.4,6.8" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '扁的平躺六边形' }
                 ]
             },
             check: {
@@ -4414,7 +4638,7 @@ class GlycanDrawer {
         // Update configuration for add mode or apply to selected sugars
         if (this.currentTool === 'add') {
             if (!this.currentSugarConfig) {
-                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#3498db' };
+                this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#0072BC' };
             }
             this.currentSugarConfig.shape = shape;
             this.currentSugarConfig.type = 'custom';
@@ -4584,7 +4808,7 @@ class GlycanDrawer {
                 const x = parseFloat(sugar.getAttribute('data-x'));
                 const y = parseFloat(sugar.getAttribute('data-y'));
                 const currentSize = this.getSugarSize(sugar);
-                const currentFill = currentShape.style.fill || currentShape.getAttribute('fill') || '#3498db';
+                const currentFill = currentShape.style.fill || currentShape.getAttribute('fill') || '#0072BC';
                 const currentStroke = currentShape.style.stroke || currentShape.getAttribute('stroke') || '#000000';
                 const currentStrokeWidth = currentShape.style.strokeWidth || currentShape.getAttribute('stroke-width') || '2';
                 const currentDashArray = currentShape.style.strokeDasharray || currentShape.getAttribute('stroke-dasharray') || '';
@@ -4670,13 +4894,50 @@ class GlycanDrawer {
         
         sugarsToChange.forEach(sugar => {
             const shape = sugar.querySelector('.sugar-shape');
+            const shapeType = sugar.getAttribute('data-shape');
+            
             if (shape) {
-                // Apply new color (fill)
-                shape.style.setProperty('fill', color, 'important');
-                
-                // Keep black border (don't change stroke color)
-                shape.style.setProperty('stroke', '#000000', 'important');
-                shape.style.setProperty('stroke-width', '2', 'important');
+                if (shapeType === 'triangle-divided' && shape.classList.contains('triangle-divided-group')) {
+                    // 分割三角形的特殊颜色处理：更新渐变中的右半部分颜色
+                    const gradientId = shape.getAttribute('data-gradient-id');
+                    console.log('Updating triangle-divided color:', color, 'gradientId:', gradientId); // 调试信息
+                    
+                    if (gradientId) {
+                        const gradient = this.canvas.querySelector(`#${gradientId}`);
+                        if (gradient) {
+                            const stops = gradient.querySelectorAll('stop');
+                            if (stops.length >= 2) {
+                                // 左半部分保持白色（stop[0]）
+                                stops[0].setAttribute('stop-color', 'white');
+                                // 右半部分更新为新颜色（stop[1]）
+                                stops[1].setAttribute('stop-color', color);
+                                console.log('Updated gradient stops:', stops[0].getAttribute('stop-color'), stops[1].getAttribute('stop-color'));
+                            }
+                        } else {
+                            console.log('Gradient not found:', gradientId);
+                        }
+                    }
+                    
+                    // 设置边框样式（对组内的多边形和线条）
+                    const polygon = shape.querySelector('polygon');
+                    const line = shape.querySelector('.dividing-line');
+                    
+                    if (polygon) {
+                        polygon.style.setProperty('stroke', '#000000', 'important');
+                        polygon.style.setProperty('stroke-width', '2', 'important');
+                    }
+                    if (line) {
+                        line.style.setProperty('stroke', '#000000', 'important');
+                        line.style.setProperty('stroke-width', '2', 'important');
+                    }
+                } else {
+                    // 普通形状的颜色处理
+                    shape.style.setProperty('fill', color, 'important');
+                    
+                    // Keep black border (don't change stroke color)
+                    shape.style.setProperty('stroke', '#000000', 'important');
+                    shape.style.setProperty('stroke-width', '2', 'important');
+                }
             }
         });
     }
