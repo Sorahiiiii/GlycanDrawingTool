@@ -7,7 +7,7 @@ class GlycanDrawer {
         this.sugarCount = 0;
         this.textCount = 0;
         this.sugarRadius = 20;
-        this.connectionDistance = 80;
+        this.connectionDistance = 70;
         
         // Tool states
         this.currentTool = 'select';
@@ -16,7 +16,7 @@ class GlycanDrawer {
             shape: 'circle',
             color: '#0072BC',
             size: 20,
-            borderWidth: 2,
+            borderWidth: 3,
             borderColor: '#000000',
             borderOpacity: 1,
             fillOpacity: 1,
@@ -24,7 +24,7 @@ class GlycanDrawer {
         };
         
         this.currentTextConfig = {
-            fontSize: 16,
+            fontSize: 15,
             fontFamily: 'Arial, sans-serif',
             color: '#000000',
             opacity: 1,
@@ -80,11 +80,11 @@ class GlycanDrawer {
         
         // Linkage assign mode properties
         this.currentLinkageConfig = {
-            strokeWidth: 2,
+            strokeWidth: 3,
             strokeColor: '#000000',  // Match linkage mode default
             strokeStyle: 'solid',
             strokeOpacity: 1,
-            textSize: 12,
+            textSize: 14,
             textColor: '#000000',
             showText: false,  // Default: don't show linkage text for new connections
             linkage: null,  // Default linkage (will show as ??-? if not set)
@@ -137,28 +137,28 @@ class GlycanDrawer {
             'galnac': { shape: 'square', color: '#FFD400', name: 'GalNAc' },
             'fuc': { shape: 'triangle', color: '#ED1C24', name: 'Fucose' },
             'glca': { shape: 'diamond-divided-top', color: '#0072BC', name: 'GlcA' },
-            'sia': { shape: 'diamond', color: '#A54399', name: 'Sia' },
+            'neu5ac': { shape: 'diamond', color: '#A54399', name: 'Neu5Ac' },
             'xyl': { shape: 'star-5', color: '#F47920', name: 'Xyl' }
         };
         
         // 16 directional positions around a sugar
         this.directions = [
-            { name: 'N', dx: 0, dy: -1 },
-            { name: 'NNE', dx: 0.3827, dy: -0.9239 },
-            { name: 'NE', dx: 0.707, dy: -0.707 },
-            { name: 'ENE', dx: 0.9239, dy: -0.3827 },
-            { name: 'E', dx: 1, dy: 0 },
-            { name: 'ESE', dx: 0.9239, dy: 0.3827 },
-            { name: 'SE', dx: 0.707, dy: 0.707 },
-            { name: 'SSE', dx: 0.3827, dy: 0.9239 },
-            { name: 'S', dx: 0, dy: 1 },
-            { name: 'SSW', dx: -0.3827, dy: 0.9239 },
-            { name: 'SW', dx: -0.707, dy: 0.707 },
-            { name: 'WSW', dx: -0.9239, dy: 0.3827 },
-            { name: 'W', dx: -1, dy: 0 },
-            { name: 'WNW', dx: -0.9239, dy: -0.3827 },
-            { name: 'NW', dx: -0.707, dy: -0.707 },
-            { name: 'NNW', dx: -0.3827, dy: -0.9239 }
+        { name: 'N',  dx: 0.0000,  dy: -1.0000 },
+        { name: 'NNE', dx: 0.5000,  dy: -0.8660 },
+        { name: 'NE',  dx: 0.7071,  dy: -0.7071 },
+        { name: 'ENE', dx: 0.8660,  dy: -0.5000 },
+        { name: 'E',   dx: 1.0000,  dy:  0.0000 },
+        { name: 'ESE', dx: 0.8660,  dy:  0.5000 },
+        { name: 'SE',  dx: 0.7071,  dy:  0.7071 },
+        { name: 'SSE', dx: 0.5000,  dy:  0.8660 },
+        { name: 'S',   dx: 0.0000,  dy:  1.0000 },
+        { name: 'SSW',  dx: -0.5000, dy:  0.8660 },
+        { name: 'SW',    dx: -0.7071, dy:  0.7071 },
+        { name: 'WSW',  dx: -0.8660, dy:  0.5000 },
+        { name: 'W',     dx: -1.0000, dy:  0.0000 },
+        { name: 'WNW',  dx: -0.8660, dy: -0.5000 },
+        { name: 'NW',    dx: -0.7071, dy: -0.7071 },
+        { name: 'NNW',  dx: -0.5000, dy: -0.8660 }
         ];
         
         this.init();
@@ -2247,6 +2247,11 @@ class GlycanDrawer {
         // Update canvas cursor
         this.updateCanvasCursor();
         
+        // Hide add preview dot when switching tools
+        if (this.addPreviewDot) {
+            this.addPreviewDot.style.display = 'none';
+        }
+        
         // Update style panels visibility
         this.updateStylePanel();
         
@@ -2269,6 +2274,16 @@ class GlycanDrawer {
             this.currentSugarConfig.preset = preset;
             this.currentSugarConfig.shape = this.snfgPresets[preset].shape;
             this.currentSugarConfig.color = this.snfgPresets[preset].color;
+            
+            // Set size based on shape
+            const shape = this.snfgPresets[preset].shape;
+            if (shape.includes('square')) {
+                this.currentSugarConfig.size = 18;
+            } else if (shape.includes('diamond')) {
+                this.currentSugarConfig.size = 22;
+            } else {
+                this.currentSugarConfig.size = 20;
+            }
             
             // Update preset button states
             document.querySelectorAll('.preset-item').forEach(item => {
@@ -2545,9 +2560,27 @@ class GlycanDrawer {
         // Remove previous add cursor classes
         this.canvas.classList.remove('add-on-sugar');
         
+        // Hide preview dot by default
+        if (this.addPreviewDot) {
+            this.addPreviewDot.style.display = 'none';
+        }
+        
         if (clickedElement && clickedElement.classList.contains('sugar')) {
             // Mouse is over a sugar - show crosshair for directional addition
             this.canvas.classList.add('add-on-sugar');
+            
+            // Show preview dot at the position where new sugar would be added
+            if (this.addPreviewDot) {
+                const sugarX = parseFloat(clickedElement.getAttribute('data-x'));
+                const sugarY = parseFloat(clickedElement.getAttribute('data-y'));
+                const bestDir = this.findBestDirection(sugarX, sugarY, x, y);
+                const previewX = sugarX + bestDir.dx * this.connectionDistance;
+                const previewY = sugarY + bestDir.dy * this.connectionDistance;
+                
+                this.addPreviewDot.setAttribute('cx', previewX);
+                this.addPreviewDot.setAttribute('cy', previewY);
+                this.addPreviewDot.style.display = 'block';
+            }
         }
         // When not over sugar, default add-mode class shows hand pointer
     }
@@ -2816,6 +2849,9 @@ class GlycanDrawer {
                 // Create connection between start and target sugars
                 const linkage = this.currentLinkageConfig.linkage || document.getElementById('linkageInput')?.value || null;
                 this.createConnection(this.connectionStartSugar, this.connectionTargetSugar, false, linkage);
+                
+                // Finish the step so each connection creation is undoable individually
+                this.finishStep();
             } else if (this.connectionStartSugar) {
                 // Add new sugar at the preview position
                 const coords = this.getSVGCoordinates(e);
@@ -2833,6 +2869,9 @@ class GlycanDrawer {
                 // Create connection between start sugar and new sugar
                 const linkage = this.currentLinkageConfig.linkage || document.getElementById('linkageInput')?.value || null;
                 this.createConnection(this.connectionStartSugar, sugar, false, linkage);
+                
+                // Finish the step so each sugar addition is undoable individually
+                this.finishStep();
             }
             
             // Clean up connection dragging state
@@ -3095,13 +3134,32 @@ class GlycanDrawer {
                                     const newX = pos.tx - ox + dx;
                                     const newY = pos.ty - oy + dy;
 
-                                    // Build config from template attributes (best-effort)
+                                    // Build config from template attributes (best-effort), preserving template's border settings
+                                    const shapeElement = tnode.querySelector('.sugar-shape');
+                                    let templateBorderWidth = null;
+                                    if (shapeElement) {
+                                        // Extract border width from template's inline style or attribute
+                                        const styleStrokeWidth = shapeElement.style.getPropertyValue('stroke-width');
+                                        const attrStrokeWidth = shapeElement.getAttribute('stroke-width');
+                                        if (styleStrokeWidth) {
+                                            templateBorderWidth = parseFloat(styleStrokeWidth);
+                                        } else if (attrStrokeWidth) {
+                                            templateBorderWidth = parseFloat(attrStrokeWidth);
+                                        }
+                                    }
+                                    
                                     const sugarConfig = {
                                         shape: tnode.getAttribute('data-shape') || tnode.getAttribute('data-shape-type') || 'circle',
                                         color: tnode.getAttribute('data-color') || tnode.getAttribute('fill') || null,
                                         size: parseFloat(tnode.getAttribute('data-size')) || undefined,
                                         type: 'preset',
-                                        preset: this.activePreset?.name || null
+                                        preset: this.activePreset?.name || null,
+                                        // Use template's border width if defined, otherwise inherit current settings
+                                        borderWidth: (templateBorderWidth !== null) ? templateBorderWidth : this.currentSugarConfig?.borderWidth,
+                                        borderColor: this.currentSugarConfig?.borderColor,
+                                        borderOpacity: this.currentSugarConfig?.borderOpacity,
+                                        borderStyle: this.currentSugarConfig?.borderStyle,
+                                        fillOpacity: this.currentSugarConfig?.fillOpacity
                                     };
 
                                     // Create sugar using canonical path so sugarCount increments correctly
@@ -3124,10 +3182,27 @@ class GlycanDrawer {
                                     if (!startEl || !endEl) return; // ignore connections to external nodes
 
                                     const linkage = conn.getAttribute('data-linkage') || conn.getAttribute('data-linkage') || null;
+                                    
+                                    // Extract stroke width from template connection
+                                    let templateStrokeWidth = null;
+                                    const styleStrokeWidth = conn.style.getPropertyValue('stroke-width');
+                                    const attrStrokeWidth = conn.getAttribute('stroke-width');
+                                    if (styleStrokeWidth) {
+                                        templateStrokeWidth = parseFloat(styleStrokeWidth);
+                                    } else if (attrStrokeWidth) {
+                                        templateStrokeWidth = parseFloat(attrStrokeWidth);
+                                    }
+                                    
                                     // createConnection expects sugar elements
                                         try {
                                             const createdConn = this.createConnection(startEl, endEl, false, linkage);
-                                            if (createdConn && createdConn.getAttribute) addedNodeIds.push(createdConn.getAttribute('id'));
+                                            if (createdConn && createdConn.getAttribute) {
+                                                addedNodeIds.push(createdConn.getAttribute('id'));
+                                                // Apply template stroke width if it exists
+                                                if (templateStrokeWidth !== null) {
+                                                    createdConn.style.setProperty('stroke-width', templateStrokeWidth, 'important');
+                                                }
+                                            }
                                         } catch (e) {
                                             // ignore individual connection failures
                                         }
@@ -3437,9 +3512,10 @@ class GlycanDrawer {
         return sugarGroup;
     }
     
-    createSugarShape(x, y, shape, color, size = null) {
+    createSugarShape(x, y, shape, color, size = null, strokeWidth = null) {
         const actualSize = size !== null ? size : this.sugarRadius;
         const strokeColor = '#000000'; // Default black border
+        const actualStrokeWidth = strokeWidth !== null ? strokeWidth : '2'; // Use provided stroke width or default
         
         let element;
         
@@ -3531,7 +3607,7 @@ class GlycanDrawer {
                 defsSquare.appendChild(gradientSquare);
                 squareDividedElement.setAttribute('fill', `url(#${gradientSquareId})`);
                 squareDividedElement.setAttribute('stroke', strokeColor);
-                squareDividedElement.setAttribute('stroke-width', '2');
+                squareDividedElement.setAttribute('stroke-width', actualStrokeWidth);
 
                 // 分割线（左上到右下）
                 const dividingLineSquare = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -3540,7 +3616,7 @@ class GlycanDrawer {
                 dividingLineSquare.setAttribute('x2', p3.x);
                 dividingLineSquare.setAttribute('y2', p3.y);
                 dividingLineSquare.setAttribute('stroke', strokeColor);
-                dividingLineSquare.setAttribute('stroke-width', '2');
+                dividingLineSquare.setAttribute('stroke-width', actualStrokeWidth);
                 dividingLineSquare.classList.add('dividing-line');
 
                 dividedSquareGroup.appendChild(squareDividedElement);
@@ -3602,7 +3678,7 @@ class GlycanDrawer {
                 // 应用渐变到三角形
                 triangleElement.setAttribute('fill', `url(#${gradientId})`);
                 triangleElement.setAttribute('stroke', strokeColor);
-                triangleElement.setAttribute('stroke-width', '2');
+                triangleElement.setAttribute('stroke-width', actualStrokeWidth);
                 
                 // 计算分割线坐标（从顶点到底边中点）
                 const vertices = this.parsePolygonPoints(dividedTriPoints);
@@ -3620,7 +3696,7 @@ class GlycanDrawer {
                     dividingLine.setAttribute('x2', bottomMidX);
                     dividingLine.setAttribute('y2', bottomMidY);
                     dividingLine.setAttribute('stroke', strokeColor);
-                    dividingLine.setAttribute('stroke-width', '2');
+                    dividingLine.setAttribute('stroke-width', actualStrokeWidth);
                     dividingLine.classList.add('dividing-line');
                     
                     dividedGroup.appendChild(triangleElement);
@@ -3694,7 +3770,7 @@ class GlycanDrawer {
                 // 应用渐变
                 diamondTopElement.setAttribute('fill', `url(#${gradientTopId})`);
                 diamondTopElement.setAttribute('stroke', strokeColor);
-                diamondTopElement.setAttribute('stroke-width', '2');
+                diamondTopElement.setAttribute('stroke-width', actualStrokeWidth);
                 
                 // 创建水平分割线
                 const dividingLineTop = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -3703,7 +3779,7 @@ class GlycanDrawer {
                 dividingLineTop.setAttribute('x2', x + actualSize);
                 dividingLineTop.setAttribute('y2', y);
                 dividingLineTop.setAttribute('stroke', strokeColor);
-                dividingLineTop.setAttribute('stroke-width', '2');
+                dividingLineTop.setAttribute('stroke-width', actualStrokeWidth);
                 dividingLineTop.classList.add('dividing-line');
                 
                 dividedTopGroup.appendChild(diamondTopElement);
@@ -3755,7 +3831,7 @@ class GlycanDrawer {
                 // 应用渐变
                 diamondBottomElement.setAttribute('fill', `url(#${gradientBottomId})`);
                 diamondBottomElement.setAttribute('stroke', strokeColor);
-                diamondBottomElement.setAttribute('stroke-width', '2');
+                diamondBottomElement.setAttribute('stroke-width', actualStrokeWidth);
                 
                 // 创建水平分割线
                 const dividingLineBottom = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -3764,7 +3840,7 @@ class GlycanDrawer {
                 dividingLineBottom.setAttribute('x2', x + actualSize);
                 dividingLineBottom.setAttribute('y2', y);
                 dividingLineBottom.setAttribute('stroke', strokeColor);
-                dividingLineBottom.setAttribute('stroke-width', '2');
+                dividingLineBottom.setAttribute('stroke-width', actualStrokeWidth);
                 dividingLineBottom.classList.add('dividing-line');
                 
                 dividedBottomGroup.appendChild(diamondBottomElement);
@@ -3952,18 +4028,18 @@ class GlycanDrawer {
             // Wave line - use color for stroke, preserve stroke-width from attributes
             element.setAttribute('stroke', color);
             if (!element.getAttribute('stroke-width')) {
-                element.setAttribute('stroke-width', '2');
+                element.setAttribute('stroke-width', actualStrokeWidth);
             }
         } else if (shape === 'bracket-left' || shape === 'bracket-right' || 
                    shape === 'paren-left' || shape === 'paren-right' ||
-                   shape === 'brace-left' || shape === 'brace-right' ||
-                   shape === 'freeend-asterisk') {
-            // Bracket and asterisk path shapes - use color for stroke
+                   shape === 'brace-left' || shape === 'brace-right') {
+            // Bracket and parenthesis path shapes - use color for stroke
             element.setAttribute('stroke', color);
+            element.setAttribute('stroke-width', actualStrokeWidth);
         } else {
             element.setAttribute('fill', color);
             element.setAttribute('stroke', strokeColor);
-            element.setAttribute('stroke-width', '2');
+            element.setAttribute('stroke-width', actualStrokeWidth);
         }
         
         return element;
@@ -4568,7 +4644,7 @@ class GlycanDrawer {
     }
     
     // Update existing shape element to a different shape type
-    updateShapeToType(shape, newShapeType, x, y, color, size) {
+    updateShapeToType(shape, newShapeType, x, y, color, size, strokeWidth = null) {
         if (!shape) return;
         
         const currentType = shape.tagName.toLowerCase();
@@ -4580,14 +4656,14 @@ class GlycanDrawer {
             const oldShape = shape;
             
             // Create new shape element
-            const newShape = this.createSugarShape(x, y, newShapeType, color, size);
+            const newShape = this.createSugarShape(x, y, newShapeType, color, size, strokeWidth);
             newShape.classList.add('sugar-shape');
             
             // Replace the old shape with the new one
             parent.replaceChild(newShape, oldShape);
         } else {
             // Same element type, just update attributes
-            this.updateShapeAttributes(shape, newShapeType, x, y, color, size);
+            this.updateShapeAttributes(shape, newShapeType, x, y, color, size, strokeWidth);
         }
     }
     
@@ -4636,8 +4712,9 @@ class GlycanDrawer {
     }
     
     // Update shape attributes for same element type
-    updateShapeAttributes(shape, shapeType, x, y, color, size) {
+    updateShapeAttributes(shape, shapeType, x, y, color, size, strokeWidth = null) {
         const actualSize = size || this.sugarRadius;
+        const actualStrokeWidth = strokeWidth !== null ? strokeWidth : '2';
         
         // Update position and size attributes based on shape type
         switch (shapeType) {
@@ -4724,11 +4801,32 @@ class GlycanDrawer {
             // Add other shape types as needed...
         }
         
-        // Update color
+        // Update color and stroke based on shape type
         const normalizedFillColor = this.normalizeColorToHex(color);
-        shape.style.setProperty('fill', normalizedFillColor, 'important');
-        shape.style.setProperty('stroke', '#000000', 'important');
-        shape.style.setProperty('stroke-width', '2', 'important');
+        
+        if (shapeType === 'freeend-asterisk') {
+            // Asterisk text - use color for fill, no stroke
+            shape.style.setProperty('fill', normalizedFillColor, 'important');
+            shape.style.removeProperty('stroke');
+            shape.style.removeProperty('stroke-width');
+        } else if (shapeType === 'freeend-wave') {
+            // Wave line - use color for stroke
+            shape.style.setProperty('stroke', normalizedFillColor, 'important');
+            shape.style.setProperty('stroke-width', actualStrokeWidth, 'important');
+            shape.style.removeProperty('fill');
+        } else if (shapeType === 'bracket-left' || shapeType === 'bracket-right' || 
+                   shapeType === 'paren-left' || shapeType === 'paren-right' ||
+                   shapeType === 'brace-left' || shapeType === 'brace-right') {
+            // Bracket and parenthesis path shapes - use color for stroke
+            shape.style.setProperty('stroke', normalizedFillColor, 'important');
+            shape.style.setProperty('stroke-width', actualStrokeWidth, 'important');
+            shape.style.removeProperty('fill');
+        } else {
+            // Regular shapes - use color for fill, black stroke
+            shape.style.setProperty('fill', normalizedFillColor, 'important');
+            shape.style.setProperty('stroke', '#000000', 'important');
+            shape.style.setProperty('stroke-width', actualStrokeWidth, 'important');
+        }
     }
 
     updateConnectedLines(sugar, oldX, oldY, newX, newY) {
@@ -9756,7 +9854,10 @@ class GlycanDrawer {
                 const y = parseFloat(sugar.getAttribute('data-y'));
                 const size = parseFloat(sugar.getAttribute('data-size')) || 20;
                 
-                this.updateShapeToType(shapeElement, shape, x, y, color, size);
+                // Capture the current stroke width to preserve it
+                const currentStrokeWidth = shapeElement.style.strokeWidth || shapeElement.getAttribute('stroke-width');
+                
+                this.updateShapeToType(shapeElement, shape, x, y, color, size, currentStrokeWidth);
             }
             
             // Record after state for undo/redo
@@ -11057,6 +11158,7 @@ class GlycanDrawer {
                     this.clearSelection();
                     break;
                 case 'Delete':
+                case 'Backspace':
                     e.preventDefault();
                     this.deleteSelection();
                     break;

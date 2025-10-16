@@ -40,7 +40,7 @@
 ## 🍬 糖结构样式
 
 ### 1. SNFG 糖预设
-右侧面板提供常见单糖预设（Glc、Gal、Man、GlcNAc、GalNAc、Fuc、GlcA、Sia、Xyl），  
+右侧面板提供常见单糖预设（Glc、Gal、Man、GlcNAc、GalNAc、Fuc、GlcA、Neu5Ac、Xyl），  
 符合SNFG 2.0标准，仅配置颜色与形状，不影响自定义大小。
 
 ### 2. 自定义糖型

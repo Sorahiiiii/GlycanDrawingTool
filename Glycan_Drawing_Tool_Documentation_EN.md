@@ -47,7 +47,7 @@ Available actions:
 ## 🍬 Sugar Appearance
 
 ### 1. SNFG Presets
-The right panel provides common monosaccharide presets (Glc, Gal, Man, GlcNAc, GalNAc, Fuc, GlcA, Sia, Xyl),  
+The right panel provides common monosaccharide presets (Glc, Gal, Man, GlcNAc, GalNAc, Fuc, GlcA, Neu5Ac, Xyl),  
 following **SNFG 2.0 standards**. These include predefined colors and shapes but allow custom size adjustments.
 
 ### 2. Custom Sugar Design
