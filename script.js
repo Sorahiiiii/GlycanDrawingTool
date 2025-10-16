@@ -294,6 +294,8 @@ class GlycanDrawer {
                     } else if (this.currentTool === 'select') {
                         // 选择模式：只应用到选中元素，不更新配置
                         this.applySugarColor(normalizedColor);
+                        // Update UI to reflect the new color
+                        this.updateSelectionUI();
                     }
                 } else {
                     // Reset to current color if invalid
@@ -647,6 +649,16 @@ class GlycanDrawer {
                 colorButtons.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 
+                // Update custom color picker to match
+                const customColorPicker = document.getElementById('customSugarColor');
+                const customColorHex = document.getElementById('customSugarColorHex');
+                if (customColorPicker) {
+                    customColorPicker.value = btn.dataset.color;
+                }
+                if (customColorHex) {
+                    customColorHex.value = btn.dataset.color;
+                }
+                
                 // Clear SNFG preset selection (manual override)
                 this.clearPresetSelection();
                 
@@ -660,16 +672,24 @@ class GlycanDrawer {
                     this.currentSugarConfig.preset = null;
                 } else if (this.currentTool === 'select') {
                     this.applySugarColor(btn.dataset.color);
+                    // Update UI to reflect the new color
+                    this.updateSelectionUI();
                 }
             });
         });
         
         // Custom color picker
-        const customColorPicker = document.getElementById('customColor');
+        const customColorPicker = document.getElementById('customSugarColor');
         if (customColorPicker) {
             customColorPicker.addEventListener('input', (e) => {
                 // Deactivate preset color buttons
                 colorButtons.forEach(b => b.classList.remove('active'));
+                
+                // Update hex input to match
+                const customColorHex = document.getElementById('customSugarColorHex');
+                if (customColorHex) {
+                    customColorHex.value = e.target.value;
+                }
                 
                 // Clear SNFG preset selection (manual override)
                 this.clearPresetSelection();
@@ -684,6 +704,8 @@ class GlycanDrawer {
                     this.currentSugarConfig.preset = null;
                 } else if (this.currentTool === 'select') {
                     this.applySugarColor(e.target.value);
+                    // Update UI to reflect the new color
+                    this.updateSelectionUI();
                 }
             });
         }
@@ -791,6 +813,8 @@ class GlycanDrawer {
                 if (selectedSugars.length > 0) {
                     this.applySugarShape(this.snfgPresets[preset].shape);
                     this.applySugarColor(this.snfgPresets[preset].color);
+                    // Update UI to reflect the new shape and color
+                    this.updateSelectionUI();
                 }
             } else {
                 // In add mode, apply full preset configuration
@@ -814,9 +838,13 @@ class GlycanDrawer {
         });
         
         // Update custom color picker to match preset color
-        const customColorPicker = document.getElementById('customColor');
+        const customColorPicker = document.getElementById('customSugarColor');
+        const customColorHex = document.getElementById('customSugarColorHex');
         if (customColorPicker) {
             customColorPicker.value = presetConfig.color;
+        }
+        if (customColorHex) {
+            customColorHex.value = presetConfig.color;
         }
     }
     
@@ -2548,13 +2576,13 @@ class GlycanDrawer {
         this.clearUISelections();
         
         // 更新颜色选择器
-        const colorPicker = document.getElementById('sugarColor');
-        const customColorPicker = document.getElementById('customColor');
-        if (colorPicker && sugarData.color) {
-            colorPicker.value = sugarData.color;
-        }
+        const customColorPicker = document.getElementById('customSugarColor');
+        const customColorHex = document.getElementById('customSugarColorHex');
         if (customColorPicker && sugarData.color) {
             customColorPicker.value = sugarData.color;
+        }
+        if (customColorHex && sugarData.color) {
+            customColorHex.value = sugarData.color;
         }
         
         // 更新形状按钮 - 兼容新旧系统
@@ -2677,15 +2705,15 @@ class GlycanDrawer {
         });
         
         // 更新颜色选择器 - 如果颜色一致则显示该颜色，否则显示第一个
-        const colorPicker = document.getElementById('sugarColor');
-        const customColorPicker = document.getElementById('customColor');
+        const customColorPicker = document.getElementById('customSugarColor');
+        const customColorHex = document.getElementById('customSugarColorHex');
         const displayColor = colors.length === 1 ? colors[0] : colors[0];
         
-        if (colorPicker) {
-            colorPicker.value = displayColor;
-        }
         if (customColorPicker) {
             customColorPicker.value = displayColor;
+        }
+        if (customColorHex) {
+            customColorHex.value = displayColor;
         }
         
         // 更新尺寸显示 - 如果尺寸一致则显示该尺寸，否则显示混合状态
