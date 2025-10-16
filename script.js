@@ -112,15 +112,15 @@ class GlycanDrawer {
         
         // SNFG Presets Configuration
         this.snfgPresets = {
-            'glc': { shape: 'circle', color: '#0072BC', name: 'Glucose' },
-            'gal': { shape: 'circle', color: '#FFD400', name: 'Galactose' },
-            'man': { shape: 'circle', color: '#00A651', name: 'Mannose' },
+            'glc': { shape: 'circle-filled', color: '#0072BC', name: 'Glucose' },
+            'gal': { shape: 'circle-filled', color: '#FFD400', name: 'Galactose' },
+            'man': { shape: 'circle-filled', color: '#00A651', name: 'Mannose' },
             'glcnac': { shape: 'square', color: '#0072BC', name: 'GlcNAc' },
             'galnac': { shape: 'square', color: '#FFD400', name: 'GalNAc' },
             'fuc': { shape: 'triangle', color: '#ED1C24', name: 'Fucose' },
             'glca': { shape: 'diamond-divided-bottom', color: '#0072BC', name: 'GlcA' },
             'sia': { shape: 'diamond', color: '#A54399', name: 'Sia' },
-            'xyl': { shape: 'star', color: '#F47920', name: 'Xyl' }
+            'xyl': { shape: 'star-5', color: '#F47920', name: 'Xyl' }
         };
         
         // 8 directional positions around a sugar (N, NE, E, SE, S, SW, W, NW)
@@ -787,8 +787,16 @@ class GlycanDrawer {
             
             // If in select mode, only apply shape and color from preset (not size/border)
             if (this.currentTool === 'select') {
-                const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
-                if (selectedSugars.length > 0) {
+                // Use the same selection logic as applySugarShape and applySugarColor functions
+                const sugarsToChange = [];
+                if (this.selectedSugar) {
+                    sugarsToChange.push(this.selectedSugar);
+                }
+                if (this.selectedSugars.size > 0) {
+                    sugarsToChange.push(...Array.from(this.selectedSugars));
+                }
+                
+                if (sugarsToChange.length > 0) {
                     this.applySugarShape(this.snfgPresets[preset].shape);
                     this.applySugarColor(this.snfgPresets[preset].color);
                 }
@@ -803,9 +811,35 @@ class GlycanDrawer {
         const presetConfig = this.snfgPresets[preset];
         if (!presetConfig) return;
         
-        // Highlight the corresponding shape button (keep preset and custom selections together)
-        document.querySelectorAll('.shape-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.shape === presetConfig.shape);
+        // Clear all shape button states first
+        document.querySelectorAll('.shape-main-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        document.querySelectorAll('.shape-dropdown-item').forEach(item => {
+            item.classList.remove('active');
+        });
+        document.querySelectorAll('.shape-category').forEach(cat => {
+            cat.classList.remove('active');
+        });
+        
+        // Highlight the corresponding shape button (main buttons and dropdown items)
+        document.querySelectorAll('.shape-main-btn').forEach(btn => {
+            if (btn.dataset.shape === presetConfig.shape) {
+                btn.classList.add('active');
+            }
+        });
+        document.querySelectorAll('.shape-dropdown-item').forEach(item => {
+            const isActive = item.dataset.shape === presetConfig.shape;
+            if (isActive) {
+                item.classList.add('active');
+                // Also activate the parent category if this item matches
+                const category = item.closest('.shape-category');
+                if (category) {
+                    category.classList.add('active');
+                    const mainBtn = category.querySelector('.shape-main-btn');
+                    if (mainBtn) mainBtn.classList.add('active');
+                }
+            }
         });
         
         // Highlight the corresponding color button (keep preset and custom selections together)
@@ -2246,7 +2280,9 @@ class GlycanDrawer {
         // Update the sugar shape position
         const shape = sugar.querySelector('.sugar-shape');
         const shapeType = sugar.getAttribute('data-shape');
-        this.updateShapePosition(shape, shapeType, newX, newY);
+        if (shape && shapeType) {
+            this.updateShapePosition(shape, shapeType, newX, newY);
+        }
         
         // Update selection highlight position directly without recreating
         if (sugar.classList.contains('selected') || this.selectedSugars.has(sugar)) {
@@ -2258,6 +2294,8 @@ class GlycanDrawer {
     }
     
     updateShapePosition(shape, shapeType, x, y) {
+        if (!shape) return; // Safety check
+        
         const size = this.sugarRadius;
         
         switch (shapeType) {
@@ -2577,6 +2615,12 @@ class GlycanDrawer {
     updateSingleSelectionUI(sugarData) {
         console.log('Updating UI for single selected sugar:', sugarData);
         
+        // Safety check to prevent shape from being reset
+        if (!sugarData.shape) {
+            console.warn('No shape data found for selected sugar');
+            return;
+        }
+        
         // 定义默认调色板颜色
         const defaultColors = [
             '#0072BC', '#00A651', '#FFD400', '#8FCCE9', 
@@ -2584,27 +2628,40 @@ class GlycanDrawer {
             '#ED1C24', '#FFFFFF', '#808080', '#000000'
         ];
         
-        // 清除所有UI选择状态
+        // 清除所有UI选择状态（仅仅清除视觉选中状态，不影响参数）
         this.clearUISelections();
         
-        // 更新颜色选择器
-        const colorPicker = document.getElementById('sugarColor');
-        const customColorPicker = document.getElementById('customColor');
-        if (colorPicker && sugarData.color) {
-            colorPicker.value = sugarData.color;
+        // 更新选中糖分子的显示颜色（不影响添加模式参数）
+        const customSugarColor = document.getElementById('customSugarColor');
+        const customSugarColorHex = document.getElementById('customSugarColorHex');
+        if (customSugarColor && sugarData.color) {
+            customSugarColor.value = sugarData.color;
         }
-        if (customColorPicker && sugarData.color) {
-            customColorPicker.value = sugarData.color;
+        if (customSugarColorHex && sugarData.color) {
+            customSugarColorHex.value = sugarData.color;
         }
         
-        // 更新形状按钮 - 兼容新旧系统
-        document.querySelectorAll('.shape-btn').forEach(btn => {
-            if (btn.dataset.shape === sugarData.shape) {
+        // 更新形状按钮 - 显示实际形状 (主按钮和下拉项目)
+        const mappedShape = this.mapLegacyShape(sugarData.shape);
+        document.querySelectorAll('.shape-main-btn').forEach(btn => {
+            if (btn.dataset.shape === mappedShape) {
                 btn.classList.add('active');
             }
         });
+        document.querySelectorAll('.shape-dropdown-item').forEach(item => {
+            if (item.dataset.shape === mappedShape) {
+                item.classList.add('active');
+                // Also activate the parent category
+                const category = item.closest('.shape-category');
+                if (category) {
+                    category.classList.add('active');
+                    const mainBtn = category.querySelector('.shape-main-btn');
+                    if (mainBtn) mainBtn.classList.add('active');
+                }
+            }
+        });
         
-        // 更新新的形状选择器
+        // 更新新的形状选择器 - 显示实际子形状
         if (this.updateShapeSelectorFromSelection) {
             this.updateShapeSelectorFromSelection([sugarData.shape]);
         }
@@ -2618,21 +2675,22 @@ class GlycanDrawer {
         
         // 查找匹配的SNFG预设
         let matchingPreset = null;
+        const presetMappedShape = this.mapLegacyShape(sugarData.shape);
         for (const [presetKey, presetConfig] of Object.entries(this.snfgPresets)) {
-            if (presetConfig.shape === sugarData.shape && presetConfig.color === sugarData.color) {
+            if (presetConfig.shape === presetMappedShape && presetConfig.color === sugarData.color) {
                 matchingPreset = presetKey;
                 break;
             }
         }
         
-        // 更新SNFG预设按钮
+        // 更新SNFG预设按钮 - 如果匹配则显示选中
         document.querySelectorAll('.snfg-btn, .preset-item').forEach(btn => {
             if (btn.dataset.preset === matchingPreset) {
                 btn.classList.add('active');
             }
         });
         
-        // 更新尺寸显示
+        // 更新尺寸显示（仅显示，不修改添加模式参数）
         const sizeDisplay = document.getElementById('sugarSizeDisplay');
         if (sizeDisplay) {
             sizeDisplay.textContent = sugarData.size;
@@ -2643,14 +2701,9 @@ class GlycanDrawer {
             sizeSlider.value = sugarData.size;
         }
         
-        // 更新当前糖配置
-        this.currentSugarConfig = {
-            type: matchingPreset ? 'preset' : 'custom',
-            preset: matchingPreset,
-            shape: sugarData.shape,
-            color: sugarData.color,
-            size: sugarData.size
-        };
+        // 重要：不修改 this.currentSugarConfig！
+        // 选中糖分子的显示与添加新糖的参数应该是独立的
+        // this.currentSugarConfig 应该保持上次选择的添加参数不变
     }
     
     // 多个元素选择的UI更新
@@ -2664,7 +2717,7 @@ class GlycanDrawer {
             '#ED1C24', '#FFFFFF', '#808080', '#000000'
         ];
         
-        // 清除所有UI选择状态
+        // 清除所有UI选择状态（仅仅清除视觉选中状态）
         this.clearUISelections();
         
         // 检查各属性一致性
@@ -2672,18 +2725,33 @@ class GlycanDrawer {
         const colors = [...new Set(sugarDataList.map(data => data.color))];
         const sizes = [...new Set(sugarDataList.map(data => data.size))];
         
+        // 多选时，如果参数不一致，不显示具体内容（按照需求）
+        
         // 更新形状按钮 - 只有当所有选中元素形状相同时才显示选中
         if (shapes.length === 1) {
-            document.querySelectorAll('.shape-btn').forEach(btn => {
-                if (btn.dataset.shape === shapes[0]) {
+            const mappedShape = this.mapLegacyShape(shapes[0]);
+            document.querySelectorAll('.shape-main-btn').forEach(btn => {
+                if (btn.dataset.shape === mappedShape) {
                     btn.classList.add('active');
                 }
             });
-        }
-        
-        // 更新新的形状选择器
-        if (this.updateShapeSelectorFromSelection) {
-            this.updateShapeSelectorFromSelection(shapes);
+            document.querySelectorAll('.shape-dropdown-item').forEach(item => {
+                const isActive = item.dataset.shape === mappedShape;
+                item.classList.toggle('active', isActive);
+                if (isActive) {
+                    const category = item.closest('.shape-category');
+                    if (category) {
+                        category.classList.add('active');
+                        const mainBtn = category.querySelector('.shape-main-btn');
+                        if (mainBtn) mainBtn.classList.add('active');
+                    }
+                }
+            });
+            
+            // 更新形状选择器
+            if (this.updateShapeSelectorFromSelection) {
+                this.updateShapeSelectorFromSelection(shapes);
+            }
         }
         
         // 更新颜色按钮 - 只有当所有选中元素颜色相同且在默认调色板中时才显示选中
@@ -2698,8 +2766,9 @@ class GlycanDrawer {
         // 检查SNFG预设匹配 - 只有当所有选中元素都匹配同一个预设时才显示选中
         let commonPreset = null;
         if (shapes.length === 1 && colors.length === 1) {
+            const multiMappedShape = this.mapLegacyShape(shapes[0]);
             for (const [presetKey, presetConfig] of Object.entries(this.snfgPresets)) {
-                if (presetConfig.shape === shapes[0] && presetConfig.color === colors[0]) {
+                if (presetConfig.shape === multiMappedShape && presetConfig.color === colors[0]) {
                     commonPreset = presetKey;
                     break;
                 }
@@ -2712,16 +2781,29 @@ class GlycanDrawer {
             }
         });
         
-        // 更新颜色选择器 - 如果颜色一致则显示该颜色，否则显示第一个
-        const colorPicker = document.getElementById('sugarColor');
-        const customColorPicker = document.getElementById('customColor');
-        const displayColor = colors.length === 1 ? colors[0] : colors[0];
+        // 更新颜色显示 - 如果颜色一致则显示该颜色，否则不显示任何颜色
+        const customSugarColor = document.getElementById('customSugarColor');
+        const customSugarColorHex = document.getElementById('customSugarColorHex');
         
-        if (colorPicker) {
-            colorPicker.value = displayColor;
-        }
-        if (customColorPicker) {
-            customColorPicker.value = displayColor;
+        if (colors.length === 1) {
+            // 颜色一致，显示该颜色
+            if (customSugarColor) {
+                customSugarColor.value = colors[0];
+                customSugarColor.classList.remove('mixed');
+            }
+            if (customSugarColorHex) {
+                customSugarColorHex.value = colors[0];
+                customSugarColorHex.classList.remove('mixed');
+            }
+        } else {
+            // 颜色不一致，显示混合状态
+            if (customSugarColor) {
+                customSugarColor.classList.add('mixed');
+            }
+            if (customSugarColorHex) {
+                customSugarColorHex.value = '混合';
+                customSugarColorHex.classList.add('mixed');
+            }
         }
         
         // 更新尺寸显示 - 如果尺寸一致则显示该尺寸，否则显示混合状态
@@ -2730,16 +2812,25 @@ class GlycanDrawer {
         
         if (sizes.length === 1) {
             if (sizeDisplay) sizeDisplay.textContent = sizes[0];
-            if (sizeSlider) sizeSlider.value = sizes[0];
+            if (sizeSlider) {
+                sizeSlider.value = sizes[0];
+                sizeSlider.classList.remove('mixed');
+            }
         } else {
             if (sizeDisplay) sizeDisplay.textContent = '混合';
-            if (sizeSlider) sizeSlider.value = sizes[0]; // 使用第一个元素的尺寸
+            if (sizeSlider) {
+                sizeSlider.classList.add('mixed');
+            }
         }
+        
+        // 重要：不修改 this.currentSugarConfig！
+        // 多选时不应该影响添加新糖的参数
     }
     
     // 清除UI选择状态（不触发其他更新）
     clearUISelections() {
-        document.querySelectorAll('.shape-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.shape-main-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.shape-dropdown-item').forEach(item => item.classList.remove('active'));
         document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.snfg-btn, .preset-item').forEach(btn => btn.classList.remove('active'));
         
@@ -3416,10 +3507,12 @@ class GlycanDrawer {
         
         // Convert SVG coordinates to screen coordinates, then to workspace coordinates
         const screenCoords = this.svgToScreenCoordinates(x, y);
-        const workspaceRect = document.getElementById('workspace').getBoundingClientRect();
+        const workspace = document.getElementById('workspace');
+        const workspaceRect = workspace.getBoundingClientRect();
         
-        const workspaceX = screenCoords.x - workspaceRect.left;
-        const workspaceY = screenCoords.y - workspaceRect.top;
+        // Account for workspace scroll position
+        const workspaceX = screenCoords.x - workspaceRect.left + workspace.scrollLeft;
+        const workspaceY = screenCoords.y - workspaceRect.top + workspace.scrollTop;
         
         this.selectionBox.style.left = workspaceX + 'px';
         this.selectionBox.style.top = workspaceY + 'px';
@@ -3427,7 +3520,7 @@ class GlycanDrawer {
         this.selectionBox.style.height = '0px';
         
         // Add to workspace instead of canvas
-        document.getElementById('workspace').appendChild(this.selectionBox);
+        workspace.appendChild(this.selectionBox);
         
         // Add global event listeners for box selection outside canvas
         this.globalBoxSelectionMouseMove = (e) => this.handleGlobalBoxSelectionMove(e);
@@ -3452,10 +3545,12 @@ class GlycanDrawer {
         // Convert SVG coordinates to workspace coordinates for the HTML overlay
         const startScreenCoords = this.svgToScreenCoordinates(selectionX, selectionY);
         const endScreenCoords = this.svgToScreenCoordinates(selectionX + selectionWidth, selectionY + selectionHeight);
-        const workspaceRect = document.getElementById('workspace').getBoundingClientRect();
+        const workspace = document.getElementById('workspace');
+        const workspaceRect = workspace.getBoundingClientRect();
 
-        const workspaceX = startScreenCoords.x - workspaceRect.left;
-        const workspaceY = startScreenCoords.y - workspaceRect.top;
+        // Account for workspace scroll position
+        const workspaceX = startScreenCoords.x - workspaceRect.left + workspace.scrollLeft;
+        const workspaceY = startScreenCoords.y - workspaceRect.top + workspace.scrollTop;
         const workspaceWidth = endScreenCoords.x - startScreenCoords.x;
         const workspaceHeight = endScreenCoords.y - startScreenCoords.y;
         
@@ -4139,8 +4234,14 @@ class GlycanDrawer {
     // Clear custom sugar type selections when switching contexts
     clearCustomSugarSelections() {
         // Clear shape selections
-        document.querySelectorAll('.shape-btn').forEach(btn => {
+        document.querySelectorAll('.shape-main-btn').forEach(btn => {
             btn.classList.remove('active');
+        });
+        document.querySelectorAll('.shape-dropdown-item').forEach(item => {
+            item.classList.remove('active');
+        });
+        document.querySelectorAll('.shape-category').forEach(cat => {
+            cat.classList.remove('active');
         });
         
         // Clear color selections  
@@ -5087,10 +5188,21 @@ class GlycanDrawer {
         });
     }
 
+    // Map legacy shape names to current shape IDs for backward compatibility
+    mapLegacyShape(shape) {
+        const shapeMapping = {
+            'circle': 'circle-filled',
+            'star': 'star-5'
+        };
+        return shapeMapping[shape] || shape;
+    }
+
     // Get the base category for a shape (for selection mode compatibility)
     getShapeCategory(shape) {
+        // Map legacy shape names first
+        const mappedShape = this.mapLegacyShape(shape);
         for (const [category, config] of Object.entries(this.shapeCategories)) {
-            if (config.shapes.some(s => s.id === shape)) {
+            if (config.shapes.some(s => s.id === mappedShape)) {
                 return category;
             }
         }
@@ -5167,10 +5279,25 @@ class GlycanDrawer {
                 let newShape;
                 switch (shape) {
                     case 'circle':
+                    case 'circle-filled':
                         newShape = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
                         newShape.setAttribute('cx', x);
                         newShape.setAttribute('cy', y);
                         newShape.setAttribute('r', currentSize);
+                        break;
+                    case 'circle-flat':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+                        newShape.setAttribute('cx', x);
+                        newShape.setAttribute('cy', y);
+                        newShape.setAttribute('rx', currentSize * 1.4);
+                        newShape.setAttribute('ry', currentSize * 0.7);
+                        break;
+                    case 'circle-narrow':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+                        newShape.setAttribute('cx', x);
+                        newShape.setAttribute('cy', y);
+                        newShape.setAttribute('rx', currentSize * 0.7);
+                        newShape.setAttribute('ry', currentSize * 1.4);
                         break;
                     case 'square':
                         newShape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -5179,10 +5306,30 @@ class GlycanDrawer {
                         newShape.setAttribute('width', currentSize * 2);
                         newShape.setAttribute('height', currentSize * 2);
                         break;
+                    case 'square-flat':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                        newShape.setAttribute('x', x - currentSize);
+                        newShape.setAttribute('y', y - currentSize * 0.7);
+                        newShape.setAttribute('width', currentSize * 2);
+                        newShape.setAttribute('height', currentSize * 1.4);
+                        break;
+                    case 'square-narrow':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                        newShape.setAttribute('x', x - currentSize * 0.7);
+                        newShape.setAttribute('y', y - currentSize);
+                        newShape.setAttribute('width', currentSize * 1.4);
+                        newShape.setAttribute('height', currentSize * 2);
+                        break;
                     case 'triangle':
+                    case 'triangle-filled':
                         newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
                         const triPoints = `${x},${y-currentSize} ${x+currentSize*0.866},${y+currentSize*0.5} ${x-currentSize*0.866},${y+currentSize*0.5}`;
                         newShape.setAttribute('points', triPoints);
+                        break;
+                    case 'triangle-inverted':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                        const invertedTriPoints = `${x},${y+currentSize} ${x+currentSize*0.866},${y-currentSize*0.5} ${x-currentSize*0.866},${y-currentSize*0.5}`;
+                        newShape.setAttribute('points', invertedTriPoints);
                         break;
                     case 'diamond':
                         newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
@@ -5202,36 +5349,104 @@ class GlycanDrawer {
                     case 'diamond-divided-top':
                     case 'diamond-divided-bottom':
                         // 分割菱形需要重新创建完整的形状
-                        newShape = this.createSugarShape(x, y, shapeType, currentFillColor, currentSize);
+                        newShape = this.createSugarShape(x, y, shape, currentFill, currentSize);
                         // 移除sugar-shape类，因为createSugarShape已经添加了
                         if (newShape.classList) {
                             newShape.classList.remove('sugar-shape');
                         }
                         break;
                     case 'star':
+                    case 'star-5':
                         newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-                        const starPoints = this.generateStarPoints(x, y, currentSize, 5);
+                        const starPoints = this.generateStarPoints(x, y, currentSize, 5, 0);
                         newShape.setAttribute('points', starPoints);
                         break;
+                    case 'star-5-inverted':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                        const starInvertedPoints = this.generateStarPoints(x, y, currentSize, 5, Math.PI);
+                        newShape.setAttribute('points', starInvertedPoints);
+                        break;
+                    case 'star-4':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                        const star4Points = this.generateStarPoints(x, y, currentSize, 4, 0);
+                        newShape.setAttribute('points', star4Points);
+                        break;
+                    case 'star-4-tilted':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                        const star4TiltedPoints = this.generateStarPoints(x, y, currentSize, 4, Math.PI/4);
+                        newShape.setAttribute('points', star4TiltedPoints);
+                        break;
+                    case 'star-6':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                        const star6Points = this.generateStarPoints(x, y, currentSize, 6, 0);
+                        newShape.setAttribute('points', star6Points);
+                        break;
+                    case 'star-6-tilted':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                        const star6TiltedPoints = this.generateStarPoints(x, y, currentSize, 6, Math.PI/6);
+                        newShape.setAttribute('points', star6TiltedPoints);
+                        break;
+                    case 'hexagon':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                        const hexPoints = this.generatePolygonPoints(x, y, currentSize, 6, 0);
+                        newShape.setAttribute('points', hexPoints);
+                        break;
+                    case 'flat-hexagon':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                        const flatHexPoints = this.generatePolygonPoints(x, y, currentSize, 6, Math.PI/6);
+                        newShape.setAttribute('points', flatHexPoints);
+                        break;
+                    case 'pentagon':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                        const pentPoints = this.generatePolygonPoints(x, y, currentSize, 5, -Math.PI/2);
+                        newShape.setAttribute('points', pentPoints);
+                        break;
+                    case 'pentagon-inverted':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                        const pentInvertedPoints = this.generatePolygonPoints(x, y, currentSize, 5, Math.PI/2);
+                        newShape.setAttribute('points', pentInvertedPoints);
+                        break;
                     default:
-                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                        newShape.setAttribute('cx', x);
-                        newShape.setAttribute('cy', y);
-                        newShape.setAttribute('r', currentSize);
+                        console.warn('Unknown shape type:', shape, '- using createSugarShape for complex shapes');
+                        // For complex shapes, use the full createSugarShape method
+                        newShape = this.createSugarShape(x, y, shape, currentFill, currentSize);
+                        // Remove duplicate sugar-shape class since createSugarShape already adds it
+                        if (newShape && newShape.classList) {
+                            newShape.classList.remove('sugar-shape');
+                        }
                 }
                 
-                // Apply styles (preserve current border settings)
-                newShape.setAttribute('fill', currentFill);
-                newShape.setAttribute('stroke', currentStroke);
-                newShape.setAttribute('stroke-width', currentStrokeWidth);
-                if (currentDashArray) {
-                    newShape.setAttribute('stroke-dasharray', currentDashArray);
+                // Apply styles (preserve current border settings) - only if it's a simple element, not a complex group
+                if (newShape && newShape.setAttribute) {
+                    newShape.setAttribute('fill', currentFill);
+                    newShape.setAttribute('stroke', currentStroke);
+                    newShape.setAttribute('stroke-width', currentStrokeWidth);
+                    if (currentDashArray) {
+                        newShape.setAttribute('stroke-dasharray', currentDashArray);
+                    }
+                    newShape.classList.add('sugar-shape');
+                    
+                    // Update sugar data
+                    sugar.setAttribute('data-shape', shape);
+                    sugar.appendChild(newShape);
+                } else if (newShape) {
+                    // For complex shapes (groups), the shape is already complete
+                    sugar.setAttribute('data-shape', shape);
+                    sugar.appendChild(newShape);
                 }
-                newShape.classList.add('sugar-shape');
                 
-                // Update sugar data
-                sugar.setAttribute('data-shape', shape);
-                sugar.appendChild(newShape);
+                // Ensure drag functionality is preserved after shape update
+                // Re-add essential classes and attributes for drag system
+                if (!sugar.classList.contains('sugar')) {
+                    sugar.classList.add('sugar');
+                }
+                
+                // Ensure the sugar element maintains proper event handling
+                // by preserving its structure and attributes
+                const currentId = sugar.getAttribute('id');
+                if (currentId) {
+                    sugar.setAttribute('id', currentId);
+                }
                 
                 // Update highlight if exists
                 const highlightId = sugar.getAttribute('data-highlight-id');
@@ -5296,6 +5511,9 @@ class GlycanDrawer {
                         line.style.setProperty('stroke', '#000000', 'important');
                         line.style.setProperty('stroke-width', '2', 'important');
                     }
+                    
+                    // 更新data-color属性
+                    sugar.setAttribute('data-color', color);
                 } else if (shapeType === 'diamond-divided-top' && shape.classList.contains('diamond-divided-top-group')) {
                     // 分割菱形（下白）的特殊颜色处理：更新渐变中的上半部分颜色
                     const gradientId = shape.getAttribute('data-gradient-id');
@@ -5329,6 +5547,9 @@ class GlycanDrawer {
                         line.style.setProperty('stroke', '#000000', 'important');
                         line.style.setProperty('stroke-width', '2', 'important');
                     }
+                    
+                    // 更新data-color属性
+                    sugar.setAttribute('data-color', color);
                 } else if (shapeType === 'diamond-divided-bottom' && shape.classList.contains('diamond-divided-bottom-group')) {
                     // 分割菱形（上白）的特殊颜色处理：更新渐变中的下半部分颜色
                     const gradientId = shape.getAttribute('data-gradient-id');
@@ -5362,6 +5583,9 @@ class GlycanDrawer {
                         line.style.setProperty('stroke', '#000000', 'important');
                         line.style.setProperty('stroke-width', '2', 'important');
                     }
+                    
+                    // 更新data-color属性
+                    sugar.setAttribute('data-color', color);
                 } else if (shapeType === 'square-divided' && shape.classList.contains('square-divided-group')) {
                     // 分割正方形颜色处理：更新渐变右上部分颜色
                     const gradientId = shape.getAttribute('data-gradient-id');
@@ -5387,14 +5611,20 @@ class GlycanDrawer {
                         line.style.setProperty('stroke', '#000000', 'important');
                         line.style.setProperty('stroke-width', '2', 'important');
                     }
+                    
+                    // 更新data-color属性
+                    sugar.setAttribute('data-color', color);
                 } else {
-                    // 普通形状的颜色处理
+                    // 普通形状的颜色处理（包括所有圆形、方形、三角形、菱形、星形等）
                     shape.style.setProperty('fill', color, 'important');
                     
                     // Keep black border (don't change stroke color)
                     shape.style.setProperty('stroke', '#000000', 'important');
                     shape.style.setProperty('stroke-width', '2', 'important');
                 }
+                
+                // 重要：更新sugar元素的data-color属性，确保重新选中时UI状态正确
+                sugar.setAttribute('data-color', color);
             }
         });
     }
