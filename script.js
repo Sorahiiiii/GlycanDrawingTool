@@ -175,6 +175,13 @@ class GlycanDrawer {
         
         // Add action button listeners
         this.clearBtn.addEventListener('click', () => this.clearCanvas());
+    // Undo/Redo buttons
+    this.undoBtn = document.getElementById('undoBtn');
+    this.redoBtn = document.getElementById('redoBtn');
+    if (this.undoBtn) this.undoBtn.addEventListener('click', () => this.undo());
+    if (this.redoBtn) this.redoBtn.addEventListener('click', () => this.redo());
+    // Initialize button disabled state
+    try { this.updateUndoRedoButtons(); } catch (e) {}
         
         // Add export option listeners
         const exportOptions = document.querySelectorAll('.export-option');
@@ -1020,7 +1027,8 @@ class GlycanDrawer {
             linkageTextSize.addEventListener('input', (e) => {
                 const value = e.target.value;
                 linkageTextSizeValue.textContent = value;
-                if (this.currentTool === 'select') {
+                console.log('linkageTextSize input event fired, value:', value, 'isUpdatingUI:', this.isUpdatingUI);
+                if (this.currentTool === 'select' && !this.isUpdatingUI) {
                     this.applyLinkageStyle();
                 }
             });
@@ -1052,41 +1060,59 @@ class GlycanDrawer {
         this.initialConnectionStatesForTextColor = null;
         linkageTextColorButtons.forEach(btn => {
             btn.addEventListener('mousedown', () => {
+                console.log('Button mousedown: currentTool =', this.currentTool);
                 if (this.currentTool === 'select') {
                     this.startStep('Change linkage text color');
                     this.linkageTextColorDragging = true;
                     const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
-                    this.initialConnectionStatesForTextColor = selectedConnections.map(conn => ({
-                        id: conn.id,
-                        beforeData: this.createObjectData(conn)
-                    }));
+                    console.log('Button mousedown: selectedConnections count =', selectedConnections.length);
+                    this.initialConnectionStatesForTextColor = selectedConnections.map(conn => {
+                        const beforeData = this.createObjectData(conn);
+                        console.log('linkageTextColor before state - textColor:', beforeData.textColor);
+                        return {
+                            id: conn.id,
+                            beforeData: beforeData
+                        };
+                    });
+                    this.updateLegacySelectionStates();
                 }
             });
             btn.addEventListener('click', (e) => {
                 const color = e.target.dataset.color;
+                console.log('linkageTextColor button clicked, color:', color, 'isUpdatingUI:', this.isUpdatingUI);
                 if (linkageTextColor) {
                     linkageTextColor.value = color;
                     if (linkageTextColorHex) linkageTextColorHex.value = color;
                 }
                 linkageTextColorButtons.forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
-                if (this.currentTool === 'select') {
+                if (this.currentTool === 'select' && !this.isUpdatingUI) {
+                    // Apply style now (click happens after mousedown/mouseup) so the input value is updated
                     this.applyLinkageStyle();
+                    // After applying style, record after snapshots for any initial states and finish the step
+                    try {
+                        if (this.initialConnectionStatesForTextColor) {
+                            this.initialConnectionStatesForTextColor.forEach(state => {
+                                // If already recorded by applyLinkageStyle immediate recording, skip
+                                if (state._recorded) return;
+                                const conn = document.getElementById(state.id);
+                                if (conn) {
+                                    const afterData = this.createObjectData(conn);
+                                    console.log('linkageTextColor click handler after state - connection data-text-color attr:', conn.getAttribute('data-text-color'));
+                                    console.log('linkageTextColor click handler after state - textColor:', afterData.textColor);
+                                    this.recordObjectModified(state.id, state.beforeData, afterData);
+                                }
+                            });
+                            this.initialConnectionStatesForTextColor = null;
+                        }
+                    } catch (e) {}
+                    this.finishStep();
                 }
             });
             btn.addEventListener('mouseup', () => {
+                console.log('Button mouseup: linkageTextColorDragging =', this.linkageTextColorDragging, 'currentTool =', this.currentTool);
                 if (this.currentTool === 'select' && this.linkageTextColorDragging) {
-                    if (this.initialConnectionStatesForTextColor) {
-                        this.initialConnectionStatesForTextColor.forEach(state => {
-                            const conn = document.getElementById(state.id);
-                            if (conn) {
-                                const afterData = this.createObjectData(conn);
-                                this.recordObjectModified(state.id, state.beforeData, afterData);
-                            }
-                        });
-                        this.initialConnectionStatesForTextColor = null;
-                    }
-                    this.finishStep();
+                    // Do not finish step here; click handler will apply style and finish the step.
                     this.linkageTextColorDragging = false;
                 }
             });
@@ -1102,18 +1128,21 @@ class GlycanDrawer {
                         id: conn.id,
                         beforeData: this.createObjectData(conn)
                     }));
+                    this.updateLegacySelectionStates();
                 }
             });
             linkageTextColor.addEventListener('input', (e) => {
                 const color = e.target.value;
                 if (linkageTextColorHex) linkageTextColorHex.value = color;
                 linkageTextColorButtons.forEach(b => b.classList.remove('active'));
-                if (this.currentTool === 'select') {
+                if (this.currentTool === 'select' && !this.isUpdatingUI) {
                     this.applyLinkageStyle();
                 }
             });
             linkageTextColor.addEventListener('mouseup', () => {
                 if (this.currentTool === 'select' && this.linkageTextColorDragging) {
+                    // Ensure the style is applied before recording the after state
+                    this.applyLinkageStyle();
                     if (this.initialConnectionStatesForTextColor) {
                         this.initialConnectionStatesForTextColor.forEach(state => {
                             const conn = document.getElementById(state.id);
@@ -1188,22 +1217,45 @@ class GlycanDrawer {
             });
             linkageTextFontFamily.addEventListener('change', (e) => {
                 const fontFamily = e.target.value;
-                if (this.currentTool === 'select') {
+                if (this.currentTool === 'select' && !this.isUpdatingUI) {
+                    // Apply the style (this will update DOM and may perform immediate recording)
                     this.applyLinkageStyle();
-                }
-            });
-            linkageTextFontFamily.addEventListener('mouseup', () => {
-                if (this.currentTool === 'select' && this.linkageTextFontFamilyDragging) {
+
+                    // If we started a step on mousedown, finalize it here because change means the user selected a font
                     if (this.initialConnectionStatesForTextFontFamily) {
                         this.initialConnectionStatesForTextFontFamily.forEach(state => {
+                            // If applyLinkageStyle already recorded the after snapshot, skip recreating it
+                            if (state._recorded) return;
+
                             const conn = document.getElementById(state.id);
                             if (conn) {
                                 const afterData = this.createObjectData(conn);
+                                // Force authoritative font family value into snapshot
+                                try { afterData.textFontFamily = fontFamily; } catch (e) {}
                                 this.recordObjectModified(state.id, state.beforeData, afterData);
                             }
                         });
                         this.initialConnectionStatesForTextFontFamily = null;
                     }
+
+                    this.finishStep();
+                }
+            });
+            // On mouseup we don't finalize the step for dropdowns (user might still be choosing an option).
+            // Just clear the temporary dragging flag; finalization happens on 'change' or 'blur'.
+            linkageTextFontFamily.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.linkageTextFontFamilyDragging) {
+                    // don't finish here to avoid race with change event
+                    // keep initialConnectionStatesForTextFontFamily so change can finalize
+                    this.linkageTextFontFamilyDragging = true; // keep true until change/blur
+                }
+            });
+
+            // If the select loses focus without a change, finalize (will be discarded if no modifications)
+            linkageTextFontFamily.addEventListener('blur', () => {
+                if (this.currentTool === 'select' && this.linkageTextFontFamilyDragging) {
+                    // If change already recorded, initialConnectionStatesForTextFontFamily would be null
+                    this.initialConnectionStatesForTextFontFamily = null;
                     this.finishStep();
                     this.linkageTextFontFamilyDragging = false;
                 }
@@ -1255,41 +1307,76 @@ class GlycanDrawer {
             btn.addEventListener('click', (e) => {
                 const style = e.target.closest('.linkage-text-style-btn').dataset.style;
                 e.target.closest('.linkage-text-style-btn').classList.toggle('active');
-                if (this.currentTool === 'select') {
+                if (this.currentTool === 'select' && !this.isUpdatingUI) {
                     this.applyLinkageStyle();
                 }
             });
             btn.addEventListener('mouseup', () => {
                 if (this.currentTool === 'select' && this.linkageTextStyleDragging) {
-                    if (this.initialConnectionStatesForTextStyle) {
-                        this.initialConnectionStatesForTextStyle.forEach(state => {
-                            const conn = document.getElementById(state.id);
-                            if (conn) {
-                                const afterData = this.createObjectData(conn);
-                                this.recordObjectModified(state.id, state.beforeData, afterData);
-                            }
-                            
-                            // Also record text elements
-                            if (state.configTextId) {
-                                const configText = document.getElementById(state.configTextId);
-                                if (configText && state.configTextBeforeData) {
-                                    const configAfterData = this.createObjectData(configText);
-                                    this.recordObjectModified(state.configTextId, state.configTextBeforeData, configAfterData);
+                    // Delay finalization to allow click handler (which fires after mouseup) to run first.
+                    // This ensures applyLinkageStyle can perform immediate recording and set state._recorded.
+                    setTimeout(() => {
+                        if (this.initialConnectionStatesForTextStyle) {
+                            this.initialConnectionStatesForTextStyle.forEach(state => {
+                                // If applyLinkageStyle already recorded an after snapshot for this state, skip recreating it
+                                if (state._recorded) {
+                                    // Still ensure we record associated text elements if they weren't recorded
+                                    if (state.configTextId && !state._configRecorded) {
+                                        const configText = document.getElementById(state.configTextId);
+                                        if (configText && state.configTextBeforeData) {
+                                            const configAfterData = this.createObjectData(configText);
+                                            this.recordObjectModified(state.configTextId, state.configTextBeforeData, configAfterData);
+                                        }
+                                        state._configRecorded = true;
+                                    }
+                                    if (state.positionTextId && !state._positionRecorded) {
+                                        const positionText = document.getElementById(state.positionTextId);
+                                        if (positionText && state.positionTextBeforeData) {
+                                            const positionAfterData = this.createObjectData(positionText);
+                                            this.recordObjectModified(state.positionTextId, state.positionTextBeforeData, positionAfterData);
+                                        }
+                                        state._positionRecorded = true;
+                                    }
+                                    return;
                                 }
-                            }
-                            
-                            if (state.positionTextId) {
-                                const positionText = document.getElementById(state.positionTextId);
-                                if (positionText && state.positionTextBeforeData) {
-                                    const positionAfterData = this.createObjectData(positionText);
-                                    this.recordObjectModified(state.positionTextId, state.positionTextBeforeData, positionAfterData);
+
+                                const conn = document.getElementById(state.id);
+                                if (conn) {
+                                    const afterData = this.createObjectData(conn);
+                                    // Ensure style flags are authoritative from UI if available
+                                    try {
+                                        const ital = document.getElementById('linkageTextItalicBtn')?.classList.contains('active');
+                                        const bold = document.getElementById('linkageTextBoldBtn')?.classList.contains('active');
+                                        const underline = document.getElementById('linkageTextUnderlineBtn')?.classList.contains('active');
+                                        afterData.textItalic = (ital ? 'true' : 'false');
+                                        afterData.textBold = (bold ? 'true' : 'false');
+                                        afterData.textUnderline = (underline ? 'true' : 'false');
+                                    } catch (e) {}
+                                    this.recordObjectModified(state.id, state.beforeData, afterData);
                                 }
-                            }
-                        });
-                        this.initialConnectionStatesForTextStyle = null;
-                    }
-                    this.finishStep();
-                    this.linkageTextStyleDragging = false;
+
+                                // Also record text elements
+                                if (state.configTextId) {
+                                    const configText = document.getElementById(state.configTextId);
+                                    if (configText && state.configTextBeforeData) {
+                                        const configAfterData = this.createObjectData(configText);
+                                        this.recordObjectModified(state.configTextId, state.configTextBeforeData, configAfterData);
+                                    }
+                                }
+
+                                if (state.positionTextId) {
+                                    const positionText = document.getElementById(state.positionTextId);
+                                    if (positionText && state.positionTextBeforeData) {
+                                        const positionAfterData = this.createObjectData(positionText);
+                                        this.recordObjectModified(state.positionTextId, state.positionTextBeforeData, positionAfterData);
+                                    }
+                                }
+                            });
+                            this.initialConnectionStatesForTextStyle = null;
+                        }
+                        this.finishStep();
+                        this.linkageTextStyleDragging = false;
+                    }, 0);
                 }
             });
         });
@@ -1314,7 +1401,7 @@ class GlycanDrawer {
             linkageTextOpacity.addEventListener('input', (e) => {
                 const value = e.target.value;
                 linkageTextOpacityValue.textContent = Math.round(value * 100) + '%';
-                if (this.currentTool === 'select') {
+                if (this.currentTool === 'select' && !this.isUpdatingUI) {
                     this.applyLinkageStyle();
                 }
             });
@@ -5231,6 +5318,15 @@ class GlycanDrawer {
                     (x2 >= minX && x2 <= maxX && y2 >= minY && y2 <= maxY)) {
                     shouldInclude = true;
                 }
+            } else if (element.tagName && element.tagName.toLowerCase() === 'text' && element.classList.contains('linkage-label')) {
+                // Linkage label text elements (config/position) - include if within bounds
+                const x = parseFloat(element.getAttribute('x'));
+                const y = parseFloat(element.getAttribute('y'));
+                if (!isNaN(x) && !isNaN(y)) {
+                    if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                        shouldInclude = true;
+                    }
+                }
             }
             
             if (shouldInclude) {
@@ -5297,6 +5393,16 @@ class GlycanDrawer {
                     clonedElement.setAttribute('data-y', newY);
                     clonedElement.setAttribute('x', newX);
                     clonedElement.setAttribute('y', newY);
+                } else if (clonedElement.tagName && clonedElement.tagName.toLowerCase() === 'text' && clonedElement.classList.contains('linkage-label')) {
+                    // Translate linkage-label text elements (config and position labels)
+                    const x = parseFloat(clonedElement.getAttribute('x'));
+                    const y = parseFloat(clonedElement.getAttribute('y'));
+                    if (!isNaN(x) && !isNaN(y)) {
+                        const newX = x - minX;
+                        const newY = y - minY;
+                        clonedElement.setAttribute('x', newX);
+                        clonedElement.setAttribute('y', newY);
+                    }
                 } else if (clonedElement.classList.contains('connection')) {
                     const x1 = parseFloat(clonedElement.getAttribute('x1'));
                     const y1 = parseFloat(clonedElement.getAttribute('y1'));
@@ -5914,6 +6020,7 @@ class GlycanDrawer {
         }
         if (showLinkageControls && linkageControlsSection) {
             linkageControlsSection.style.display = 'block';
+            console.log('updateRightPanel: Calling updateLinkageControlValues');
             this.updateLinkageControlValues();
         }
         if (!showSugarControls && !showTextControls && !showLinkageControls && emptyControlsSection) {
@@ -6021,6 +6128,7 @@ class GlycanDrawer {
     }
     
     updateLinkageControlValues() {
+        console.log('updateLinkageControlValues called, currentTool:', this.currentTool, 'selectedConnections size:', this.selectedConnections ? this.selectedConnections.size : 0);
         // In select mode with connections selected, show linkage properties
         if (this.currentTool === 'select' && this.selectedConnections && this.selectedConnections.size > 0) {
             this.updateLinkageControlsFromSelection();
@@ -6029,6 +6137,7 @@ class GlycanDrawer {
     
     updateLinkageControlsFromSelection() {
         // Set flag to prevent style application during UI update
+        console.log('updateLinkageControlsFromSelection: Setting isUpdatingUI = true');
         this.isUpdatingUI = true;
         
         const connections = Array.from(this.selectedConnections);
@@ -6227,6 +6336,7 @@ class GlycanDrawer {
             console.error('Error syncing linkage style buttons:', e);
         }
 
+        console.log('updateLinkageControlsFromSelection: Setting isUpdatingUI = false');
         this.isUpdatingUI = false;
     }
     
@@ -7721,6 +7831,13 @@ class GlycanDrawer {
     }
     
     applyLinkageStyle() {
+        // Prevent applying styles during UI updates (e.g., undo/redo operations)
+        if (this.isUpdatingUI) {
+            console.log('applyLinkageStyle: Skipping during UI update');
+            return;
+        }
+        
+        console.log('applyLinkageStyle: Applying linkage styles');
         // Only work in select mode
         if (this.currentTool !== 'select') return;
         
@@ -7729,17 +7846,23 @@ class GlycanDrawer {
         const textFontFamily = document.getElementById('linkageTextFontFamily')?.value || 'Arial';
         const textOpacity = document.getElementById('linkageTextOpacity')?.value || '1';
         
+        console.log('applyLinkageStyle: textColor =', textColor);
+        
         // Get text style states
         const textBold = document.getElementById('linkageTextBoldBtn')?.classList.contains('active') || false;
         const textItalic = document.getElementById('linkageTextItalicBtn')?.classList.contains('active') || false;
         const textUnderline = document.getElementById('linkageTextUnderlineBtn')?.classList.contains('active') || false;
         
-        // Apply styles to selected connections (UI handlers are responsible for undo recording)
+        // Apply styles to selected connections (use unified selection system)
         if (this.selectedConnections) {
             const connections = Array.from(this.selectedConnections);
+            console.log('applyLinkageStyle: selectedConnections count =', connections.length);
+            
             if (connections.length === 0) return;
 
             connections.forEach(conn => {
+                console.log('applyLinkageStyle: updating connection', conn.id, 'old data-text-color:', conn.getAttribute('data-text-color'));
+                console.log('applyLinkageStyle: setting data-text-color to', textColor);
                 // Update linkage text display with new styles
                 this.updateLinkageText(conn, textSize, textColor, textFontFamily, textBold, textItalic, textUnderline, textOpacity);
 
@@ -7751,6 +7874,87 @@ class GlycanDrawer {
                 conn.setAttribute('data-text-italic', textItalic ? 'true' : 'false');
                 conn.setAttribute('data-text-underline', textUnderline ? 'true' : 'false');
                 conn.setAttribute('data-text-opacity', textOpacity);
+                console.log('applyLinkageStyle: updated connection', conn.id, 'new data-text-color:', conn.getAttribute('data-text-color'));
+
+                // If we have initialConnectionStatesForTextColor (started on mousedown), record modification now
+                try {
+                    // color
+                    if (this.initialConnectionStatesForTextColor && Array.isArray(this.initialConnectionStatesForTextColor)) {
+                        const state = this.initialConnectionStatesForTextColor.find(s => s.id === conn.id);
+                        if (state && !state._recorded) {
+                            const afterData = this.createObjectData(conn);
+                            console.log('applyLinkageStyle: immediate recordObjectModified for (color)', conn.id, 'after textColor:', afterData.textColor);
+                            this.recordObjectModified(conn.id, state.beforeData, afterData);
+                            state._recorded = true;
+                        }
+                    }
+                    // size
+                    if (this.initialConnectionStatesForTextSize && Array.isArray(this.initialConnectionStatesForTextSize)) {
+                        const state = this.initialConnectionStatesForTextSize.find(s => s.id === conn.id);
+                        if (state && !state._recorded) {
+                            const afterData = this.createObjectData(conn);
+                            console.log('applyLinkageStyle: immediate recordObjectModified for (size)', conn.id, 'after textSize:', afterData.textSize);
+                            this.recordObjectModified(conn.id, state.beforeData, afterData);
+                            state._recorded = true;
+                        }
+                    }
+                    // font family
+                    if (this.initialConnectionStatesForTextFontFamily && Array.isArray(this.initialConnectionStatesForTextFontFamily)) {
+                        const state = this.initialConnectionStatesForTextFontFamily.find(s => s.id === conn.id);
+                        if (state && !state._recorded) {
+                            const afterData = this.createObjectData(conn);
+                            console.log('applyLinkageStyle: immediate recordObjectModified for (fontFamily)', conn.id, 'after textFontFamily:', afterData.textFontFamily);
+                            this.recordObjectModified(conn.id, state.beforeData, afterData);
+                            state._recorded = true;
+                        }
+                    }
+                    // opacity
+                    if (this.initialConnectionStatesForTextOpacity && Array.isArray(this.initialConnectionStatesForTextOpacity)) {
+                        const state = this.initialConnectionStatesForTextOpacity.find(s => s.id === conn.id);
+                        if (state && !state._recorded) {
+                            const afterData = this.createObjectData(conn);
+                            console.log('applyLinkageStyle: immediate recordObjectModified for (opacity)', conn.id, 'after textOpacity:', afterData.textOpacity);
+                            this.recordObjectModified(conn.id, state.beforeData, afterData);
+                            state._recorded = true;
+                        }
+                    }
+                    // style (bold/italic/underline) - also handle linked text elements
+                    if (this.initialConnectionStatesForTextStyle && Array.isArray(this.initialConnectionStatesForTextStyle)) {
+                        const state = this.initialConnectionStatesForTextStyle.find(s => s.id === conn.id);
+                        if (state && !state._recorded) {
+                            // Create after snapshot then force authoritative style fields from current UI variables
+                            const afterData = this.createObjectData(conn);
+                            // Ensure we record the authoritative style values (avoid timing/race where attribute isn't yet visible)
+                            try {
+                                afterData.textBold = (textBold ? 'true' : 'false');
+                                afterData.textItalic = (textItalic ? 'true' : 'false');
+                                afterData.textUnderline = (textUnderline ? 'true' : 'false');
+                            } catch (e) {}
+                            console.log('applyLinkageStyle: immediate recordObjectModified for (style) connection', conn.id, 'after textItalic:', afterData.textItalic, 'textBold:', afterData.textBold, 'textUnderline:', afterData.textUnderline);
+                            this.recordObjectModified(conn.id, state.beforeData, afterData);
+                            // Also record any associated text elements if present
+                            try {
+                                if (state.configTextId) {
+                                    const configText = document.getElementById(state.configTextId);
+                                    if (configText && state.configTextBeforeData) {
+                                        const configAfterData = this.createObjectData(configText);
+                                        this.recordObjectModified(state.configTextId, state.configTextBeforeData, configAfterData);
+                                    }
+                                }
+                                if (state.positionTextId) {
+                                    const positionText = document.getElementById(state.positionTextId);
+                                    if (positionText && state.positionTextBeforeData) {
+                                        const positionAfterData = this.createObjectData(positionText);
+                                        this.recordObjectModified(state.positionTextId, state.positionTextBeforeData, positionAfterData);
+                                    }
+                                }
+                            } catch (e) {}
+                            state._recorded = true;
+                        }
+                    }
+                } catch (e) {
+                    // ignore
+                }
             });
         }
     }
@@ -10994,12 +11198,19 @@ class GlycanDrawer {
         if (!this.isRecordingStep) {
             this.startStep('Auto-created step');
         }
-        
+        // Deep-clone objectData to freeze snapshot
+        let cloned = null;
+        try {
+            cloned = JSON.parse(JSON.stringify(objectData));
+        } catch (e) {
+            cloned = objectData;
+        }
+
         // Add to objectList
-        this.objectList.set(objectData.id, objectData);
-        
-        // Record in current step
-        this.currentStep.added.push(objectData);
+        this.objectList.set(cloned.id, cloned);
+
+        // Record in current step (clone)
+        this.currentStep.added.push(cloned);
     }
     
     // Record an object removal
@@ -11007,12 +11218,18 @@ class GlycanDrawer {
         if (!this.isRecordingStep) {
             this.startStep('Auto-created step');
         }
-        
         // Get object data before removal
         const objectData = this.objectList.get(objectId);
         if (objectData) {
+            // Deep clone to freeze snapshot
+            let cloned = null;
+            try {
+                cloned = JSON.parse(JSON.stringify(objectData));
+            } catch (e) {
+                cloned = objectData;
+            }
             // Record in current step
-            this.currentStep.removed.push(objectData);
+            this.currentStep.removed.push(cloned);
             
             // Remove from objectList
             this.objectList.delete(objectId);
@@ -11033,19 +11250,76 @@ class GlycanDrawer {
                 `conn(after) id=${objectId} textColor=${afterData.textColor} textBold=${afterData.textBold} textItalic=${afterData.textItalic} textUnderline=${afterData.textUnderline} textSize=${afterData.textSize}` :
                 (afterData ? `obj(after) id=${objectId} type=${afterData.type}` : `obj(after) id=${objectId} <null>`);
             console.log('recordObjectModified:', this.currentStep ? `step="${this.currentStep.description}"` : '', beforeSummary, '->', afterSummary);
+            // Additional tracing for puzzling cases where before/after look identical
+            if (beforeData && afterData && beforeData.type === 'connection') {
+                // Log current objectList state for this id before update
+                try {
+                    const existing = this.objectList.get(objectId);
+                    console.log('recordObjectModified: objectList currently has for', objectId, existing && existing.textColor);
+                } catch (e) {}
+                // Log if currentStep already contains a modification for this id
+                try {
+                    if (this.currentStep && Array.isArray(this.currentStep.modified)) {
+                        const prior = this.currentStep.modified.find(m => m.id === objectId);
+                        if (prior) {
+                            console.log('recordObjectModified: WARNING - prior modification recorded in this step for', objectId, prior.before && prior.before.textColor, '->', prior.after && prior.after.textColor);
+                        }
+                    }
+                } catch (e) {}
+                // Print a short stack trace to see caller
+                try {
+                    const stack = (new Error()).stack.split('\n').slice(1,6).join('\n');
+                    console.log('recordObjectModified: call stack (top 5):\n', stack);
+                } catch (e) {}
+            }
         } catch (e) {
             // ignore logging errors
         }
 
-        // Update objectList with new data
-        this.objectList.set(objectId, afterData);
+        // Deep-clone before/after to freeze snapshots
+        let beforeClone = null;
+        let afterClone = null;
+        try {
+            beforeClone = beforeData ? JSON.parse(JSON.stringify(beforeData)) : beforeData;
+        } catch (e) {
+            beforeClone = beforeData;
+        }
+        try {
+            afterClone = afterData ? JSON.parse(JSON.stringify(afterData)) : afterData;
+        } catch (e) {
+            afterClone = afterData;
+        }
 
-        // Record in current step
-        this.currentStep.modified.push({
-            id: objectId,
-            before: beforeData,
-            after: afterData
-        });
+        // Update objectList with cloned data
+        this.objectList.set(objectId, afterClone);
+
+        // If this object was already modified earlier in this step, merge by keeping the original 'before'
+        // and updating the 'after' to the latest snapshot. This prevents duplicate modification entries.
+        try {
+            if (this.currentStep && Array.isArray(this.currentStep.modified)) {
+                const existingIndex = this.currentStep.modified.findIndex(m => m.id === objectId);
+                if (existingIndex !== -1) {
+                    // Preserve original 'before', update 'after'
+                    this.currentStep.modified[existingIndex].after = afterClone;
+                } else {
+                    this.currentStep.modified.push({
+                        id: objectId,
+                        before: beforeClone,
+                        after: afterClone
+                    });
+                }
+            } else {
+                // Fallback: push normally
+                this.currentStep.modified.push({
+                    id: objectId,
+                    before: beforeClone,
+                    after: afterClone
+                });
+            }
+        } catch (e) {
+            // On any error, fall back to pushing the record
+            try { this.currentStep.modified.push({ id: objectId, before: beforeClone, after: afterClone }); } catch (e) {}
+        }
     }
     
     // Finish recording current step and add to undo stack
@@ -11059,9 +11333,25 @@ class GlycanDrawer {
             this.currentStep.removed.length > 0 || 
             this.currentStep.modified.length > 0) {
             
-            // Add to undo stack
-            this.undoStack.push(this.currentStep);
-            
+            // Debug: log modified entries summary before saving
+            try {
+                const modSummary = this.currentStep.modified.map(m => ({ id: m.id, beforeTextColor: m.before && m.before.textColor, afterTextColor: m.after && m.after.textColor }));
+                console.log('finishStep: modified summary ->', modSummary);
+            } catch (e) {}
+
+            // Debug: log modified entries summary before saving
+            try {
+                const modSummary = this.currentStep.modified.map(m => ({ id: m.id, beforeTextColor: m.before && m.before.textColor, afterTextColor: m.after && m.after.textColor }));
+                console.log('finishStep: modified summary ->', modSummary);
+            } catch (e) {}
+
+            // Add to undo stack (deep clone step to prevent later mutation)
+            try {
+                this.undoStack.push(JSON.parse(JSON.stringify(this.currentStep)));
+            } catch (e) {
+                this.undoStack.push(this.currentStep);
+            }
+
             // Clear redo stack when new action is performed
             this.redoStack = [];
             
@@ -11075,6 +11365,14 @@ class GlycanDrawer {
         
         this.currentStep = null;
         this.isRecordingStep = false;
+        // Update undo/redo buttons state
+        try { this.updateUndoRedoButtons(); } catch (e) {}
+    }
+
+    // Update the disabled state of undo/redo buttons
+    updateUndoRedoButtons() {
+        if (this.undoBtn) this.undoBtn.disabled = this.undoStack.length === 0;
+        if (this.redoBtn) this.redoBtn.disabled = this.redoStack.length === 0;
     }
     
     // Create object data from DOM element
@@ -11164,9 +11462,10 @@ class GlycanDrawer {
                 textSize: element.getAttribute('data-text-size'),
                 textColor: element.getAttribute('data-text-color'),
                 textFontFamily: element.getAttribute('data-text-font-family'),
-                textBold: element.getAttribute('data-text-bold'),
-                textItalic: element.getAttribute('data-text-italic'),
-                textUnderline: element.getAttribute('data-text-underline'),
+                // Normalize boolean-style linkage text attributes to explicit 'true'/'false' strings
+                textBold: element.getAttribute('data-text-bold') !== null ? element.getAttribute('data-text-bold') : 'false',
+                textItalic: element.getAttribute('data-text-italic') !== null ? element.getAttribute('data-text-italic') : 'false',
+                textUnderline: element.getAttribute('data-text-underline') !== null ? element.getAttribute('data-text-underline') : 'false',
                 textOpacity: element.getAttribute('data-text-opacity'),
                 // Store the complete SVG structure
                 svg: element.outerHTML
@@ -11657,6 +11956,10 @@ class GlycanDrawer {
         const step = this.undoStack.pop();
         console.log('Undoing step:', step.description, step);
         console.log('Step details - added:', step.added.length, 'removed:', step.removed.length, 'modified:', step.modified.length);
+        try {
+            const modSummary = step.modified.map(m => ({ id: m.id, beforeTextColor: m.before && m.before.textColor, afterTextColor: m.after && m.after.textColor }));
+            console.log('Undo step modified summary ->', modSummary);
+        } catch (e) {}
         
     // Preserve current selection so we can restore it after undo
     const previouslySelectedIds = Array.from(this.selectedElements || []).map(el => el.getAttribute ? el.getAttribute('id') : null).filter(id => id);
@@ -11694,9 +11997,13 @@ class GlycanDrawer {
         // Add step to redo stack
         this.redoStack.push(step);
         
-        // Update UI
+    // Update UI
         this.updateStylePanel();
+        console.log('undo: Setting isUpdatingUI = true before updateRightPanel');
+        this.isUpdatingUI = true;
         this.updateRightPanel();
+        this.isUpdatingUI = false;
+        console.log('undo: Setting isUpdatingUI = false after updateRightPanel');
 
         // Restore previous selection (if those elements still exist) so UI controls reflect restored object states
         if (previouslySelectedIds && previouslySelectedIds.length > 0) {
@@ -11737,6 +12044,9 @@ class GlycanDrawer {
             }
         }
         
+        // Update undo/redo button states
+        try { this.updateUndoRedoButtons(); } catch (e) {}
+
         console.log('Undo completed');
     }
     
@@ -11760,6 +12070,10 @@ class GlycanDrawer {
         
         console.log('Redoing step:', step.description, step);
         console.log('Step details - added:', step.added.length, 'removed:', step.removed.length, 'modified:', step.modified.length);
+        try {
+            const modSummary = step.modified.map(m => ({ id: m.id, beforeTextColor: m.before && m.before.textColor, afterTextColor: m.after && m.after.textColor }));
+            console.log('Redo step modified summary ->', modSummary);
+        } catch (e) {}
         
         // Clear all selections to avoid issues
         this.clearAllSelections();
@@ -11799,8 +12113,15 @@ class GlycanDrawer {
         
         // Update UI
         this.updateStylePanel();
+        console.log('redo: Setting isUpdatingUI = true before updateRightPanel');
+        this.isUpdatingUI = true;
         this.updateRightPanel();
+        this.isUpdatingUI = false;
+        console.log('redo: Setting isUpdatingUI = false after updateRightPanel');
         
+        // Update undo/redo button states
+        try { this.updateUndoRedoButtons(); } catch (e) {}
+
         console.log('Redo completed');
     }
     
