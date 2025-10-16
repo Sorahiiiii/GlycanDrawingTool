@@ -204,24 +204,31 @@
                                         <span class="dropdown-arrow">▼</span>
                                     </button>
                                     <div class="shape-dropdown-menu" data-category="square">
-                                        <div class="shape-dropdown-item active" data-shape="square" title="方形">
+                                        <div class="shape-dropdown-item active" data-shape="square" title="正方形">
                                             <svg width="16" height="16" viewBox="0 0 16 16">
                                                 <rect x="2.4" y="2.4" width="11.2" height="11.2" fill="#888888" stroke="#000000" stroke-width="1"/>
                                             </svg>
                                         </div>
-                                        <div class="shape-dropdown-item" data-shape="square-filled" title="实心方形">
+                                        <div class="shape-dropdown-item" data-shape="square-flat" title="扁正方形">
                                             <svg width="16" height="16" viewBox="0 0 16 16">
-                                                <rect x="2.4" y="2.4" width="11.2" height="11.2" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                                <rect x="2.4" y="5.04" width="11.2" height="5.92" fill="#888888" stroke="#000000" stroke-width="1"/>
                                             </svg>
                                         </div>
-                                        <div class="shape-dropdown-item" data-shape="square-rounded" title="圆角方形">
+                                        <div class="shape-dropdown-item" data-shape="square-narrow" title="窄正方形">
                                             <svg width="16" height="16" viewBox="0 0 16 16">
-                                                <rect x="2.4" y="2.4" width="11.2" height="11.2" rx="1.8" ry="1.8" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                                <rect x="5.04" y="2.4" width="5.92" height="11.2" fill="#888888" stroke="#000000" stroke-width="1"/>
                                             </svg>
                                         </div>
-                                        <div class="shape-dropdown-item" data-shape="square-double" title="双线方形">
+                                        <div class="shape-dropdown-item" data-shape="square-divided" title="分割正方形（左下白）">
                                             <svg width="16" height="16" viewBox="0 0 16 16">
-                                                <rect x="2.4" y="2.4" width="11.2" height="11.2" fill="none" stroke="#888888" stroke-width="2"/>
+                                                <defs>
+                                                    <linearGradient id="square-divided-icon" x1="0%" y1="100%" x2="100%" y2="0%">
+                                                        <stop offset="50%" stop-color="white"/>
+                                                        <stop offset="50%" stop-color="#888888"/>
+                                                    </linearGradient>
+                                                </defs>
+                                                <polygon points="2.4,2.4 13.6,2.4 13.6,13.6 2.4,13.6" fill="url(#square-divided-icon)" stroke="#000000" stroke-width="1"/>
+                                                <line x1="2.4" y1="2.4" x2="13.6" y2="13.6" stroke="#000000" stroke-width="1"/>
                                             </svg>
                                         </div>
                                     </div>

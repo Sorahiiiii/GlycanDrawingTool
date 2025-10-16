@@ -1605,12 +1605,86 @@ class GlycanDrawer {
                 element.setAttribute('ry', actualSize * 1.4); // 高度较大
                 break;
                 
+
             case 'square':
                 element = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
                 element.setAttribute('x', x - actualSize);
                 element.setAttribute('y', y - actualSize);
                 element.setAttribute('width', actualSize * 2);
                 element.setAttribute('height', actualSize * 2);
+                break;
+
+            case 'square-flat':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                element.setAttribute('x', x - actualSize);
+                element.setAttribute('y', y - actualSize * 0.7);
+                element.setAttribute('width', actualSize * 2);
+                element.setAttribute('height', actualSize * 1.4);
+                break;
+
+            case 'square-narrow':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                element.setAttribute('x', x - actualSize * 0.7);
+                element.setAttribute('y', y - actualSize);
+                element.setAttribute('width', actualSize * 1.4);
+                element.setAttribute('height', actualSize * 2);
+                break;
+
+            case 'square-divided':
+                // 分割正方形，左下白色，右上用户色，左上到右下对角线分割
+                const dividedSquareGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                const squareDividedElement = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                // 四个顶点
+                const p1 = {x: x - actualSize, y: y - actualSize}; // 左上
+                const p2 = {x: x + actualSize, y: y - actualSize}; // 右上
+                const p3 = {x: x + actualSize, y: y + actualSize}; // 右下
+                const p4 = {x: x - actualSize, y: y + actualSize}; // 左下
+                // points字符串
+                const squarePoints = `${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y} ${p4.x},${p4.y}`;
+                squareDividedElement.setAttribute('points', squarePoints);
+
+                // 渐变ID
+                const gradientSquareId = `square-divided-gradient-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                // 渐变定义
+                const defsSquare = this.canvas.querySelector('defs') || this.canvas.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'defs'));
+                const gradientSquare = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+                gradientSquare.id = gradientSquareId;
+                // 沿对角线分割，使用45度渐变
+                gradientSquare.setAttribute('x1', '0%');
+                gradientSquare.setAttribute('y1', '100%');
+                gradientSquare.setAttribute('x2', '100%');
+                gradientSquare.setAttribute('y2', '0%');
+                // 左下部分白色，右上部分用户色
+                const stopDiv1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+                stopDiv1.setAttribute('offset', '50%');
+                stopDiv1.setAttribute('stop-color', 'white');
+                stopDiv1.setAttribute('stop-opacity', '1');
+                const stopDiv2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+                stopDiv2.setAttribute('offset', '50%');
+                stopDiv2.setAttribute('stop-color', color || '#0072BC');
+                stopDiv2.setAttribute('stop-opacity', '1');
+                gradientSquare.appendChild(stopDiv1);
+                gradientSquare.appendChild(stopDiv2);
+                defsSquare.appendChild(gradientSquare);
+                squareDividedElement.setAttribute('fill', `url(#${gradientSquareId})`);
+                squareDividedElement.setAttribute('stroke', strokeColor);
+                squareDividedElement.setAttribute('stroke-width', '2');
+
+                // 分割线（左上到右下）
+                const dividingLineSquare = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                dividingLineSquare.setAttribute('x1', p1.x);
+                dividingLineSquare.setAttribute('y1', p1.y);
+                dividingLineSquare.setAttribute('x2', p3.x);
+                dividingLineSquare.setAttribute('y2', p3.y);
+                dividingLineSquare.setAttribute('stroke', strokeColor);
+                dividingLineSquare.setAttribute('stroke-width', '2');
+                dividingLineSquare.classList.add('dividing-line');
+
+                dividedSquareGroup.appendChild(squareDividedElement);
+                dividedSquareGroup.appendChild(dividingLineSquare);
+                dividedSquareGroup.setAttribute('data-gradient-id', gradientSquareId);
+                dividedSquareGroup.classList.add('square-divided-group');
+                element = dividedSquareGroup;
                 break;
                 
             case 'triangle':
@@ -2189,9 +2263,44 @@ class GlycanDrawer {
                 shape.setAttribute('cy', y);
                 break;
                 
+
             case 'square':
                 shape.setAttribute('x', x - size);
                 shape.setAttribute('y', y - size);
+                break;
+
+            case 'square-flat':
+                shape.setAttribute('x', x - size);
+                shape.setAttribute('y', y - size * 0.7);
+                shape.setAttribute('width', size * 2);
+                shape.setAttribute('height', size * 1.4);
+                break;
+
+            case 'square-narrow':
+                shape.setAttribute('x', x - size * 0.7);
+                shape.setAttribute('y', y - size);
+                shape.setAttribute('width', size * 1.4);
+                shape.setAttribute('height', size * 2);
+                break;
+
+            case 'square-divided':
+                // 分割正方形拖拽，更新group内polygon和分割线
+                if (shape.classList.contains('square-divided-group')) {
+                    const p1 = {x: x - size, y: y - size}; // 左上
+                    const p2 = {x: x + size, y: y - size}; // 右上
+                    const p3 = {x: x + size, y: y + size}; // 右下
+                    const p4 = {x: x - size, y: y + size}; // 左下
+                    const squarePoints = `${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y} ${p4.x},${p4.y}`;
+                    const polygon = shape.querySelector('polygon');
+                    if (polygon) polygon.setAttribute('points', squarePoints);
+                    const line = shape.querySelector('.dividing-line');
+                    if (line) {
+                        line.setAttribute('x1', p1.x);
+                        line.setAttribute('y1', p1.y);
+                        line.setAttribute('x2', p3.x);
+                        line.setAttribute('y2', p3.y);
+                    }
+                }
                 break;
                 
             case 'triangle':
@@ -5202,6 +5311,31 @@ class GlycanDrawer {
                     const polygon = shape.querySelector('polygon');
                     const line = shape.querySelector('.dividing-line');
                     
+                    if (polygon) {
+                        polygon.style.setProperty('stroke', '#000000', 'important');
+                        polygon.style.setProperty('stroke-width', '2', 'important');
+                    }
+                    if (line) {
+                        line.style.setProperty('stroke', '#000000', 'important');
+                        line.style.setProperty('stroke-width', '2', 'important');
+                    }
+                } else if (shapeType === 'square-divided' && shape.classList.contains('square-divided-group')) {
+                    // 分割正方形颜色处理：更新渐变右上部分颜色
+                    const gradientId = shape.getAttribute('data-gradient-id');
+                    if (gradientId) {
+                        const gradient = this.canvas.querySelector(`#${gradientId}`);
+                        if (gradient) {
+                            const stops = gradient.querySelectorAll('stop');
+                            if (stops.length >= 2) {
+                                // 右上部分用户色（stop[0]），左下部分白色（stop[1]）
+                                stops[0].setAttribute('stop-color', color);
+                                stops[1].setAttribute('stop-color', 'white');
+                            }
+                        }
+                    }
+                    // 设置边框样式
+                    const polygon = shape.querySelector('polygon');
+                    const line = shape.querySelector('.dividing-line');
                     if (polygon) {
                         polygon.style.setProperty('stroke', '#000000', 'important');
                         polygon.style.setProperty('stroke-width', '2', 'important');
