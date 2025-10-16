@@ -479,7 +479,7 @@ h1 {
 /* Shape Grid */
 .shape-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 5px;
     margin-bottom: 10px;
 }
@@ -506,6 +506,35 @@ h1 {
 .shape-btn.active {
     border-color: #3498db;
     background-color: #ebf3fd;
+}
+
+.shape-btn.disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    color: #ccc;
+}
+
+.shape-btn.disabled:hover {
+    border-color: #ddd;
+    background-color: white;
+}
+
+/* SNFG Preset Grid */
+.preset-grid-snfg {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 15px;
+}
+
+.preset-item.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.preset-item.disabled:hover {
+    background-color: transparent;
+    transform: none;
 }
 
 /* Color Controls */
@@ -539,6 +568,60 @@ h1 {
     border-color: #333;
     transform: scale(1.1);
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+}
+
+/* Compact Color Grid for borders, connections, text */
+.color-grid-compact {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.color-btn-compact {
+    width: 30px;
+    height: 30px;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.color-btn-compact:hover {
+    border-color: #333;
+    transform: scale(1.05);
+}
+
+.color-btn-compact.active {
+    border-color: #333;
+    transform: scale(1.05);
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Custom Color Section */
+.custom-color-section {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.custom-color-section input[type="color"] {
+    width: 40px;
+    height: 32px;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    background: transparent;
+}
+
+.custom-color-section input[type="text"] {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: monospace;
 }
 
 .custom-color {
@@ -914,10 +997,9 @@ span.mixed {
 
 /* Box Selection */
 .selection-box {
-    fill: rgba(52, 152, 219, 0.1);
-    stroke: #3498db;
-    stroke-width: 1;
-    stroke-dasharray: 3,3;
+    fill: rgba(0, 123, 255, 0.15);
+    stroke: #007bff;
+    stroke-width: 2;
     pointer-events: none;
 }
 
@@ -932,11 +1014,12 @@ span.mixed {
 /* HTML Overlay Selection Box (can extend beyond export area) */
 .selection-box-overlay {
     position: absolute;
-    background-color: rgba(52, 152, 219, 0.1);
-    border: 1px dashed #3498db;
+    background-color: rgba(0, 123, 255, 0.15);
+    border: 2px solid #007bff;
     pointer-events: none;
     z-index: 1000; /* Above all other elements */
     box-sizing: border-box;
+    border-radius: 2px;
 }
 
 .box-selection-preview {

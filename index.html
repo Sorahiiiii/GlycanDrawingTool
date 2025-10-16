@@ -88,11 +88,12 @@
             <!-- Right Panel - Adjustments -->
             <div class="right-panel">
                 <!-- Sugar Controls (visible when add tool or sugars selected) -->
-                <div class="panel-section" id="sugarControlsSection" style="display: block;">
+                <div class="panel-section" id="sugarControlsSection" style="display: none;">
                     <!-- SFNG Presets -->
                     <div class="control-subsection">
                         <h4>SNFG 糖预设</h4>
-                        <div class="preset-grid" id="presetGrid">
+                        <div class="preset-grid-snfg" id="presetGrid">
+                            <!-- Row 1 -->
                             <div class="preset-item" data-preset="glc">
                                 <svg width="32" height="32" viewBox="0 0 32 32">
                                     <circle cx="16" cy="16" r="12" fill="#3498db" stroke="#2980b9" stroke-width="2"/>
@@ -111,6 +112,7 @@
                                 </svg>
                                 <span>Man</span>
                             </div>
+                            <!-- Row 2 -->
                             <div class="preset-item" data-preset="fuc">
                                 <svg width="32" height="32" viewBox="0 0 32 32">
                                     <polygon points="16,4 28,16 16,28 4,16" fill="#f39c12" stroke="#e67e22" stroke-width="2"/>
@@ -129,6 +131,25 @@
                                 </svg>
                                 <span>GlcNAc</span>
                             </div>
+                            <!-- Row 3 - Reserved positions -->
+                            <div class="preset-item disabled" data-preset="">
+                                <svg width="32" height="32" viewBox="0 0 32 32">
+                                    <rect x="4" y="4" width="24" height="24" fill="none" stroke="#ddd" stroke-width="1" stroke-dasharray="3,3"/>
+                                </svg>
+                                <span>预留</span>
+                            </div>
+                            <div class="preset-item disabled" data-preset="">
+                                <svg width="32" height="32" viewBox="0 0 32 32">
+                                    <rect x="4" y="4" width="24" height="24" fill="none" stroke="#ddd" stroke-width="1" stroke-dasharray="3,3"/>
+                                </svg>
+                                <span>预留</span>
+                            </div>
+                            <div class="preset-item disabled" data-preset="">
+                                <svg width="32" height="32" viewBox="0 0 32 32">
+                                    <rect x="4" y="4" width="24" height="24" fill="none" stroke="#ddd" stroke-width="1" stroke-dasharray="3,3"/>
+                                </svg>
+                                <span>预留</span>
+                            </div>
                         </div>
                     </div>
                     
@@ -140,16 +161,27 @@
                         <div class="control-group">
                             <label>形状:</label>
                             <div class="shape-grid" id="shapeGrid">
+                                <!-- Row 1 -->
                                 <button class="shape-btn active" data-shape="circle" title="圆形">●</button>
                                 <button class="shape-btn" data-shape="square" title="方形">■</button>
                                 <button class="shape-btn" data-shape="triangle" title="三角形">▲</button>
                                 <button class="shape-btn" data-shape="diamond" title="菱形">♦</button>
+                                <!-- Row 2 -->
                                 <button class="shape-btn" data-shape="star" title="星形">★</button>
+                                <button class="shape-btn disabled" data-shape="" title="预留位置"></button>
+                                <button class="shape-btn disabled" data-shape="" title="预留位置"></button>
+                                <button class="shape-btn disabled" data-shape="" title="预留位置"></button>
+                                <!-- Row 3 -->
+                                <button class="shape-btn disabled" data-shape="" title="预留位置"></button>
+                                <button class="shape-btn disabled" data-shape="" title="预留位置"></button>
+                                <button class="shape-btn disabled" data-shape="" title="预留位置"></button>
+                                <button class="shape-btn disabled" data-shape="" title="预留位置"></button>
                             </div>
                         </div>
                         
                         <!-- Color Selection -->
                         <div class="control-group">
+                            <label>颜色:</label>
                             <div class="color-grid" id="colorGrid">
                                 <button class="color-btn active" data-color="#3498db" style="background-color: #3498db;" title="蓝色"></button>
                                 <button class="color-btn" data-color="#e74c3c" style="background-color: #e74c3c;" title="红色"></button>
@@ -160,7 +192,7 @@
                                 <button class="color-btn" data-color="#1abc9c" style="background-color: #1abc9c;" title="青色"></button>
                                 <button class="color-btn" data-color="#f1c40f" style="background-color: #f1c40f;" title="黄色"></button>
                             </div>
-                            <div class="control-group">
+                            <div class="custom-color-section">
                                 <input type="color" id="customSugarColor" value="#3498db">
                                 <input type="text" id="customSugarColorHex" value="#3498db" maxlength="7" placeholder="#3498db">
                             </div>
@@ -194,9 +226,21 @@
                             </div>
                         </div>
                         <div class="control-group">
-                            <label for="sugarBorderColor">边缘颜色:</label>
-                            <input type="color" id="sugarBorderColor" value="#333333">
-                            <input type="text" id="sugarBorderColorHex" value="#333333" maxlength="7" placeholder="#333333">
+                            <label>边缘颜色:</label>
+                            <div class="color-grid-compact">
+                                <button class="color-btn-compact active" data-target="sugarBorderColor" data-color="#333333" style="background-color: #333333;" title="深灰色"></button>
+                                <button class="color-btn-compact" data-target="sugarBorderColor" data-color="#000000" style="background-color: #000000;" title="黑色"></button>
+                                <button class="color-btn-compact" data-target="sugarBorderColor" data-color="#666666" style="background-color: #666666;" title="灰色"></button>
+                                <button class="color-btn-compact" data-target="sugarBorderColor" data-color="#999999" style="background-color: #999999;" title="浅灰色"></button>
+                                <button class="color-btn-compact" data-target="sugarBorderColor" data-color="#e74c3c" style="background-color: #e74c3c;" title="红色"></button>
+                                <button class="color-btn-compact" data-target="sugarBorderColor" data-color="#3498db" style="background-color: #3498db;" title="蓝色"></button>
+                                <button class="color-btn-compact" data-target="sugarBorderColor" data-color="#2ecc71" style="background-color: #2ecc71;" title="绿色"></button>
+                                <button class="color-btn-compact" data-target="sugarBorderColor" data-color="#f39c12" style="background-color: #f39c12;" title="橙色"></button>
+                            </div>
+                            <div class="custom-color-section">
+                                <input type="color" id="sugarBorderColor" value="#333333">
+                                <input type="text" id="sugarBorderColorHex" value="#333333" maxlength="7" placeholder="#333333">
+                            </div>
                         </div>
                         <div class="control-group">
                             <label for="sugarBorderOpacity">边缘透明度:</label>
@@ -225,9 +269,21 @@
                             </div>
                         </div>
                         <div class="control-group">
-                            <label for="connectionColor">颜色:</label>
-                            <input type="color" id="connectionColor" value="#333333">
-                            <input type="text" id="connectionColorHex" value="#333333" maxlength="7" placeholder="#333333">
+                            <label>颜色:</label>
+                            <div class="color-grid-compact">
+                                <button class="color-btn-compact active" data-target="connectionColor" data-color="#333333" style="background-color: #333333;" title="深灰色"></button>
+                                <button class="color-btn-compact" data-target="connectionColor" data-color="#000000" style="background-color: #000000;" title="黑色"></button>
+                                <button class="color-btn-compact" data-target="connectionColor" data-color="#666666" style="background-color: #666666;" title="灰色"></button>
+                                <button class="color-btn-compact" data-target="connectionColor" data-color="#999999" style="background-color: #999999;" title="浅灰色"></button>
+                                <button class="color-btn-compact" data-target="connectionColor" data-color="#e74c3c" style="background-color: #e74c3c;" title="红色"></button>
+                                <button class="color-btn-compact" data-target="connectionColor" data-color="#3498db" style="background-color: #3498db;" title="蓝色"></button>
+                                <button class="color-btn-compact" data-target="connectionColor" data-color="#2ecc71" style="background-color: #2ecc71;" title="绿色"></button>
+                                <button class="color-btn-compact" data-target="connectionColor" data-color="#f39c12" style="background-color: #f39c12;" title="橙色"></button>
+                            </div>
+                            <div class="custom-color-section">
+                                <input type="color" id="connectionColor" value="#333333">
+                                <input type="text" id="connectionColorHex" value="#333333" maxlength="7" placeholder="#333333">
+                            </div>
                         </div>
                         <div class="control-group">
                             <label for="connectionOpacity">透明度:</label>
@@ -274,9 +330,21 @@
                             </div>
                         </div>
                         <div class="control-group">
-                            <label for="textColor">颜色:</label>
-                            <input type="color" id="textColor" value="#000000">
-                            <input type="text" id="textColorHex" value="#000000" maxlength="7" placeholder="#000000">
+                            <label>颜色:</label>
+                            <div class="color-grid-compact">
+                                <button class="color-btn-compact active" data-target="textColor" data-color="#000000" style="background-color: #000000;" title="黑色"></button>
+                                <button class="color-btn-compact" data-target="textColor" data-color="#333333" style="background-color: #333333;" title="深灰色"></button>
+                                <button class="color-btn-compact" data-target="textColor" data-color="#666666" style="background-color: #666666;" title="灰色"></button>
+                                <button class="color-btn-compact" data-target="textColor" data-color="#999999" style="background-color: #999999;" title="浅灰色"></button>
+                                <button class="color-btn-compact" data-target="textColor" data-color="#e74c3c" style="background-color: #e74c3c;" title="红色"></button>
+                                <button class="color-btn-compact" data-target="textColor" data-color="#3498db" style="background-color: #3498db;" title="蓝色"></button>
+                                <button class="color-btn-compact" data-target="textColor" data-color="#2ecc71" style="background-color: #2ecc71;" title="绿色"></button>
+                                <button class="color-btn-compact" data-target="textColor" data-color="#f39c12" style="background-color: #f39c12;" title="橙色"></button>
+                            </div>
+                            <div class="custom-color-section">
+                                <input type="color" id="textColor" value="#000000">
+                                <input type="text" id="textColorHex" value="#000000" maxlength="7" placeholder="#000000">
+                            </div>
                         </div>
                         <div class="control-group">
                             <label for="textOpacity">透明度:</label>
@@ -287,7 +355,7 @@
                 </div>
                 
                 <!-- Empty State (when no relevant selections) -->
-                <div class="panel-section" id="emptyControlsSection" style="display: none;">
+                <div class="panel-section" id="emptyControlsSection" style="display: block;">
                     <div class="empty-state">
                         <p>选择工具或元素以显示调整选项</p>
                     </div>

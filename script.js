@@ -217,6 +217,11 @@ class GlycanDrawer {
         const presetItems = document.querySelectorAll('.preset-item');
         presetItems.forEach(item => {
             item.addEventListener('click', () => {
+                // Skip disabled items
+                if (item.classList.contains('disabled') || !item.dataset.preset) {
+                    return;
+                }
+                
                 const preset = item.dataset.preset;
                 this.selectPreset(preset);
             });
@@ -234,19 +239,59 @@ class GlycanDrawer {
         const customSugarOpacityValue = document.getElementById('customSugarOpacityValue');
         
         if (customSugarColor && customSugarColorHex) {
-            customSugarColor.addEventListener('change', (e) => {
+            customSugarColor.addEventListener('input', (e) => {
                 const color = e.target.value;
                 customSugarColorHex.value = color;
-                this.selectColor(color);
+                // Clear mixed state when user manually changes value
+                customSugarColor.classList.remove('mixed');
+                customSugarColorHex.classList.remove('mixed');
+                
+                // Clear SNFG preset selection (manual override)
+                this.clearPresetSelection();
+                
+                // Update color grid buttons to deactivate them (user is using custom color)
+                document.querySelectorAll('.color-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                
+                if (this.currentTool === 'add') {
+                    // 添加模式：只更新配置，不应用到任何元素
+                    this.currentSugarConfig.color = color;
+                    this.currentSugarConfig.type = 'custom'; 
+                    this.currentSugarConfig.preset = null;
+                } else if (this.currentTool === 'select') {
+                    // 选择模式：只应用到选中元素，不更新配置
+                    this.applySugarColor(color);
+                }
             });
             
-            customSugarColorHex.addEventListener('change', (e) => {
+            customSugarColorHex.addEventListener('input', (e) => {
                 const color = e.target.value;
                 if (this.isValidHexColor(color)) {
                     const normalizedColor = this.normalizeColorToHex(color);
                     customSugarColor.value = normalizedColor;
                     customSugarColorHex.value = normalizedColor;
-                    this.selectColor(normalizedColor);
+                    // Clear mixed state when user manually changes value
+                    customSugarColor.classList.remove('mixed');
+                    customSugarColorHex.classList.remove('mixed');
+                    
+                    // Clear SNFG preset selection (manual override)
+                    this.clearPresetSelection();
+                    
+                    // Update color grid buttons to deactivate them (user is using custom color)
+                    document.querySelectorAll('.color-btn').forEach(btn => {
+                        btn.classList.remove('active');
+                    });
+                    
+                    if (this.currentTool === 'add') {
+                        // 添加模式：只更新配置，不应用到任何元素
+                        this.currentSugarConfig.color = normalizedColor;
+                        this.currentSugarConfig.type = 'custom';
+                        this.currentSugarConfig.preset = null;
+                    } else if (this.currentTool === 'select') {
+                        // 选择模式：只应用到选中元素，不更新配置
+                        this.applySugarColor(normalizedColor);
+                    }
                 } else {
                     // Reset to current color if invalid
                     customSugarColorHex.value = this.currentSugarConfig.color;
@@ -562,9 +607,17 @@ class GlycanDrawer {
         const shapeButtons = document.querySelectorAll('.shape-btn');
         shapeButtons.forEach(btn => {
             btn.addEventListener('click', () => {
+                // Skip disabled buttons
+                if (btn.classList.contains('disabled') || !btn.dataset.shape) {
+                    return;
+                }
+                
                 // Only activate one shape at a time
                 shapeButtons.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
+                
+                // Clear SNFG preset selection (manual override)
+                this.clearPresetSelection();
                 
                 // Update configuration for add mode or apply to selected sugars
                 if (this.currentTool === 'add') {
@@ -588,6 +641,9 @@ class GlycanDrawer {
                 colorButtons.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 
+                // Clear SNFG preset selection (manual override)
+                this.clearPresetSelection();
+                
                 // Update configuration for add mode or apply to selected sugars
                 if (this.currentTool === 'add') {
                     if (!this.currentSugarConfig) {
@@ -609,6 +665,9 @@ class GlycanDrawer {
                 // Deactivate preset color buttons
                 colorButtons.forEach(b => b.classList.remove('active'));
                 
+                // Clear SNFG preset selection (manual override)
+                this.clearPresetSelection();
+                
                 // Update configuration for add mode or apply to selected sugars
                 if (this.currentTool === 'add') {
                     if (!this.currentSugarConfig) {
@@ -622,6 +681,38 @@ class GlycanDrawer {
                 }
             });
         }
+        
+        // Compact color buttons for borders, connections, text
+        const compactColorButtons = document.querySelectorAll('.color-btn-compact');
+        compactColorButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const target = btn.dataset.target;
+                const color = btn.dataset.color;
+                
+                // Remove active class from siblings in the same group
+                const parentGrid = btn.parentElement;
+                parentGrid.querySelectorAll('.color-btn-compact').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                // Update the corresponding color picker and hex input
+                const colorPicker = document.getElementById(target);
+                const colorHex = document.getElementById(target + 'Hex');
+                
+                if (colorPicker) {
+                    colorPicker.value = color;
+                    // Clear mixed state
+                    colorPicker.classList.remove('mixed');
+                    
+                    // Trigger change event to update the application
+                    colorPicker.dispatchEvent(new Event('input'));
+                }
+                
+                if (colorHex) {
+                    colorHex.value = color;
+                    colorHex.classList.remove('mixed');
+                }
+            });
+        });
     }
     
     setTool(tool) {
@@ -685,13 +776,8 @@ class GlycanDrawer {
                 item.classList.toggle('active', item.dataset.preset === preset);
             });
             
-            // Clear custom selections
-            document.querySelectorAll('.shape-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            document.querySelectorAll('.color-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
+            // Sync with custom controls - highlight corresponding shape and color
+            this.syncCustomControlsWithPreset(preset);
             
             // If in select mode, only apply shape and color from preset (not size/border)
             if (this.currentTool === 'select') {
@@ -707,6 +793,40 @@ class GlycanDrawer {
         }
     }
     
+    syncCustomControlsWithPreset(preset) {
+        const presetConfig = this.snfgPresets[preset];
+        if (!presetConfig) return;
+        
+        // Highlight the corresponding shape button (keep preset and custom selections together)
+        document.querySelectorAll('.shape-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.shape === presetConfig.shape);
+        });
+        
+        // Highlight the corresponding color button (keep preset and custom selections together)
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.color === presetConfig.color);
+        });
+        
+        // Update custom color picker to match preset color
+        const customColorPicker = document.getElementById('customColor');
+        if (customColorPicker) {
+            customColorPicker.value = presetConfig.color;
+        }
+    }
+    
+    clearPresetSelection() {
+        // Clear all preset selections
+        document.querySelectorAll('.preset-item').forEach(item => {
+            item.classList.remove('active');
+        });
+        
+        // Update current config to remove preset
+        if (this.currentSugarConfig) {
+            this.currentSugarConfig.type = 'custom';
+            this.currentSugarConfig.preset = null;
+        }
+    }
+
     selectShape(shape) {
         // This method is kept for compatibility but shape selection is now handled in setupStyleControls
         console.warn('selectShape called - this should now be handled by button event listeners');
@@ -730,6 +850,9 @@ class GlycanDrawer {
             customSugarColor.value = normalizedColor;
             customSugarColorHex.value = normalizedColor;
         }
+        
+        // Clear SNFG preset selection when manually selecting color
+        this.clearPresetSelection();
         
         if (this.currentTool === 'add') {
             // 添加模式：更新配置
@@ -1411,6 +1534,7 @@ class GlycanDrawer {
         
         // Create the shape based on config
         const size = config.size || this.sugarRadius;
+        sugarGroup.setAttribute('data-size', size);
         const shape = this.createSugarShape(x, y, config.shape, config.color, size);
         shape.classList.add('sugar-shape');
         
@@ -1802,42 +1926,226 @@ class GlycanDrawer {
         sugar.appendChild(newShape);
     }
     
-    updateUIForSelectedSugar(sugar) {
-        const shape = sugar.getAttribute('data-shape');
-        const color = sugar.getAttribute('data-color');
-        const preset = sugar.getAttribute('data-preset');
+    // 新的统一选择UI更新方法
+    updateSelectionUI() {
+        const selectedElements = Array.from(this.selectedElements);
         
-        // Clear all selections first
-        document.querySelectorAll('.preset-item').forEach(item => {
-            item.classList.remove('active');
-        });
-        document.querySelectorAll('.shape-btn').forEach(btn => {
-            btn.classList.remove('active');
-        });
-        document.querySelectorAll('.color-btn').forEach(btn => {
-            btn.classList.remove('active');
-        });
-        
-        // If it's a preset sugar, highlight the preset
-        if (preset && this.snfgPresets[preset]) {
-            document.querySelector(`[data-preset="${preset}"]`)?.classList.add('active');
-            this.currentSugarConfig = {
-                type: 'preset',
-                preset: preset,
-                shape: shape,
-                color: color
-            };
-        } else {
-            // It's a custom sugar, highlight shape and color
-            document.querySelector(`[data-shape="${shape}"]`)?.classList.add('active');
-            document.querySelector(`[data-color="${color}"]`)?.classList.add('active');
-            this.currentSugarConfig = {
-                type: 'custom',
-                shape: shape,
-                color: color,
-                preset: null
-            };
+        if (selectedElements.length === 0) {
+            this.clearUISelections(); // 使用不同的方法名避免循环调用
+            return;
         }
+        
+        // 获取所有选中元素的糖数据
+        const sugarDataList = selectedElements
+            .filter(element => element && element.classList && element.classList.contains('sugar'))
+            .map(element => {
+                const shape = element.getAttribute('data-shape');
+                const preset = element.getAttribute('data-preset');
+                const size = parseFloat(element.getAttribute('data-size')) || 20;
+                
+                // 获取实际当前颜色（从糖形状元素的fill属性）
+                const shapeElement = element.querySelector('.sugar-shape');
+                let currentColor = element.getAttribute('data-color'); // 默认使用初始颜色
+                
+                if (shapeElement) {
+                    // 优先使用style.fill，其次使用fill属性
+                    const fillColor = shapeElement.style.fill || shapeElement.getAttribute('fill');
+                    if (fillColor && fillColor !== 'none') {
+                        currentColor = this.normalizeColorToHex(fillColor);
+                    }
+                }
+                
+                return {
+                    shape: shape,
+                    color: currentColor,
+                    preset: preset,
+                    size: size
+                };
+            })
+            .filter(data => data.shape && data.color);
+            
+        if (sugarDataList.length === 0) {
+            this.clearAllSelections();
+            return;
+        }
+        
+        if (sugarDataList.length === 1) {
+            // 单个选择
+            this.updateSingleSelectionUI(sugarDataList[0]);
+        } else {
+            // 多个选择
+            this.updateMultipleSelectionUI(sugarDataList);
+        }
+    }
+    
+    // 单个元素选择的UI更新
+    updateSingleSelectionUI(sugarData) {
+        console.log('Updating UI for single selected sugar:', sugarData);
+        
+        // 定义默认调色板颜色
+        const defaultColors = [
+            '#3498db', '#e74c3c', '#2ecc71', '#f39c12', 
+            '#9b59b6', '#34495e', '#1abc9c', '#f1c40f'
+        ];
+        
+        // 清除所有UI选择状态
+        this.clearUISelections();
+        
+        // 更新颜色选择器
+        const colorPicker = document.getElementById('sugarColor');
+        const customColorPicker = document.getElementById('customColor');
+        if (colorPicker && sugarData.color) {
+            colorPicker.value = sugarData.color;
+        }
+        if (customColorPicker && sugarData.color) {
+            customColorPicker.value = sugarData.color;
+        }
+        
+        // 更新形状按钮
+        document.querySelectorAll('.shape-btn').forEach(btn => {
+            if (btn.dataset.shape === sugarData.shape) {
+                btn.classList.add('active');
+            }
+        });
+        
+        // 更新颜色按钮 - 只有在默认调色板中的颜色才显示选中
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            if (btn.dataset.color === sugarData.color && defaultColors.includes(sugarData.color)) {
+                btn.classList.add('active');
+            }
+        });
+        
+        // 查找匹配的SNFG预设
+        let matchingPreset = null;
+        for (const [presetKey, presetConfig] of Object.entries(this.snfgPresets)) {
+            if (presetConfig.shape === sugarData.shape && presetConfig.color === sugarData.color) {
+                matchingPreset = presetKey;
+                break;
+            }
+        }
+        
+        // 更新SNFG预设按钮
+        document.querySelectorAll('.snfg-btn, .preset-item').forEach(btn => {
+            if (btn.dataset.preset === matchingPreset) {
+                btn.classList.add('active');
+            }
+        });
+        
+        // 更新尺寸显示
+        const sizeDisplay = document.getElementById('sugarSizeDisplay');
+        if (sizeDisplay) {
+            sizeDisplay.textContent = sugarData.size;
+        }
+        
+        const sizeSlider = document.getElementById('sugarSize');
+        if (sizeSlider) {
+            sizeSlider.value = sugarData.size;
+        }
+        
+        // 更新当前糖配置
+        this.currentSugarConfig = {
+            type: matchingPreset ? 'preset' : 'custom',
+            preset: matchingPreset,
+            shape: sugarData.shape,
+            color: sugarData.color,
+            size: sugarData.size
+        };
+    }
+    
+    // 多个元素选择的UI更新
+    updateMultipleSelectionUI(sugarDataList) {
+        console.log('Updating UI for multiple selected sugars:', sugarDataList);
+        
+        // 定义默认调色板颜色
+        const defaultColors = [
+            '#3498db', '#e74c3c', '#2ecc71', '#f39c12', 
+            '#9b59b6', '#34495e', '#1abc9c', '#f1c40f'
+        ];
+        
+        // 清除所有UI选择状态
+        this.clearUISelections();
+        
+        // 检查各属性一致性
+        const shapes = [...new Set(sugarDataList.map(data => data.shape))];
+        const colors = [...new Set(sugarDataList.map(data => data.color))];
+        const sizes = [...new Set(sugarDataList.map(data => data.size))];
+        
+        // 更新形状按钮 - 只有当所有选中元素形状相同时才显示选中
+        if (shapes.length === 1) {
+            document.querySelectorAll('.shape-btn').forEach(btn => {
+                if (btn.dataset.shape === shapes[0]) {
+                    btn.classList.add('active');
+                }
+            });
+        }
+        
+        // 更新颜色按钮 - 只有当所有选中元素颜色相同且在默认调色板中时才显示选中
+        if (colors.length === 1 && defaultColors.includes(colors[0])) {
+            document.querySelectorAll('.color-btn').forEach(btn => {
+                if (btn.dataset.color === colors[0]) {
+                    btn.classList.add('active');
+                }
+            });
+        }
+        
+        // 检查SNFG预设匹配 - 只有当所有选中元素都匹配同一个预设时才显示选中
+        let commonPreset = null;
+        if (shapes.length === 1 && colors.length === 1) {
+            for (const [presetKey, presetConfig] of Object.entries(this.snfgPresets)) {
+                if (presetConfig.shape === shapes[0] && presetConfig.color === colors[0]) {
+                    commonPreset = presetKey;
+                    break;
+                }
+            }
+        }
+        
+        document.querySelectorAll('.snfg-btn, .preset-item').forEach(btn => {
+            if (btn.dataset.preset === commonPreset) {
+                btn.classList.add('active');
+            }
+        });
+        
+        // 更新颜色选择器 - 如果颜色一致则显示该颜色，否则显示第一个
+        const colorPicker = document.getElementById('sugarColor');
+        const customColorPicker = document.getElementById('customColor');
+        const displayColor = colors.length === 1 ? colors[0] : colors[0];
+        
+        if (colorPicker) {
+            colorPicker.value = displayColor;
+        }
+        if (customColorPicker) {
+            customColorPicker.value = displayColor;
+        }
+        
+        // 更新尺寸显示 - 如果尺寸一致则显示该尺寸，否则显示混合状态
+        const sizeDisplay = document.getElementById('sugarSizeDisplay');
+        const sizeSlider = document.getElementById('sugarSize');
+        
+        if (sizes.length === 1) {
+            if (sizeDisplay) sizeDisplay.textContent = sizes[0];
+            if (sizeSlider) sizeSlider.value = sizes[0];
+        } else {
+            if (sizeDisplay) sizeDisplay.textContent = '混合';
+            if (sizeSlider) sizeSlider.value = sizes[0]; // 使用第一个元素的尺寸
+        }
+    }
+    
+    // 清除UI选择状态（不触发其他更新）
+    clearUISelections() {
+        document.querySelectorAll('.shape-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.snfg-btn, .preset-item').forEach(btn => btn.classList.remove('active'));
+        
+        const sizeDisplay = document.getElementById('sugarSizeDisplay');
+        if (sizeDisplay) sizeDisplay.textContent = '20';
+        
+        const sizeSlider = document.getElementById('sugarSize');
+        if (sizeSlider) sizeSlider.value = '20';
+    }
+    
+    updateUIForSelectedSugar(sugar) {
+        // 保持向后兼容性，但使用新的统一方法
+        this.updateSelectionUI();
     }
     
     getTextAtPoint(x, y) {
@@ -2915,13 +3223,18 @@ class GlycanDrawer {
         // Set flag to prevent style application during UI update
         this.isUpdatingUI = true;
         
-        // Check for mixed values across selected sugars
-        const selectedSugars = Array.from(this.selectedSugars);
-        if (this.selectedSugar) selectedSugars.push(this.selectedSugar);
+        // Use new unified selection UI method for shape/color/preset handling
+        this.updateSelectionUI();
         
-        if (selectedSugars.length === 0) return;
+        // Get selected sugars using unified selection system
+        const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
         
-        // Get values from first sugar
+        if (selectedSugars.length === 0) {
+            this.isUpdatingUI = false;
+            return;
+        }
+        
+        // Get values from first sugar for detailed controls
         const firstSugar = selectedSugars[0];
         const firstType = firstSugar.getAttribute('data-shape');
         const firstSize = this.getSugarSize(firstSugar);
@@ -2932,7 +3245,7 @@ class GlycanDrawer {
         const firstFillColor = firstShape ? (firstShape.style.fill || firstShape.getAttribute('fill') || firstSugar.getAttribute('data-color') || '#3498db') : '#3498db';
         const firstFillOpacity = firstShape ? (parseFloat(firstShape.style.fillOpacity || firstShape.getAttribute('fill-opacity')) || 1) : 1;
         
-        // Check if all selected sugars have same values
+        // Check if all selected sugars have same values for detailed controls
         let mixedType = false, mixedSize = false, mixedBorderWidth = false, mixedBorderColor = false, mixedBorderOpacity = false;
         let mixedFillColor = false, mixedFillOpacity = false;
         
@@ -2956,7 +3269,7 @@ class GlycanDrawer {
             }
         }
         
-        // Update controls
+        // Update detailed controls (these are handled separately from main UI)
         const sugarType = document.getElementById('sugarType');
         const sugarSize = document.getElementById('sugarSize');
         const sugarSizeValue = document.getElementById('sugarSizeValue');
@@ -2974,15 +3287,7 @@ class GlycanDrawer {
         if (sugarType) {
             sugarType.value = mixedType ? '' : firstType;
         }
-        if (sugarSize && sugarSizeValue) {
-            if (mixedSize) {
-                sugarSize.value = '';
-                sugarSizeValue.textContent = '混合';
-            } else {
-                sugarSize.value = firstSize;
-                sugarSizeValue.textContent = firstSize;
-            }
-        }
+        
         if (sugarBorderWidth && sugarBorderWidthValue) {
             if (mixedBorderWidth) {
                 sugarBorderWidth.value = '';
@@ -2996,6 +3301,7 @@ class GlycanDrawer {
                 sugarBorderWidthValue.classList.remove('mixed');
             }
         }
+        
         if (sugarBorderColor && sugarBorderColorHex) {
             if (mixedBorderColor) {
                 sugarBorderColor.value = '#ffffff';
@@ -3010,6 +3316,7 @@ class GlycanDrawer {
                 sugarBorderColorHex.classList.remove('mixed');
             }
         }
+        
         if (sugarBorderOpacity && sugarBorderOpacityValue) {
             if (mixedBorderOpacity) {
                 sugarBorderOpacity.value = '';
@@ -3024,7 +3331,7 @@ class GlycanDrawer {
             }
         }
         
-        // Update custom sugar color
+        // Update custom sugar color (additional detailed control)  
         if (customSugarColor && customSugarColorHex) {
             if (mixedFillColor) {
                 customSugarColor.value = '#ffffff';
@@ -3218,6 +3525,24 @@ class GlycanDrawer {
         }
     }
     
+    // Clear custom sugar type selections when switching contexts
+    clearCustomSugarSelections() {
+        // Clear shape selections
+        document.querySelectorAll('.shape-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        
+        // Clear color selections  
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        
+        // Clear preset selections
+        document.querySelectorAll('.preset-item').forEach(item => {
+            item.classList.remove('active');
+        });
+    }
+
     // Style control methods
     updateStylePanel() {
         // Use the correct panel IDs from the main index.html
@@ -3250,33 +3575,45 @@ class GlycanDrawer {
                 this.updateStyleControlValues();
                 
             } else if (selectedTexts.length > 0) {
-                // Show text controls panel
+                // Show text controls panel and clear custom sugar selections
                 sugarControlsSection.style.display = 'none';
                 textControlsSection.style.display = 'block';
                 emptyControlsSection.style.display = 'none';
+                
+                // Clear custom sugar type selections when showing text controls
+                this.clearCustomSugarSelections();
                 
                 // Update current values from selected text
                 this.updateTextStyleControlValues();
                 
             } else {
-                // Show empty state when nothing is selected
+                // Show empty state when nothing is selected and clear custom sugar selections
                 sugarControlsSection.style.display = 'none';
                 textControlsSection.style.display = 'none';
                 emptyControlsSection.style.display = 'block';
+                
+                // Clear custom sugar type selections when showing empty state
+                this.clearCustomSugarSelections();
             }
         } else if (this.currentTool === 'text') {
-            // Show text controls for text tool
+            // Show text controls for text tool and clear custom sugar selections
             sugarControlsSection.style.display = 'none';
             textControlsSection.style.display = 'block';
             emptyControlsSection.style.display = 'none';
             
+            // Clear custom sugar type selections when showing text tool
+            this.clearCustomSugarSelections();
+            
             // Update control values from currentTextConfig
             this.updateTextStyleControlValues();
         } else {
-            // Show empty state for other tools
+            // Show empty state for other tools and clear custom sugar selections
             sugarControlsSection.style.display = 'none';
             textControlsSection.style.display = 'none';
             emptyControlsSection.style.display = 'block';
+            
+            // Clear custom sugar type selections when showing other tools
+            this.clearCustomSugarSelections();
         }
     }
     
@@ -3522,7 +3859,13 @@ class GlycanDrawer {
     }
     
     getSugarSize(sugar) {
-        // Get current size from the sugar's shape
+        // First try to get size from data attribute (most reliable)
+        const dataSize = sugar.getAttribute('data-size');
+        if (dataSize) {
+            return parseFloat(dataSize);
+        }
+        
+        // Fallback: Get current size from the sugar's shape
         const shape = sugar.querySelector('.sugar-shape');
         if (!shape) return 20; // default size
         
@@ -3585,22 +3928,19 @@ class GlycanDrawer {
         // Apply to selected sugar(s) in select mode
         if (this.currentTool !== 'select') return;
         
-        // Apply to selected sugar(s)
-        const sugarsToResize = [];
-        if (this.selectedSugar) {
-            sugarsToResize.push(this.selectedSugar);
-        }
-        if (this.selectedSugars.size > 0) {
-            sugarsToResize.push(...Array.from(this.selectedSugars));
-        }
+        // Get selected sugars from the unified selectedElements system
+        const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
         
-        sugarsToResize.forEach(sugar => {
+        selectedSugars.forEach(sugar => {
             const shape = sugar.querySelector('.sugar-shape');
             const shapeType = sugar.getAttribute('data-shape');
             const x = parseFloat(sugar.getAttribute('data-x'));
             const y = parseFloat(sugar.getAttribute('data-y'));
             
             if (shape) {
+                // Update the data-size attribute
+                sugar.setAttribute('data-size', size);
+                
                 this.updateShapeSize(shape, shapeType, size);
                 
                 // Update selection highlight to match new size
@@ -4862,7 +5202,7 @@ class GlycanDrawer {
         if (!this.isSelectableElement(element)) return;
         
         if (!multiSelect) {
-            this.clearAllSelections();
+            this.clearAllSelectionsQuiet(); // 使用不触发循环的版本
         }
         
         this.selectedElements.add(element);
@@ -4971,6 +5311,25 @@ class GlycanDrawer {
         this.updateStylePanel();
     }
     
+    // 不触发UI更新的清除选择（用于避免循环调用）
+    clearAllSelectionsQuiet() {
+        this.selectedElements.forEach(element => {
+            element.classList.remove('selected');
+            this.hideSelectionHighlight(element);
+        });
+        this.selectedElements.clear();
+        this.clearAllHoverPreviews();
+        
+        // 只更新legacy状态，不触发UI更新
+        this.selectedSugar = null;
+        this.selectedText = null;
+        this.selectedSugars.clear();
+        this.selectedTexts.clear();
+        this.selectedConnections.clear();
+        
+        this.updateStylePanel();
+    }
+    
     // Update legacy selection states for backward compatibility
     updateLegacySelectionStates() {
         // Clear legacy states
@@ -4997,6 +5356,14 @@ class GlycanDrawer {
                     break;
             }
         });
+        
+        // 更新选择UI - 使用新的统一逻辑，但只在有糖选择时调用
+        if (this.currentTool === 'select' && this.selectedSugars.size > 0) {
+            this.updateSelectionUI();
+        } else if (this.currentTool === 'select' && this.selectedElements.size === 0) {
+            // 如果没有任何选择，只清除UI状态，不触发递归
+            this.clearUISelections();
+        }
     }
     
     // Get all selected elements by type
