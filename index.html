@@ -10,14 +10,64 @@
     <div class="app-container">
         <h1>Glycan Drawing Tool</h1>
         
+        <!-- Top Panel: Actions and Functions -->
+        <div class="top-panel">
+            <div class="action-buttons">
+                <button id="downloadBtn" class="action-btn">导出 SVG</button>
+                <button id="clearBtn" class="action-btn clear">清空画布</button>
+                
+                <!-- Canvas Size Controls -->
+                <div class="canvas-size-controls">
+                    <label>画布尺寸:</label>
+                    <select id="canvasSizeSelect" class="size-select">
+                        <option value="800,600">小 (800×600)</option>
+                        <option value="1000,700" selected>中 (1000×700)</option>
+                        <option value="1200,800">大 (1200×800)</option>
+                        <option value="1500,1000">特大 (1500×1000)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        
         <div class="main-content">
-            <!-- Left Panel: Sugar Presets and Customization -->
+            <!-- Left Panel: Tools -->
             <div class="left-panel">
-                <!-- SFNG Presets Section -->
                 <div class="panel-section">
+                    <h3>工具</h3>
+                    <div class="tool-buttons">
+                        <button class="tool-btn active" data-tool="add" title="添加糖">
+                            <span>🍬</span>
+                            添加糖
+                        </button>
+                        <button class="tool-btn" data-tool="select" title="选择">
+                            <span>↖️</span>
+                            选择
+                        </button>
+                        <button class="tool-btn" data-tool="text" title="添加文字">
+                            <span>📝</span>
+                            文字
+                        </button>
+                        <button class="tool-btn" data-tool="delete" title="橡皮擦">
+                            <span>🧽</span>
+                            橡皮擦
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Center: Canvas -->
+            <div class="center-panel">
+                <svg id="canvas" width="1000" height="700" viewBox="0 0 1000 700">
+                    <!-- SVG content will be added here -->
+                </svg>
+            </div>
+            
+            <!-- Right Panel: Sugar Presets and Customization -->
+            <div class="right-panel">
+                <!-- SFNG Presets Section -->
+                <div class="panel-section" id="presetsSection">
                     <h3>SFNG 糖预设</h3>
                     <div class="preset-grid" id="presetGrid">
-                        <!-- SFNG presets will be populated here -->
                         <div class="preset-item" data-preset="glc">
                             <svg width="40" height="40" viewBox="0 0 40 40">
                                 <circle cx="20" cy="20" r="15" fill="#3498db" stroke="#2980b9" stroke-width="2"/>
@@ -58,7 +108,7 @@
                 </div>
                 
                 <!-- Custom Sugar Section -->
-                <div class="panel-section">
+                <div class="panel-section" id="customSugarSection">
                     <h3>自定义糖型</h3>
                     
                     <!-- Shape Selection -->
@@ -135,140 +185,110 @@
                     </div>
                 </div>
             </div>
-            
-            <!-- Canvas Area -->
-            <div class="canvas-container">
-                <svg id="canvas" width="700" height="600" viewBox="0 0 700 600">
-                    <!-- Sugars will be added here -->
-                </svg>
-            </div>
-            
-            <!-- Right Panel: Tools -->
-            <div class="right-panel">
-                <div class="panel-section">
-                    <h3>工具</h3>
-                    <button id="addTool" class="tool-btn active" data-tool="add">
-                        <span class="tool-icon">➕</span>
-                        添加糖模式
-                    </button>
-                    <button id="textTool" class="tool-btn" data-tool="text">
-                        <span class="tool-icon">T</span>
-                        添加文字
-                    </button>
-                    <button id="selectTool" class="tool-btn" data-tool="select">
-                        <span class="tool-icon">↖</span>
-                        选择工具
-                    </button>
-                    <button id="deleteTool" class="tool-btn" data-tool="delete">
-                        <span class="tool-icon">🧽</span>
-                        橡皮擦
-                    </button>
-                </div>
-                
-                <!-- Style Controls Panel -->
-                <div class="panel-section" id="stylePanel">
-                    <h3>样式调整</h3>
-                    
-                    <!-- Sugar Properties (only visible when sugars are selected) -->
-                    <div class="style-subsection" id="sugarStyleSection">
-                        <h4>糖属性</h4>
-                        <div class="control-row">
-                            <label for="sugarSize">大小:</label>
-                            <input type="range" id="sugarSize" min="10" max="40" value="20" step="2">
-                            <span id="sugarSizeValue">20</span>
-                        </div>
-                        <div class="control-row">
-                            <label for="sugarBorderWidth">边缘粗细:</label>
-                            <input type="range" id="sugarBorderWidth" min="1" max="5" value="2" step="0.5">
-                            <span id="sugarBorderWidthValue">2</span>
-                        </div>
-                        <div class="control-row">
-                            <label>边缘样式:</label>
-                            <div class="border-style-buttons">
-                                <button class="border-style-btn active" data-style="solid">实线</button>
-                                <button class="border-style-btn" data-style="dashed">虚线</button>
-                                <button class="border-style-btn" data-style="dotted">点线</button>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Connection Line Style (only visible when connections exist) -->
-                    <div class="style-subsection" id="connectionStyleSection">
-                        <h4>连接线样式</h4>
-                        <div class="control-row">
-                            <label for="connectionWidth">粗细:</label>
-                            <input type="range" id="connectionWidth" min="1" max="8" value="2" step="0.5">
-                            <span id="connectionWidthValue">2</span>
-                        </div>
-                        <div class="control-row">
-                            <label>样式:</label>
-                            <div class="connection-style-buttons">
-                                <button class="connection-style-btn active" data-style="solid">实线</button>
-                                <button class="connection-style-btn" data-style="dashed">虚线</button>
-                                <button class="connection-style-btn" data-style="dotted">点线</button>
-                            </div>
-                        </div>
-                        <div class="connection-status" id="connectionStatus">
-                            <span class="status-text">请选择有连接的糖</span>
-                        </div>
-                    </div>
-                    
-                    <!-- Text Style (only visible when text is selected) -->
-                    <div class="style-subsection" id="textStyleSection">
-                        <h4>文字样式</h4>
-                        <div class="control-row">
-                            <label for="fontSize">字号:</label>
-                            <input type="range" id="fontSize" min="8" max="48" value="16" step="1">
-                            <span id="fontSizeValue">16</span>
-                        </div>
-                        <div class="control-row">
-                            <label for="fontFamily">字体:</label>
-                            <select id="fontFamily">
-                                <option value="Arial">Arial</option>
-                                <option value="Times New Roman">Times New Roman</option>
-                                <option value="Helvetica">Helvetica</option>
-                                <option value="Georgia">Georgia</option>
-                                <option value="Verdana">Verdana</option>
-                                <option value="SimSun">宋体</option>
-                                <option value="SimHei">黑体</option>
-                                <option value="KaiTi">楷体</option>
-                            </select>
-                        </div>
-                        <div class="control-row">
-                            <label>样式:</label>
-                            <div class="text-style-buttons">
-                                <button class="text-style-btn" id="boldBtn" data-style="bold" title="粗体">
-                                    <strong>B</strong>
-                                </button>
-                                <button class="text-style-btn" id="italicBtn" data-style="italic" title="斜体">
-                                    <em>I</em>
-                                </button>
-                                <button class="text-style-btn" id="underlineBtn" data-style="underline" title="下划线">
-                                    <u>U</u>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="control-row">
-                            <label for="textColor">颜色:</label>
-                            <input type="color" id="textColor" value="#000000">
-                            <input type="text" id="textColorHex" value="#000000" maxlength="7" placeholder="#000000">
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="panel-section">
-                    <h3>操作</h3>
-                    <button id="downloadBtn" class="action-btn">导出 SVG</button>
-                    <button id="clearBtn" class="action-btn clear">清空画布</button>
-                </div>
-            </div>
         </div>
         
-        <div class="instructions">
-            <p>选择SFNG预设或自定义糖型，然后在画布上点击放置。点击现有糖可以连接新糖。</p>
+        <!-- Bottom Panel: Style Controls -->
+        <div class="bottom-panel" id="stylePanel">
+            <div class="style-controls">
+                <!-- Sugar Style (only visible when sugars are selected) -->
+                <div class="style-subsection" id="sugarStyleSection">
+                    <h4>糖样式</h4>
+                    <div class="control-row">
+                        <label for="sugarSize">大小:</label>
+                        <input type="range" id="sugarSize" min="10" max="40" value="20" step="2">
+                        <span id="sugarSizeValue">20</span>
+                    </div>
+                    <div class="control-row">
+                        <label for="sugarBorderWidth">边缘粗细:</label>
+                        <input type="range" id="sugarBorderWidth" min="1" max="5" value="2" step="0.5">
+                        <span id="sugarBorderWidthValue">2</span>
+                    </div>
+                    <div class="control-row">
+                        <label>边缘样式:</label>
+                        <div class="border-style-buttons">
+                            <button class="border-style-btn active" data-style="solid">实线</button>
+                            <button class="border-style-btn" data-style="dashed">虚线</button>
+                            <button class="border-style-btn" data-style="dotted">点线</button>
+                        </div>
+                    </div>
+                    <div class="control-row">
+                        <label for="sugarBorderColor">边缘颜色:</label>
+                        <input type="color" id="sugarBorderColor" value="#333333">
+                        <input type="text" id="sugarBorderColorHex" value="#333333" maxlength="7" placeholder="#333333">
+                    </div>
+                </div>
+                
+                <!-- Connection Line Style (only visible when connections exist) -->
+                <div class="style-subsection" id="connectionStyleSection">
+                    <h4>连接线样式</h4>
+                    <div class="control-row">
+                        <label for="connectionWidth">粗细:</label>
+                        <input type="range" id="connectionWidth" min="1" max="8" value="2" step="0.5">
+                        <span id="connectionWidthValue">2</span>
+                    </div>
+                    <div class="control-row">
+                        <label>样式:</label>
+                        <div class="connection-style-buttons">
+                            <button class="connection-style-btn active" data-style="solid">实线</button>
+                            <button class="connection-style-btn" data-style="dashed">虚线</button>
+                            <button class="connection-style-btn" data-style="dotted">点线</button>
+                        </div>
+                    </div>
+                    <div class="control-row">
+                        <label for="connectionColor">连接线颜色:</label>
+                        <input type="color" id="connectionColor" value="#333333">
+                        <input type="text" id="connectionColorHex" value="#333333" maxlength="7" placeholder="#333333">
+                    </div>
+                    <div class="connection-status" id="connectionStatus">
+                        <span class="status-text">请选择有连接的糖</span>
+                    </div>
+                </div>
+                
+                <!-- Text Style (only visible when text is selected) -->
+                <div class="style-subsection" id="textStyleSection">
+                    <h4>文字样式</h4>
+                    <div class="control-row">
+                        <label for="fontSize">字号:</label>
+                        <input type="range" id="fontSize" min="8" max="48" value="16" step="1">
+                        <span id="fontSizeValue">16</span>
+                    </div>
+                    <div class="control-row">
+                        <label for="fontFamily">字体:</label>
+                        <select id="fontFamily">
+                            <option value="Arial">Arial</option>
+                            <option value="Times New Roman">Times New Roman</option>
+                            <option value="Helvetica">Helvetica</option>
+                            <option value="Georgia">Georgia</option>
+                            <option value="Verdana">Verdana</option>
+                            <option value="SimSun">宋体</option>
+                            <option value="SimHei">黑体</option>
+                            <option value="KaiTi">楷体</option>
+                        </select>
+                    </div>
+                    <div class="control-row">
+                        <label>样式:</label>
+                        <div class="text-style-buttons">
+                            <button class="text-style-btn" id="boldBtn" data-style="bold" title="粗体">
+                                <strong>B</strong>
+                            </button>
+                            <button class="text-style-btn" id="italicBtn" data-style="italic" title="斜体">
+                                <em>I</em>
+                            </button>
+                            <button class="text-style-btn" id="underlineBtn" data-style="underline" title="下划线">
+                                <u>U</u>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="control-row">
+                        <label for="textColor">颜色:</label>
+                        <input type="color" id="textColor" value="#000000">
+                        <input type="text" id="textColorHex" value="#000000" maxlength="7" placeholder="#000000">
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
-    
+
     <script src="script.js"></script>
 </body>
 </html>

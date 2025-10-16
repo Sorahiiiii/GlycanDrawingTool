@@ -90,17 +90,20 @@ class GlycanDrawer {
         this.downloadBtn.addEventListener('click', () => this.downloadSVG());
         this.clearBtn.addEventListener('click', () => this.clearCanvas());
         
+        // Add canvas size control listener
+        const canvasSizeSelect = document.getElementById('canvasSizeSelect');
+        if (canvasSizeSelect) {
+            canvasSizeSelect.addEventListener('change', (e) => this.changeCanvasSize(e.target.value));
+        }
+        
         // Set default tool
         this.setTool('add');
         
-        // Initially hide style panel since default tool is 'add'
-        const stylePanel = document.getElementById('stylePanel');
-        if (stylePanel) {
-            stylePanel.style.display = 'none';
-        }
-        
         // Initialize style panels (should be hidden by default)
         this.updateStylePanel();
+        
+        // Initialize left panel visibility
+        this.updateLeftPanel();
     }
     
     setupToolbar() {
@@ -256,6 +259,42 @@ class GlycanDrawer {
                 this.applyTextStyle();
             });
         });
+        
+        // Sugar border color controls
+        const sugarBorderColor = document.getElementById('sugarBorderColor');
+        const sugarBorderColorHex = document.getElementById('sugarBorderColorHex');
+        
+        sugarBorderColor.addEventListener('input', (e) => {
+            const color = e.target.value;
+            sugarBorderColorHex.value = color;
+            this.applySugarBorderStyle();
+        });
+        
+        sugarBorderColorHex.addEventListener('input', (e) => {
+            const color = e.target.value;
+            if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
+                sugarBorderColor.value = color;
+                this.applySugarBorderStyle();
+            }
+        });
+        
+        // Connection color controls
+        const connectionColor = document.getElementById('connectionColor');
+        const connectionColorHex = document.getElementById('connectionColorHex');
+        
+        connectionColor.addEventListener('input', (e) => {
+            const color = e.target.value;
+            connectionColorHex.value = color;
+            this.applyConnectionStyle();
+        });
+        
+        connectionColorHex.addEventListener('input', (e) => {
+            const color = e.target.value;
+            if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
+                connectionColor.value = color;
+                this.applyConnectionStyle();
+            }
+        });
     }
     
     setTool(tool) {
@@ -291,18 +330,11 @@ class GlycanDrawer {
         // Update canvas cursor
         this.updateCanvasCursor();
         
-        // Show/hide style panel based on tool
-        const stylePanel = document.getElementById('stylePanel');
-        if (stylePanel) {
-            if (tool === 'select') {
-                stylePanel.style.display = 'block';
-            } else {
-                stylePanel.style.display = 'none';
-            }
-        }
-        
         // Update style panels visibility
         this.updateStylePanel();
+        
+        // Update left panel visibility (kept for compatibility)
+        this.updateLeftPanel();
     }
     
     selectPreset(preset) {
@@ -406,30 +438,36 @@ class GlycanDrawer {
         // Default cursor (crosshair) for add mode
     }
     
-    handleMouseDown(e) {
+    // Helper method to get SVG coordinates
+    getSVGCoordinates(e) {
         const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        return {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
+    }
+    
+    handleMouseDown(e) {
+        const coords = this.getSVGCoordinates(e);
+        const x = coords.x;
+        const y = coords.y;
         
         const clickedSugar = this.getSugarAtPoint(x, y);
         const clickedText = this.getTextAtPoint(x, y);
         
         if (this.currentTool === 'select') {
             if (clickedSugar) {
-                this.isDragging = true;
-                const sugarX = parseFloat(clickedSugar.getAttribute('data-x'));
-                const sugarY = parseFloat(clickedSugar.getAttribute('data-y'));
-                this.dragOffset = {
-                    x: x - sugarX,
-                    y: y - sugarY
-                };
+                // Get SVG-relative coordinates
+                const svgX = x;
+                const svgY = y;
                 
                 // Check if clicked sugar is part of multiple selection
                 if (this.selectedSugars.has(clickedSugar)) {
                     // Dragging multiple selected sugars
+                    this.isDragging = true;
                     this.isDraggingMultiple = true;
-                    this.dragStartX = x;
-                    this.dragStartY = y;
+                    this.dragStartX = svgX;
+                    this.dragStartY = svgY;
                     
                     // Store initial positions and add dragging class for all selected sugars
                     this.selectedSugars.forEach(sugar => {
@@ -438,26 +476,42 @@ class GlycanDrawer {
                         sugar.classList.add('dragging');
                     });
                 } else {
-                    // Select single sugar and clear multiple selection
+                    // Select single sugar first
                     this.selectSugar(clickedSugar);
+                    
+                    // Initialize single sugar dragging with SVG coordinates
+                    this.isDragging = true;
                     this.isDraggingMultiple = false;
+                    
+                    const sugarX = parseFloat(clickedSugar.getAttribute('data-x'));
+                    const sugarY = parseFloat(clickedSugar.getAttribute('data-y'));
+                    this.dragOffset = {
+                        x: svgX - sugarX,
+                        y: svgY - sugarY
+                    };
+                    
                     this.selectedSugar.classList.add('dragging');
                 }
                 
                 e.preventDefault();
             } else if (clickedText) {
-                this.isDragging = true;
-                const textX = parseFloat(clickedText.getAttribute('data-x'));
-                const textY = parseFloat(clickedText.getAttribute('data-y'));
-                this.dragOffset = {
-                    x: x - textX,
-                    y: y - textY
-                };
+                // Get SVG-relative coordinates
+                const svgX = x;
+                const svgY = y;
                 
                 // Select the text if not already selected
                 if (this.selectedText !== clickedText) {
                     this.selectText(clickedText);
                 }
+                
+                // Initialize text dragging with SVG coordinates
+                this.isDragging = true;
+                const textX = parseFloat(clickedText.getAttribute('data-x'));
+                const textY = parseFloat(clickedText.getAttribute('data-y'));
+                this.dragOffset = {
+                    x: svgX - textX,
+                    y: svgY - textY
+                };
                 
                 e.preventDefault();
             } else {
@@ -480,10 +534,11 @@ class GlycanDrawer {
     }
     
     handleMouseMove(e) {
-        const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        const coords = this.getSVGCoordinates(e);
+        const x = coords.x;
+        const y = coords.y;
         
+
         // Handle box selection
         if (this.isBoxSelecting && this.currentTool === 'select') {
             this.updateBoxSelection(x, y);
@@ -620,9 +675,9 @@ class GlycanDrawer {
             return;
         }
         
-        const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        const coords = this.getSVGCoordinates(e);
+        const x = coords.x;
+        const y = coords.y;
         
         // Check if clicking on existing elements
         const clickedSugar = this.getSugarAtPoint(x, y);
@@ -661,9 +716,9 @@ class GlycanDrawer {
     handleDoubleClick(e) {
         if (this.currentTool !== 'select') return;
         
-        const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        const coords = this.getSVGCoordinates(e);
+        const x = coords.x;
+        const y = coords.y;
         
         const clickedSugar = this.getSugarAtPoint(x, y);
         const clickedText = this.getTextAtPoint(x, y);
@@ -914,6 +969,9 @@ class GlycanDrawer {
         
         // Update style panel for single selection
         this.updateStylePanel();
+        
+        // Update left panel visibility
+        this.updateLeftPanel();
     }
     
     deselectSugar() {
@@ -948,10 +1006,9 @@ class GlycanDrawer {
         this.deselectText();
         this.deselectMultipleSugars();
         
-        // Update style panel when deselecting
-        if (this.currentTool === 'select') {
-            this.updateStylePanel();
-        }
+        // Always update style panel when deselecting (regardless of current tool)
+        this.updateStylePanel();
+        this.updateLeftPanel();
     }
     
     deselectMultipleSugars() {
@@ -1644,6 +1701,17 @@ class GlycanDrawer {
         
         // Update style panel for multiple selection
         this.updateStylePanel();
+        
+        // Update left panel visibility
+        this.updateLeftPanel();
+    }
+    
+    // Left panel control methods (now controls right panel in new layout)
+    updateLeftPanel() {
+        // In the new layout, sugar presets are always visible in right panel
+        // This method is kept for compatibility but doesn't hide/show panels anymore
+        // since sugar configuration should always be accessible
+        return;
     }
     
     // Eraser methods
@@ -1689,26 +1757,28 @@ class GlycanDrawer {
     
     // Style control methods
     updateStylePanel() {
+        const stylePanel = document.getElementById('stylePanel');
         const sugarStyleSection = document.getElementById('sugarStyleSection');
         const connectionStyleSection = document.getElementById('connectionStyleSection');
         const textStyleSection = document.getElementById('textStyleSection');
         const connectionStatus = document.getElementById('connectionStatus');
         
-        // If not in select mode, hide all style panels
+        if (!stylePanel || !sugarStyleSection || !connectionStyleSection || !textStyleSection || !connectionStatus) return;
+        
+        // If not in select mode, hide entire bottom style panel
         if (this.currentTool !== 'select') {
-            sugarStyleSection.style.display = 'none';
-            connectionStyleSection.style.display = 'none';
-            textStyleSection.style.display = 'none';
+            stylePanel.style.display = 'none';
             return;
         }
-        
-        if (!sugarStyleSection || !connectionStyleSection || !textStyleSection || !connectionStatus) return;
         
         // Check if any sugars are selected
         const hasSugarsSelected = this.selectedSugar || this.selectedSugars.size > 0;
         const hasTextSelected = this.selectedText;
         
         if (hasSugarsSelected) {
+            // Show bottom style panel
+            stylePanel.style.display = 'block';
+            
             // Show sugar style section
             sugarStyleSection.style.display = 'block';
             textStyleSection.style.display = 'none';
@@ -1731,6 +1801,9 @@ class GlycanDrawer {
                 connectionStatus.querySelector('.status-text').textContent = '所选糖之间无连接线';
             }
         } else if (hasTextSelected) {
+            // Show bottom style panel
+            stylePanel.style.display = 'block';
+            
             // Show text style section
             textStyleSection.style.display = 'block';
             sugarStyleSection.style.display = 'none';
@@ -1739,10 +1812,8 @@ class GlycanDrawer {
             // Update current values from selected text
             this.updateTextStyleControlValues();
         } else {
-            // Hide all sections when nothing is selected
-            sugarStyleSection.style.display = 'none';
-            connectionStyleSection.style.display = 'none';
-            textStyleSection.style.display = 'none';
+            // Hide entire bottom style panel when nothing is selected
+            stylePanel.style.display = 'none';
         }
     }
     
@@ -1763,7 +1834,7 @@ class GlycanDrawer {
                 sizeValue.textContent = currentSize;
             }
             
-            // Update border width slider
+            // Update border width slider and color
             const shape = referenceSugar.querySelector('.sugar-shape');
             if (shape) {
                 const currentWidth = shape.style.strokeWidth || shape.getAttribute('stroke-width') || '2';
@@ -1772,6 +1843,15 @@ class GlycanDrawer {
                 if (widthSlider && widthValue) {
                     widthSlider.value = parseFloat(currentWidth);
                     widthValue.textContent = parseFloat(currentWidth);
+                }
+                
+                // Update border color
+                const currentColor = shape.style.stroke || shape.getAttribute('stroke') || '#333333';
+                const colorPicker = document.getElementById('sugarBorderColor');
+                const colorHex = document.getElementById('sugarBorderColorHex');
+                if (colorPicker && colorHex) {
+                    colorPicker.value = currentColor;
+                    colorHex.value = currentColor;
                 }
             }
         }
@@ -1974,6 +2054,7 @@ class GlycanDrawer {
         if (this.currentTool !== 'select') return;
         
         const width = document.getElementById('sugarBorderWidth').value;
+        const color = document.getElementById('sugarBorderColor').value;
         const styleBtn = document.querySelector('.border-style-btn.active');
         const style = styleBtn ? styleBtn.dataset.style : 'solid';
         
@@ -1991,6 +2072,7 @@ class GlycanDrawer {
             if (shape) {
                 // Use style property with important to override CSS
                 shape.style.setProperty('stroke-width', width, 'important');
+                shape.style.setProperty('stroke', color, 'important');
                 
                 // Apply dash pattern based on style
                 switch (style) {
@@ -2011,6 +2093,7 @@ class GlycanDrawer {
         if (this.currentTool !== 'select') return;
         
         const width = document.getElementById('connectionWidth').value;
+        const color = document.getElementById('connectionColor').value;
         const styleBtn = document.querySelector('.connection-style-btn.active');
         const style = styleBtn ? styleBtn.dataset.style : 'solid';
         
@@ -2019,6 +2102,7 @@ class GlycanDrawer {
         connections.forEach(conn => {
             // Use style property with important to override CSS
             conn.style.setProperty('stroke-width', width, 'important');
+            conn.style.setProperty('stroke', color, 'important');
             
             // Apply dash pattern based on style
             switch (style) {
@@ -2079,6 +2163,18 @@ class GlycanDrawer {
         } else {
             textElement.style.removeProperty('text-decoration');
         }
+    }
+    
+    // Canvas size adjustment
+    changeCanvasSize(sizeValue) {
+        const [width, height] = sizeValue.split(',').map(Number);
+        
+        // Update canvas dimensions
+        this.canvas.setAttribute('width', width);
+        this.canvas.setAttribute('height', height);
+        this.canvas.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        
+        console.log(`Canvas size changed to ${width}×${height}`);
     }
 }
 
