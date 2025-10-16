@@ -634,13 +634,7 @@ class GlycanDrawer {
         // Enter a dedicated preset mode so the right panel can show the preset UI only in this mode
         this.setTool('preset');
         this.activePreset = { src };
-        // show hint using temporary notification helper
-        if (typeof this.showTemporaryNotification === 'function') {
-            this.showTemporaryNotification('Preset selected: click canvas to place (Esc to cancel)', 1200);
-        } else {
-            // Fallback: simple alert (shouldn't happen in normal runtime)
-            console.log('Preset selected: click canvas to place (Esc to cancel)');
-        }
+        // No longer show popup notification - instruction text is visible on the right panel
     }
 
     exitPresetMode() {
@@ -3438,22 +3432,22 @@ class GlycanDrawer {
             const polygon = shape.querySelector('polygon');
             const line = shape.querySelector('.dividing-line');
             
-            if (config.borderWidth) {
-                if (polygon) polygon.style.setProperty('stroke-width', config.borderWidth, 'important');
-                if (line) line.style.setProperty('stroke-width', config.borderWidth, 'important');
-            }
-            if (config.borderColor) {
-                const normalizedBorderColor = this.normalizeColorToHex(config.borderColor);
-                if (polygon) polygon.style.setProperty('stroke', normalizedBorderColor, 'important');
-                if (line) line.style.setProperty('stroke', normalizedBorderColor, 'important');
-            }
-            if (config.borderOpacity !== undefined) {
-                if (polygon) polygon.style.setProperty('stroke-opacity', config.borderOpacity, 'important');
-                if (line) line.style.setProperty('stroke-opacity', config.borderOpacity, 'important');
-            }
-            if (config.fillOpacity !== undefined) {
-                if (polygon) polygon.style.setProperty('fill-opacity', config.fillOpacity, 'important');
-            }
+            // Compute effective border/fill values (use config if present, otherwise fall back to currentSugarConfig, finally to hard defaults)
+            const effectiveBorderWidth = (config && config.borderWidth != null) ? config.borderWidth : (this.currentSugarConfig?.borderWidth ?? 3);
+            const effectiveBorderColor = (config && config.borderColor) ? this.normalizeColorToHex(config.borderColor) : (this.currentSugarConfig?.borderColor ? this.normalizeColorToHex(this.currentSugarConfig.borderColor) : '#000000');
+            const effectiveBorderOpacity = (config && config.borderOpacity != null) ? config.borderOpacity : (this.currentSugarConfig?.borderOpacity != null ? this.currentSugarConfig.borderOpacity : 1);
+            const effectiveFillOpacity = (config && config.fillOpacity != null) ? config.fillOpacity : (this.currentSugarConfig?.fillOpacity != null ? this.currentSugarConfig.fillOpacity : 1);
+
+            if (polygon) polygon.style.setProperty('stroke-width', effectiveBorderWidth, 'important');
+            if (line) line.style.setProperty('stroke-width', effectiveBorderWidth, 'important');
+
+            if (polygon) polygon.style.setProperty('stroke', effectiveBorderColor, 'important');
+            if (line) line.style.setProperty('stroke', effectiveBorderColor, 'important');
+
+            if (polygon) polygon.style.setProperty('stroke-opacity', effectiveBorderOpacity, 'important');
+            if (line) line.style.setProperty('stroke-opacity', effectiveBorderOpacity, 'important');
+
+            if (polygon) polygon.style.setProperty('fill-opacity', effectiveFillOpacity, 'important');
             if (config.borderStyle && config.borderStyle !== 'solid') {
                 const width = config.borderWidth || '2';
                 let dashArray;
@@ -3472,19 +3466,16 @@ class GlycanDrawer {
             }
         } else {
             // Handle regular shapes
-            if (config.borderWidth) {
-                shape.style.setProperty('stroke-width', config.borderWidth, 'important');
-            }
-            if (config.borderColor) {
-                const normalizedBorderColor = this.normalizeColorToHex(config.borderColor);
-                shape.style.setProperty('stroke', normalizedBorderColor, 'important');
-            }
-            if (config.borderOpacity !== undefined) {
-                shape.style.setProperty('stroke-opacity', config.borderOpacity, 'important');
-            }
-            if (config.fillOpacity !== undefined) {
-                shape.style.setProperty('fill-opacity', config.fillOpacity, 'important');
-            }
+            // Apply effective defaults for regular shapes
+            const effectiveBorderWidthReg = (config && config.borderWidth != null) ? config.borderWidth : (this.currentSugarConfig?.borderWidth ?? 3);
+            const effectiveBorderColorReg = (config && config.borderColor) ? this.normalizeColorToHex(config.borderColor) : (this.currentSugarConfig?.borderColor ? this.normalizeColorToHex(this.currentSugarConfig.borderColor) : '#000000');
+            const effectiveBorderOpacityReg = (config && config.borderOpacity != null) ? config.borderOpacity : (this.currentSugarConfig?.borderOpacity != null ? this.currentSugarConfig.borderOpacity : 1);
+            const effectiveFillOpacityReg = (config && config.fillOpacity != null) ? config.fillOpacity : (this.currentSugarConfig?.fillOpacity != null ? this.currentSugarConfig.fillOpacity : 1);
+
+            shape.style.setProperty('stroke-width', effectiveBorderWidthReg, 'important');
+            shape.style.setProperty('stroke', effectiveBorderColorReg, 'important');
+            shape.style.setProperty('stroke-opacity', effectiveBorderOpacityReg, 'important');
+            shape.style.setProperty('fill-opacity', effectiveFillOpacityReg, 'important');
             if (config.borderStyle && config.borderStyle !== 'solid') {
                 const width = config.borderWidth || '2';
                 switch (config.borderStyle) {
@@ -3514,8 +3505,11 @@ class GlycanDrawer {
     
     createSugarShape(x, y, shape, color, size = null, strokeWidth = null) {
         const actualSize = size !== null ? size : this.sugarRadius;
-        const strokeColor = '#000000'; // Default black border
-        const actualStrokeWidth = strokeWidth !== null ? strokeWidth : '2'; // Use provided stroke width or default
+        // Do not force a default stroke color/width here — let higher-level code
+        // (createSugar / applySugarBorderStyle / selection handlers) apply
+        // the desired border color and width. Use null to indicate "no override".
+        const strokeColor = null;
+        const actualStrokeWidth = strokeWidth !== null ? strokeWidth : null;
         
         let element;
         
@@ -3606,8 +3600,8 @@ class GlycanDrawer {
                 gradientSquare.appendChild(stopDiv2);
                 defsSquare.appendChild(gradientSquare);
                 squareDividedElement.setAttribute('fill', `url(#${gradientSquareId})`);
-                squareDividedElement.setAttribute('stroke', strokeColor);
-                squareDividedElement.setAttribute('stroke-width', actualStrokeWidth);
+                if (strokeColor) squareDividedElement.setAttribute('stroke', strokeColor);
+                if (actualStrokeWidth) squareDividedElement.setAttribute('stroke-width', actualStrokeWidth);
 
                 // 分割线（左上到右下）
                 const dividingLineSquare = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -3615,8 +3609,8 @@ class GlycanDrawer {
                 dividingLineSquare.setAttribute('y1', p1.y);
                 dividingLineSquare.setAttribute('x2', p3.x);
                 dividingLineSquare.setAttribute('y2', p3.y);
-                dividingLineSquare.setAttribute('stroke', strokeColor);
-                dividingLineSquare.setAttribute('stroke-width', actualStrokeWidth);
+                if (strokeColor) dividingLineSquare.setAttribute('stroke', strokeColor);
+                if (actualStrokeWidth) dividingLineSquare.setAttribute('stroke-width', actualStrokeWidth);
                 dividingLineSquare.classList.add('dividing-line');
 
                 dividedSquareGroup.appendChild(squareDividedElement);
@@ -3677,8 +3671,8 @@ class GlycanDrawer {
                 
                 // 应用渐变到三角形
                 triangleElement.setAttribute('fill', `url(#${gradientId})`);
-                triangleElement.setAttribute('stroke', strokeColor);
-                triangleElement.setAttribute('stroke-width', actualStrokeWidth);
+                if (strokeColor) triangleElement.setAttribute('stroke', strokeColor);
+                if (actualStrokeWidth) triangleElement.setAttribute('stroke-width', actualStrokeWidth);
                 
                 // 计算分割线坐标（从顶点到底边中点）
                 const vertices = this.parsePolygonPoints(dividedTriPoints);
@@ -3695,8 +3689,8 @@ class GlycanDrawer {
                     dividingLine.setAttribute('y1', topVertex.y);
                     dividingLine.setAttribute('x2', bottomMidX);
                     dividingLine.setAttribute('y2', bottomMidY);
-                    dividingLine.setAttribute('stroke', strokeColor);
-                    dividingLine.setAttribute('stroke-width', actualStrokeWidth);
+                    if (strokeColor) dividingLine.setAttribute('stroke', strokeColor);
+                    if (actualStrokeWidth) dividingLine.setAttribute('stroke-width', actualStrokeWidth);
                     dividingLine.classList.add('dividing-line');
                     
                     dividedGroup.appendChild(triangleElement);
@@ -3769,8 +3763,8 @@ class GlycanDrawer {
                 
                 // 应用渐变
                 diamondTopElement.setAttribute('fill', `url(#${gradientTopId})`);
-                diamondTopElement.setAttribute('stroke', strokeColor);
-                diamondTopElement.setAttribute('stroke-width', actualStrokeWidth);
+                if (strokeColor) diamondTopElement.setAttribute('stroke', strokeColor);
+                if (actualStrokeWidth) diamondTopElement.setAttribute('stroke-width', actualStrokeWidth);
                 
                 // 创建水平分割线
                 const dividingLineTop = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -3778,8 +3772,8 @@ class GlycanDrawer {
                 dividingLineTop.setAttribute('y1', y);
                 dividingLineTop.setAttribute('x2', x + actualSize);
                 dividingLineTop.setAttribute('y2', y);
-                dividingLineTop.setAttribute('stroke', strokeColor);
-                dividingLineTop.setAttribute('stroke-width', actualStrokeWidth);
+                if (strokeColor) dividingLineTop.setAttribute('stroke', strokeColor);
+                if (actualStrokeWidth) dividingLineTop.setAttribute('stroke-width', actualStrokeWidth);
                 dividingLineTop.classList.add('dividing-line');
                 
                 dividedTopGroup.appendChild(diamondTopElement);
@@ -3830,8 +3824,8 @@ class GlycanDrawer {
                 
                 // 应用渐变
                 diamondBottomElement.setAttribute('fill', `url(#${gradientBottomId})`);
-                diamondBottomElement.setAttribute('stroke', strokeColor);
-                diamondBottomElement.setAttribute('stroke-width', actualStrokeWidth);
+                if (strokeColor) diamondBottomElement.setAttribute('stroke', strokeColor);
+                if (actualStrokeWidth) diamondBottomElement.setAttribute('stroke-width', actualStrokeWidth);
                 
                 // 创建水平分割线
                 const dividingLineBottom = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -3839,8 +3833,8 @@ class GlycanDrawer {
                 dividingLineBottom.setAttribute('y1', y);
                 dividingLineBottom.setAttribute('x2', x + actualSize);
                 dividingLineBottom.setAttribute('y2', y);
-                dividingLineBottom.setAttribute('stroke', strokeColor);
-                dividingLineBottom.setAttribute('stroke-width', actualStrokeWidth);
+                if (strokeColor) dividingLineBottom.setAttribute('stroke', strokeColor);
+                if (actualStrokeWidth) dividingLineBottom.setAttribute('stroke-width', actualStrokeWidth);
                 dividingLineBottom.classList.add('dividing-line');
                 
                 dividedBottomGroup.appendChild(diamondBottomElement);
@@ -4658,7 +4652,73 @@ class GlycanDrawer {
             // Create new shape element
             const newShape = this.createSugarShape(x, y, newShapeType, color, size, strokeWidth);
             newShape.classList.add('sugar-shape');
-            
+
+            // Preserve stroke-related properties from the old shape onto the new one.
+            try {
+                // If the old shape is a grouped/divided shape, prefer reading stroke values
+                // from its inner polygon/line elements. Otherwise fall back to attributes on
+                // the container element itself.
+                let oldStroke = null;
+                let oldStrokeWidth = null;
+                let oldDash = null;
+                let oldStrokeOpacity = null;
+
+                // Try to find inner elements that commonly hold stroke information
+                const oldInnerPoly = oldShape.querySelector ? (oldShape.querySelector('polygon') || oldShape.querySelector('path') || oldShape.querySelector('ellipse') || oldShape.querySelector('rect')) : null;
+                const oldInnerLine = oldShape.querySelector ? oldShape.querySelector('.dividing-line') : null;
+
+                if (oldInnerPoly) {
+                    oldStroke = oldInnerPoly.style.stroke || oldInnerPoly.getAttribute('stroke') || null;
+                    oldStrokeWidth = oldInnerPoly.style.strokeWidth || oldInnerPoly.getAttribute('stroke-width') || null;
+                    oldDash = oldInnerPoly.style.strokeDasharray || oldInnerPoly.getAttribute('stroke-dasharray') || null;
+                    oldStrokeOpacity = oldInnerPoly.style.strokeOpacity || oldInnerPoly.getAttribute('stroke-opacity') || null;
+                }
+
+                // If the dividing line has stroke properties, prefer them for the line element
+                if (oldInnerLine && !oldStroke) {
+                    oldStroke = oldInnerLine.style.stroke || oldInnerLine.getAttribute('stroke') || oldStroke;
+                }
+                if (oldInnerLine && !oldStrokeWidth) {
+                    oldStrokeWidth = oldInnerLine.style.strokeWidth || oldInnerLine.getAttribute('stroke-width') || oldStrokeWidth;
+                }
+                if (oldInnerLine && !oldDash) {
+                    oldDash = oldInnerLine.style.strokeDasharray || oldInnerLine.getAttribute('stroke-dasharray') || oldDash;
+                }
+                if (oldInnerLine && !oldStrokeOpacity) {
+                    oldStrokeOpacity = oldInnerLine.style.strokeOpacity || oldInnerLine.getAttribute('stroke-opacity') || oldStrokeOpacity;
+                }
+
+                // Fallback to container-level attributes if inner elements had no values
+                if (!oldStroke) oldStroke = oldShape.style.stroke || oldShape.getAttribute('stroke') || null;
+                if (!oldStrokeWidth) oldStrokeWidth = oldShape.style.strokeWidth || oldShape.getAttribute('stroke-width') || null;
+                if (!oldDash) oldDash = oldShape.style.strokeDasharray || oldShape.getAttribute('stroke-dasharray') || null;
+                if (!oldStrokeOpacity) oldStrokeOpacity = oldShape.style.strokeOpacity || oldShape.getAttribute('stroke-opacity') || null;
+
+                // If newShape is a group (complex divided shape), apply to inner polygon and dividing line
+                const innerPoly = newShape.querySelector ? newShape.querySelector('polygon') : null;
+                const innerLine = newShape.querySelector ? newShape.querySelector('.dividing-line') : null;
+                if (innerPoly) {
+                    if (oldStroke) innerPoly.style.setProperty('stroke', oldStroke, 'important');
+                    if (oldStrokeWidth) innerPoly.style.setProperty('stroke-width', oldStrokeWidth, 'important');
+                    if (oldDash) innerPoly.style.setProperty('stroke-dasharray', oldDash, 'important');
+                    if (oldStrokeOpacity) innerPoly.style.setProperty('stroke-opacity', oldStrokeOpacity, 'important');
+                }
+                if (innerLine) {
+                    if (oldStroke) innerLine.style.setProperty('stroke', oldStroke, 'important');
+                    if (oldStrokeWidth) innerLine.style.setProperty('stroke-width', oldStrokeWidth, 'important');
+                    if (oldDash) innerLine.style.setProperty('stroke-dasharray', oldDash, 'important');
+                    if (oldStrokeOpacity) innerLine.style.setProperty('stroke-opacity', oldStrokeOpacity, 'important');
+                }
+
+                // For simple elements, copy attributes directly
+                if (!innerPoly && !innerLine) {
+                    if (oldStroke) newShape.style.setProperty('stroke', oldStroke, 'important');
+                    if (oldStrokeWidth) newShape.style.setProperty('stroke-width', oldStrokeWidth, 'important');
+                    if (oldDash) newShape.style.setProperty('stroke-dasharray', oldDash, 'important');
+                    if (oldStrokeOpacity) newShape.style.setProperty('stroke-opacity', oldStrokeOpacity, 'important');
+                }
+            } catch (e) {}
+
             // Replace the old shape with the new one
             parent.replaceChild(newShape, oldShape);
         } else {
@@ -4714,7 +4774,8 @@ class GlycanDrawer {
     // Update shape attributes for same element type
     updateShapeAttributes(shape, shapeType, x, y, color, size, strokeWidth = null) {
         const actualSize = size || this.sugarRadius;
-        const actualStrokeWidth = strokeWidth !== null ? strokeWidth : '2';
+    // Determine effective stroke width: use provided strokeWidth, otherwise use currentSugarConfig or fallback 3
+    const actualStrokeWidth = (strokeWidth !== null && strokeWidth !== undefined) ? strokeWidth : (this.currentSugarConfig?.borderWidth ?? 3);
         
         // Update position and size attributes based on shape type
         switch (shapeType) {
@@ -4822,10 +4883,18 @@ class GlycanDrawer {
             shape.style.setProperty('stroke-width', actualStrokeWidth, 'important');
             shape.style.removeProperty('fill');
         } else {
-            // Regular shapes - use color for fill, black stroke
+            // Regular shapes - use color for fill.
             shape.style.setProperty('fill', normalizedFillColor, 'important');
-            shape.style.setProperty('stroke', '#000000', 'important');
-            shape.style.setProperty('stroke-width', actualStrokeWidth, 'important');
+
+            // Ensure stroke and stroke-width exist: prefer existing attribute/style, otherwise use defaults
+            const existingStroke = shape.style.stroke || shape.getAttribute('stroke');
+            const existingStrokeWidth = shape.style.strokeWidth || shape.getAttribute('stroke-width');
+
+            const effectiveStroke = existingStroke || (this.currentSugarConfig?.borderColor ? this.normalizeColorToHex(this.currentSugarConfig.borderColor) : '#000000');
+            const effectiveStrokeWidth = existingStrokeWidth || actualStrokeWidth;
+
+            if (effectiveStroke) shape.style.setProperty('stroke', effectiveStroke, 'important');
+            if (effectiveStrokeWidth) shape.style.setProperty('stroke-width', effectiveStrokeWidth, 'important');
         }
     }
 
@@ -5112,7 +5181,7 @@ class GlycanDrawer {
                 customSugarColor.classList.add('mixed');
             }
             if (customSugarColorHex) {
-                customSugarColorHex.value = '混合';
+                customSugarColorHex.value = window.languageManager.getTranslation('mixed') || '混合';
                 customSugarColorHex.classList.add('mixed');
             }
         }
@@ -5128,7 +5197,7 @@ class GlycanDrawer {
                 sizeSlider.classList.remove('mixed');
             }
         } else {
-            if (sizeDisplay) sizeDisplay.textContent = '混合';
+            if (sizeDisplay) sizeDisplay.textContent = window.languageManager.getTranslation('mixed') || '混合';
             if (sizeSlider) {
                 sizeSlider.classList.add('mixed');
             }
@@ -7147,7 +7216,7 @@ class GlycanDrawer {
         if (linkageInput) {
             linkageInput.value = mixedLinkage ? '' : firstLinkage;
             if (mixedLinkage) {
-                linkageInput.placeholder = '混合';
+                linkageInput.placeholder = window.languageManager.getTranslation('mixed') || '混合';
             } else {
                 linkageInput.placeholder = '输入键连信息 (如: α1-2, B14)';
             }
@@ -7155,7 +7224,7 @@ class GlycanDrawer {
         
         if (connectionStrokeWidth && connectionStrokeWidthValue) {
             connectionStrokeWidth.value = mixedWidth ? '' : firstWidth;
-            connectionStrokeWidthValue.textContent = mixedWidth ? '混合' : firstWidth;
+            connectionStrokeWidthValue.textContent = mixedWidth ? (window.languageManager.getTranslation('mixed') || '混合') : firstWidth;
         }
         
         if (connectionColor && connectionColorHex) {
@@ -7163,7 +7232,7 @@ class GlycanDrawer {
             connectionColorHex.value = mixedColor ? '' : firstColor;
             if (mixedColor) {
                 connectionColor.classList.add('mixed');
-                connectionColorHex.placeholder = '混合';
+                connectionColorHex.placeholder = window.languageManager.getTranslation('mixed') || '混合';
             } else {
                 connectionColor.classList.remove('mixed');
                 connectionColorHex.placeholder = firstColor;
@@ -7172,7 +7241,7 @@ class GlycanDrawer {
         
         if (linkageOpacity && linkageOpacityValue) {
             linkageOpacity.value = mixedOpacity ? '1' : firstOpacity;
-            linkageOpacityValue.textContent = mixedOpacity ? '混合' : Math.round(firstOpacity * 100) + '%';
+            linkageOpacityValue.textContent = mixedOpacity ? (window.languageManager.getTranslation('mixed') || '混合') : Math.round(firstOpacity * 100) + '%';
         }
         
         if (showLinkageText) {
@@ -7182,7 +7251,7 @@ class GlycanDrawer {
         
         if (linkageTextSize && linkageTextSizeValue) {
             linkageTextSize.value = mixedTextSize ? '12' : firstTextSize;
-            linkageTextSizeValue.textContent = mixedTextSize ? '混合' : firstTextSize;
+            linkageTextSizeValue.textContent = mixedTextSize ? (window.languageManager.getTranslation('mixed') || '混合') : firstTextSize;
         }
         
         if (linkageTextColor && linkageTextColorHex) {
@@ -7190,7 +7259,7 @@ class GlycanDrawer {
             linkageTextColorHex.value = mixedTextColor ? '' : firstTextColor;
             if (mixedTextColor) {
                 linkageTextColor.classList.add('mixed');
-                linkageTextColorHex.placeholder = '混合';
+                linkageTextColorHex.placeholder = window.languageManager.getTranslation('mixed') || '混合';
             } else {
                 linkageTextColor.classList.remove('mixed');
                 linkageTextColorHex.placeholder = firstTextColor;
@@ -7199,7 +7268,7 @@ class GlycanDrawer {
         
         if (linkageTextOpacity && linkageTextOpacityValue) {
             linkageTextOpacity.value = mixedTextOpacity ? '1' : firstTextOpacity;
-            linkageTextOpacityValue.textContent = mixedTextOpacity ? '混合' : Math.round(firstTextOpacity * 100) + '%';
+            linkageTextOpacityValue.textContent = mixedTextOpacity ? (window.languageManager.getTranslation('mixed') || '混合') : Math.round(firstTextOpacity * 100) + '%';
         }
         
         // Update style buttons
@@ -7358,7 +7427,7 @@ class GlycanDrawer {
         if (sugarBorderWidth && sugarBorderWidthValue) {
             if (mixedBorderWidth) {
                 sugarBorderWidth.value = '';
-                sugarBorderWidthValue.textContent = '混合';
+                sugarBorderWidthValue.textContent = window.languageManager.getTranslation('mixed') || '混合';
                 sugarBorderWidth.classList.add('mixed');
                 sugarBorderWidthValue.classList.add('mixed');
             } else {
@@ -7387,7 +7456,7 @@ class GlycanDrawer {
         if (sugarBorderOpacity && sugarBorderOpacityValue) {
             if (mixedBorderOpacity) {
                 sugarBorderOpacity.value = '';
-                sugarBorderOpacityValue.textContent = '混合';
+                sugarBorderOpacityValue.textContent = window.languageManager.getTranslation('mixed') || '混合';
                 sugarBorderOpacity.classList.add('mixed');
                 sugarBorderOpacityValue.classList.add('mixed');
             } else {
@@ -7418,7 +7487,7 @@ class GlycanDrawer {
         if (customSugarOpacity && customSugarOpacityValue) {
             if (mixedFillOpacity) {
                 customSugarOpacity.value = '';
-                customSugarOpacityValue.textContent = '混合';
+                customSugarOpacityValue.textContent = window.languageManager.getTranslation('mixed') || '混合';
                 customSugarOpacity.classList.add('mixed');
                 customSugarOpacityValue.classList.add('mixed');
             } else {
@@ -7485,7 +7554,7 @@ class GlycanDrawer {
         if (fontSize && fontSizeValue) {
             if (mixedSize) {
                 fontSize.value = '';
-                fontSizeValue.textContent = '混合';
+                fontSizeValue.textContent = window.languageManager.getTranslation('mixed') || '混合';
             } else {
                 fontSize.value = firstFontSize;
                 fontSizeValue.textContent = firstFontSize;
@@ -9409,11 +9478,30 @@ class GlycanDrawer {
                     case 'diamond-divided-top':
                     case 'diamond-divided-bottom':
                         // 分割菱形需要重新创建完整的形状
-                        newShape = this.createSugarShape(x, y, shape, currentFill, currentSize);
-                        // 移除sugar-shape类，因为createSugarShape已经添加了
-                        if (newShape.classList) {
-                            newShape.classList.remove('sugar-shape');
-                        }
+                            newShape = this.createSugarShape(x, y, shape, currentFill, currentSize);
+                            // 移除sugar-shape类，因为createSugarShape已经添加了
+                            if (newShape.classList) {
+                                newShape.classList.remove('sugar-shape');
+                            }
+                            // If the created shape is a group (divided shape), ensure its inner polygon/line inherit previous border styles
+                            try {
+                                const poly = newShape.querySelector ? newShape.querySelector('polygon') : null;
+                                const line = newShape.querySelector ? newShape.querySelector('.dividing-line') : null;
+                                if (poly) {
+                                    poly.style.setProperty('stroke', currentStroke, 'important');
+                                    poly.style.setProperty('stroke-width', currentStrokeWidth, 'important');
+                                    if (currentDashArray) poly.style.setProperty('stroke-dasharray', currentDashArray, 'important');
+                                    poly.style.setProperty('stroke-opacity', currentStrokeOpacity, 'important');
+                                }
+                                if (line) {
+                                    line.style.setProperty('stroke', currentStroke, 'important');
+                                    line.style.setProperty('stroke-width', currentStrokeWidth, 'important');
+                                    if (currentDashArray) line.style.setProperty('stroke-dasharray', currentDashArray, 'important');
+                                    line.style.setProperty('stroke-opacity', currentStrokeOpacity, 'important');
+                                }
+                            } catch (e) {
+                                // ignore
+                            }
                         break;
                     case 'star':
                     case 'star-5':
@@ -9667,13 +9755,18 @@ class GlycanDrawer {
                     const polygon = shape.querySelector('polygon');
                     const line = shape.querySelector('.dividing-line');
                     
+                    // Preserve existing stroke color/width for divided shapes.
                     if (polygon) {
-                        polygon.style.setProperty('stroke', '#000000', 'important');
-                        polygon.style.setProperty('stroke-width', '2', 'important');
+                        const existingStroke = polygon.style.stroke || polygon.getAttribute('stroke') || null;
+                        const existingWidth = polygon.style.strokeWidth || polygon.getAttribute('stroke-width') || null;
+                        if (existingStroke) polygon.style.setProperty('stroke', existingStroke, 'important');
+                        if (existingWidth) polygon.style.setProperty('stroke-width', existingWidth, 'important');
                     }
                     if (line) {
-                        line.style.setProperty('stroke', '#000000', 'important');
-                        line.style.setProperty('stroke-width', '2', 'important');
+                        const existingLineStroke = line.style.stroke || line.getAttribute('stroke') || null;
+                        const existingLineWidth = line.style.strokeWidth || line.getAttribute('stroke-width') || null;
+                        if (existingLineStroke) line.style.setProperty('stroke', existingLineStroke, 'important');
+                        if (existingLineWidth) line.style.setProperty('stroke-width', existingLineWidth, 'important');
                     }
                     
                     // 更新data-color属性
@@ -9703,13 +9796,18 @@ class GlycanDrawer {
                     const polygon = shape.querySelector('polygon');
                     const line = shape.querySelector('.dividing-line');
                     
+                    // Preserve existing border stroke/color/width for diamond-divided-top
                     if (polygon) {
-                        polygon.style.setProperty('stroke', '#000000', 'important');
-                        polygon.style.setProperty('stroke-width', '2', 'important');
+                        const existingStroke = polygon.style.stroke || polygon.getAttribute('stroke') || null;
+                        const existingWidth = polygon.style.strokeWidth || polygon.getAttribute('stroke-width') || null;
+                        if (existingStroke) polygon.style.setProperty('stroke', existingStroke, 'important');
+                        if (existingWidth) polygon.style.setProperty('stroke-width', existingWidth, 'important');
                     }
                     if (line) {
-                        line.style.setProperty('stroke', '#000000', 'important');
-                        line.style.setProperty('stroke-width', '2', 'important');
+                        const existingLineStroke = line.style.stroke || line.getAttribute('stroke') || null;
+                        const existingLineWidth = line.style.strokeWidth || line.getAttribute('stroke-width') || null;
+                        if (existingLineStroke) line.style.setProperty('stroke', existingLineStroke, 'important');
+                        if (existingLineWidth) line.style.setProperty('stroke-width', existingLineWidth, 'important');
                     }
                     
                     // 更新data-color属性
@@ -9739,13 +9837,18 @@ class GlycanDrawer {
                     const polygon = shape.querySelector('polygon');
                     const line = shape.querySelector('.dividing-line');
                     
+                    // Preserve existing border stroke/color/width for diamond-divided-bottom
                     if (polygon) {
-                        polygon.style.setProperty('stroke', '#000000', 'important');
-                        polygon.style.setProperty('stroke-width', '2', 'important');
+                        const existingStroke = polygon.style.stroke || polygon.getAttribute('stroke') || null;
+                        const existingWidth = polygon.style.strokeWidth || polygon.getAttribute('stroke-width') || null;
+                        if (existingStroke) polygon.style.setProperty('stroke', existingStroke, 'important');
+                        if (existingWidth) polygon.style.setProperty('stroke-width', existingWidth, 'important');
                     }
                     if (line) {
-                        line.style.setProperty('stroke', '#000000', 'important');
-                        line.style.setProperty('stroke-width', '2', 'important');
+                        const existingLineStroke = line.style.stroke || line.getAttribute('stroke') || null;
+                        const existingLineWidth = line.style.strokeWidth || line.getAttribute('stroke-width') || null;
+                        if (existingLineStroke) line.style.setProperty('stroke', existingLineStroke, 'important');
+                        if (existingLineWidth) line.style.setProperty('stroke-width', existingLineWidth, 'important');
                     }
                     
                     // 更新data-color属性
@@ -9767,13 +9870,18 @@ class GlycanDrawer {
                     // 设置边框样式
                     const polygon = shape.querySelector('polygon');
                     const line = shape.querySelector('.dividing-line');
+                    // Preserve existing border stroke/color/width for square-divided
                     if (polygon) {
-                        polygon.style.setProperty('stroke', '#000000', 'important');
-                        polygon.style.setProperty('stroke-width', '2', 'important');
+                        const existingStroke = polygon.style.stroke || polygon.getAttribute('stroke') || null;
+                        const existingWidth = polygon.style.strokeWidth || polygon.getAttribute('stroke-width') || null;
+                        if (existingStroke) polygon.style.setProperty('stroke', existingStroke, 'important');
+                        if (existingWidth) polygon.style.setProperty('stroke-width', existingWidth, 'important');
                     }
                     if (line) {
-                        line.style.setProperty('stroke', '#000000', 'important');
-                        line.style.setProperty('stroke-width', '2', 'important');
+                        const existingLineStroke = line.style.stroke || line.getAttribute('stroke') || null;
+                        const existingLineWidth = line.style.strokeWidth || line.getAttribute('stroke-width') || null;
+                        if (existingLineStroke) line.style.setProperty('stroke', existingLineStroke, 'important');
+                        if (existingLineWidth) line.style.setProperty('stroke-width', existingLineWidth, 'important');
                     }
                     
                     // 更新data-color属性
@@ -9803,9 +9911,11 @@ class GlycanDrawer {
                     const normalizedFillColor = this.normalizeColorToHex(color);
                     shape.style.setProperty('fill', normalizedFillColor, 'important');
                     
-                    // Keep black border (don't change stroke color)
-                    shape.style.setProperty('stroke', '#000000', 'important');
-                    shape.style.setProperty('stroke-width', '2', 'important');
+                    // Only update fill for regular shapes; preserve existing stroke color/width
+                    const existingStroke = shape.style.stroke || shape.getAttribute('stroke') || null;
+                    const existingWidth = shape.style.strokeWidth || shape.getAttribute('stroke-width') || null;
+                    if (existingStroke) shape.style.setProperty('stroke', existingStroke, 'important');
+                    if (existingWidth) shape.style.setProperty('stroke-width', existingWidth, 'important');
                 }
                 
                 // 重要：更新sugar元素的data-color属性，确保重新选中时UI状态正确
@@ -10828,7 +10938,7 @@ class GlycanDrawer {
             if (strokeWidthSlider && strokeWidthValue) {
                 if (mixedWidth) {
                     strokeWidthSlider.value = '';
-                    strokeWidthValue.textContent = '混合';
+                    strokeWidthValue.textContent = window.languageManager.getTranslation('mixed') || '混合';
                     strokeWidthSlider.classList.add('mixed');
                     strokeWidthValue.classList.add('mixed');
                 } else {
@@ -10874,7 +10984,7 @@ class GlycanDrawer {
             if (opacitySlider && opacityValue) {
                 if (mixedOpacity) {
                     opacitySlider.value = '';
-                    opacityValue.textContent = '混合';
+                    opacityValue.textContent = window.languageManager.getTranslation('mixed') || '混合';
                     opacitySlider.classList.add('mixed');
                     opacityValue.classList.add('mixed');
                 } else {
@@ -10912,7 +11022,7 @@ class GlycanDrawer {
             if (textSizeSlider && textSizeValue) {
                 if (mixedTextSize) {
                     textSizeSlider.value = '';
-                    textSizeValue.textContent = '混合';
+                    textSizeValue.textContent = window.languageManager.getTranslation('mixed') || '混合';
                     textSizeSlider.classList.add('mixed');
                     textSizeValue.classList.add('mixed');
                 } else {
@@ -11152,16 +11262,26 @@ class GlycanDrawer {
                     break;
             }
         } else {
-            switch (e.key) {
-                case 'Escape':
-                    e.preventDefault();
-                    this.clearSelection();
-                    break;
-                case 'Delete':
-                case 'Backspace':
-                    e.preventDefault();
-                    this.deleteSelection();
-                    break;
+            // Don't handle Delete/Backspace when focus is in an input field
+            const activeElement = document.activeElement;
+            const isInputFocused = activeElement && (
+                activeElement.tagName === 'INPUT' || 
+                activeElement.tagName === 'TEXTAREA' || 
+                activeElement.contentEditable === 'true'
+            );
+            
+            if (!isInputFocused) {
+                switch (e.key) {
+                    case 'Escape':
+                        e.preventDefault();
+                        this.clearSelection();
+                        break;
+                    case 'Delete':
+                    case 'Backspace':
+                        e.preventDefault();
+                        this.deleteSelection();
+                        break;
+                }
             }
         }
     }
