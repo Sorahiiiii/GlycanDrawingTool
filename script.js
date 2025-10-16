@@ -77,6 +77,7 @@ class GlycanDrawer {
         this.setupToolbar();
         this.setupPresets();
         this.setupCustomization();
+        this.setupStyleControls();
         
         // Add canvas event listeners
         this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
@@ -91,6 +92,15 @@ class GlycanDrawer {
         
         // Set default tool
         this.setTool('add');
+        
+        // Initially hide style panel since default tool is 'add'
+        const stylePanel = document.getElementById('stylePanel');
+        if (stylePanel) {
+            stylePanel.style.display = 'none';
+        }
+        
+        // Initialize style panels (should be hidden by default)
+        this.updateStylePanel();
     }
     
     setupToolbar() {
@@ -155,6 +165,99 @@ class GlycanDrawer {
         });
     }
     
+    setupStyleControls() {
+        // Sugar size control
+        const sugarSize = document.getElementById('sugarSize');
+        const sugarSizeValue = document.getElementById('sugarSizeValue');
+        
+        sugarSize.addEventListener('input', (e) => {
+            const value = e.target.value;
+            sugarSizeValue.textContent = value;
+            this.applySugarSize();
+        });
+        
+        // Sugar border style controls
+        const sugarBorderWidth = document.getElementById('sugarBorderWidth');
+        const sugarBorderWidthValue = document.getElementById('sugarBorderWidthValue');
+        const borderStyleButtons = document.querySelectorAll('.border-style-btn');
+        
+        sugarBorderWidth.addEventListener('input', (e) => {
+            const value = e.target.value;
+            sugarBorderWidthValue.textContent = value;
+            this.applySugarBorderStyle();
+        });
+        
+        borderStyleButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                borderStyleButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.applySugarBorderStyle();
+            });
+        });
+        
+        // Connection line style controls
+        const connectionWidth = document.getElementById('connectionWidth');
+        const connectionWidthValue = document.getElementById('connectionWidthValue');
+        const connectionStyleButtons = document.querySelectorAll('.connection-style-btn');
+        
+        connectionWidth.addEventListener('input', (e) => {
+            const value = e.target.value;
+            connectionWidthValue.textContent = value;
+            this.applyConnectionStyle();
+        });
+        
+        connectionStyleButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                connectionStyleButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.applyConnectionStyle();
+            });
+        });
+        
+        // Text style controls
+        const fontSize = document.getElementById('fontSize');
+        const fontSizeValue = document.getElementById('fontSizeValue');
+        const fontFamily = document.getElementById('fontFamily');
+        const textColor = document.getElementById('textColor');
+        const textColorHex = document.getElementById('textColorHex');
+        const textStyleButtons = document.querySelectorAll('.text-style-btn');
+        
+        // Font size control
+        fontSize.addEventListener('input', (e) => {
+            const value = e.target.value;
+            fontSizeValue.textContent = value;
+            this.applyTextStyle();
+        });
+        
+        // Font family control
+        fontFamily.addEventListener('change', () => {
+            this.applyTextStyle();
+        });
+        
+        // Text color controls
+        textColor.addEventListener('input', (e) => {
+            const color = e.target.value;
+            textColorHex.value = color;
+            this.applyTextStyle();
+        });
+        
+        textColorHex.addEventListener('input', (e) => {
+            const color = e.target.value;
+            if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
+                textColor.value = color;
+                this.applyTextStyle();
+            }
+        });
+        
+        // Text style buttons (bold, italic, underline)
+        textStyleButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                btn.classList.toggle('active');
+                this.applyTextStyle();
+            });
+        });
+    }
+    
     setTool(tool) {
         // Don't switch tools if currently editing text (let the edit finish first)
         if (this.isEditingText && this.currentTool !== tool) {
@@ -187,6 +290,19 @@ class GlycanDrawer {
         
         // Update canvas cursor
         this.updateCanvasCursor();
+        
+        // Show/hide style panel based on tool
+        const stylePanel = document.getElementById('stylePanel');
+        if (stylePanel) {
+            if (tool === 'select') {
+                stylePanel.style.display = 'block';
+            } else {
+                stylePanel.style.display = 'none';
+            }
+        }
+        
+        // Update style panels visibility
+        this.updateStylePanel();
     }
     
     selectPreset(preset) {
@@ -214,10 +330,11 @@ class GlycanDrawer {
             // If a sugar is selected, apply the preset to it
             if (this.selectedSugar && this.currentTool === 'select') {
                 this.applySugarConfig(this.selectedSugar, this.currentSugarConfig);
-            } else {
-                // Automatically switch to add tool
+            } else if (this.currentTool !== 'select') {
+                // Only switch to add tool if not currently in select mode
                 this.setTool('add');
             }
+            // If in select mode but no sugar selected, just update the config without switching tools
         }
     }
     
@@ -242,10 +359,11 @@ class GlycanDrawer {
         // If a sugar is selected, apply the shape to it
         if (this.selectedSugar && this.currentTool === 'select') {
             this.applySugarConfig(this.selectedSugar, this.currentSugarConfig);
-        } else {
-            // Automatically switch to add tool
+        } else if (this.currentTool !== 'select') {
+            // Only switch to add tool if not currently in select mode
             this.setTool('add');
         }
+        // If in select mode but no sugar selected, just update the config without switching tools
     }
     
     selectColor(color) {
@@ -267,10 +385,11 @@ class GlycanDrawer {
         // If a sugar is selected, apply the color to it
         if (this.selectedSugar && this.currentTool === 'select') {
             this.applySugarConfig(this.selectedSugar, this.currentSugarConfig);
-        } else {
-            // Automatically switch to add tool
+        } else if (this.currentTool !== 'select') {
+            // Only switch to add tool if not currently in select mode
             this.setTool('add');
         }
+        // If in select mode but no sugar selected, just update the config without switching tools
     }
     
     isValidHexColor(color) {
@@ -667,8 +786,8 @@ class GlycanDrawer {
         return sugarGroup;
     }
     
-    createSugarShape(x, y, shape, color) {
-        const size = this.sugarRadius;
+    createSugarShape(x, y, shape, color, size = null) {
+        const actualSize = size !== null ? size : this.sugarRadius;
         const strokeColor = this.darkenColor(color, 20);
         
         let element;
@@ -678,56 +797,56 @@ class GlycanDrawer {
                 element = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
                 element.setAttribute('cx', x);
                 element.setAttribute('cy', y);
-                element.setAttribute('r', size);
+                element.setAttribute('r', actualSize);
                 break;
                 
             case 'square':
                 element = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                element.setAttribute('x', x - size);
-                element.setAttribute('y', y - size);
-                element.setAttribute('width', size * 2);
-                element.setAttribute('height', size * 2);
+                element.setAttribute('x', x - actualSize);
+                element.setAttribute('y', y - actualSize);
+                element.setAttribute('width', actualSize * 2);
+                element.setAttribute('height', actualSize * 2);
                 break;
                 
             case 'triangle':
                 element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-                const triPoints = `${x},${y-size} ${x+size*0.866},${y+size*0.5} ${x-size*0.866},${y+size*0.5}`;
+                const triPoints = `${x},${y-actualSize} ${x+actualSize*0.866},${y+actualSize*0.5} ${x-actualSize*0.866},${y+actualSize*0.5}`;
                 element.setAttribute('points', triPoints);
                 break;
                 
             case 'diamond':
                 element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-                const diamondPoints = `${x},${y-size} ${x+size},${y} ${x},${y+size} ${x-size},${y}`;
+                const diamondPoints = `${x},${y-actualSize} ${x+actualSize},${y} ${x},${y+actualSize} ${x-actualSize},${y}`;
                 element.setAttribute('points', diamondPoints);
                 break;
                 
             case 'star':
                 element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-                const starPoints = this.generateStarPoints(x, y, size, 5);
+                const starPoints = this.generateStarPoints(x, y, actualSize, 5);
                 element.setAttribute('points', starPoints);
                 break;
                 
             case 'hexagon':
                 element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-                const hexPoints = this.generatePolygonPoints(x, y, size, 6, 0);
+                const hexPoints = this.generatePolygonPoints(x, y, actualSize, 6, 0);
                 element.setAttribute('points', hexPoints);
                 break;
                 
             case 'flat-hexagon':
                 element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-                const flatHexPoints = this.generatePolygonPoints(x, y, size, 6, Math.PI/6);
+                const flatHexPoints = this.generatePolygonPoints(x, y, actualSize, 6, Math.PI/6);
                 element.setAttribute('points', flatHexPoints);
                 break;
                 
             case 'flat-diamond':
                 element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-                const flatDiamondPoints = `${x-size*0.7},${y} ${x},${y-size*0.7} ${x+size*0.7},${y} ${x},${y+size*0.7}`;
+                const flatDiamondPoints = `${x-actualSize*0.7},${y} ${x},${y-actualSize*0.7} ${x+actualSize*0.7},${y} ${x},${y+actualSize*0.7}`;
                 element.setAttribute('points', flatDiamondPoints);
                 break;
                 
             case 'pentagon':
                 element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-                const pentPoints = this.generatePolygonPoints(x, y, size, 5, -Math.PI/2);
+                const pentPoints = this.generatePolygonPoints(x, y, actualSize, 5, -Math.PI/2);
                 element.setAttribute('points', pentPoints);
                 break;
                 
@@ -792,6 +911,9 @@ class GlycanDrawer {
         
         // Add selection highlight
         this.addSelectionHighlight(sugar);
+        
+        // Update style panel for single selection
+        this.updateStylePanel();
     }
     
     deselectSugar() {
@@ -809,6 +931,9 @@ class GlycanDrawer {
         // Select new text
         this.selectedText = text;
         text.classList.add('selected');
+        
+        // Update style panel for text selection
+        this.updateStylePanel();
     }
     
     deselectText() {
@@ -822,6 +947,11 @@ class GlycanDrawer {
         this.deselectSugar();
         this.deselectText();
         this.deselectMultipleSugars();
+        
+        // Update style panel when deselecting
+        if (this.currentTool === 'select') {
+            this.updateStylePanel();
+        }
     }
     
     deselectMultipleSugars() {
@@ -1073,6 +1203,11 @@ class GlycanDrawer {
         textElement.setAttribute('data-y', y);
         textElement.textContent = content;
         
+        // Set default styles with !important to override CSS
+        textElement.style.setProperty('font-family', 'Arial, sans-serif', 'important');
+        textElement.style.setProperty('font-size', '16px', 'important');
+        textElement.style.setProperty('fill', '#2c3e50', 'important');
+        
         // Add to canvas
         this.canvas.appendChild(textElement);
         
@@ -1296,6 +1431,12 @@ class GlycanDrawer {
         line.setAttribute('y1', parentY);
         line.setAttribute('x2', childX);
         line.setAttribute('y2', childY);
+        line.setAttribute('stroke', '#333');
+        line.setAttribute('stroke-width', '2');
+        
+        // Store sugar IDs for style management
+        line.setAttribute('data-start', parentSugar.getAttribute('id'));
+        line.setAttribute('data-end', childSugar.getAttribute('id'));
         
         // Insert line before sugars so it appears behind them
         this.canvas.insertBefore(line, this.canvas.firstChild);
@@ -1500,6 +1641,9 @@ class GlycanDrawer {
             this.selectionBox = null;
         }
         this.isBoxSelecting = false;
+        
+        // Update style panel for multiple selection
+        this.updateStylePanel();
     }
     
     // Eraser methods
@@ -1540,6 +1684,400 @@ class GlycanDrawer {
                 this.deleteText(clickedText);
             }
             this.lastErasedElement = elementToErase;
+        }
+    }
+    
+    // Style control methods
+    updateStylePanel() {
+        const sugarStyleSection = document.getElementById('sugarStyleSection');
+        const connectionStyleSection = document.getElementById('connectionStyleSection');
+        const textStyleSection = document.getElementById('textStyleSection');
+        const connectionStatus = document.getElementById('connectionStatus');
+        
+        // If not in select mode, hide all style panels
+        if (this.currentTool !== 'select') {
+            sugarStyleSection.style.display = 'none';
+            connectionStyleSection.style.display = 'none';
+            textStyleSection.style.display = 'none';
+            return;
+        }
+        
+        if (!sugarStyleSection || !connectionStyleSection || !textStyleSection || !connectionStatus) return;
+        
+        // Check if any sugars are selected
+        const hasSugarsSelected = this.selectedSugar || this.selectedSugars.size > 0;
+        const hasTextSelected = this.selectedText;
+        
+        if (hasSugarsSelected) {
+            // Show sugar style section
+            sugarStyleSection.style.display = 'block';
+            textStyleSection.style.display = 'none';
+            
+            // Update current values from selected sugar
+            this.updateStyleControlValues();
+            
+            // Check for connections
+            const connections = this.getConnectionsForSelection();
+            if (connections.length > 0) {
+                // Show connection style section
+                connectionStyleSection.style.display = 'block';
+                connectionStatus.className = 'connection-status has-connections';
+                connectionStatus.querySelector('.status-text').textContent = 
+                    `发现 ${connections.length} 条连接线`;
+            } else {
+                // Show connection section but indicate no connections
+                connectionStyleSection.style.display = 'block';
+                connectionStatus.className = 'connection-status no-connections';
+                connectionStatus.querySelector('.status-text').textContent = '所选糖之间无连接线';
+            }
+        } else if (hasTextSelected) {
+            // Show text style section
+            textStyleSection.style.display = 'block';
+            sugarStyleSection.style.display = 'none';
+            connectionStyleSection.style.display = 'none';
+            
+            // Update current values from selected text
+            this.updateTextStyleControlValues();
+        } else {
+            // Hide all sections when nothing is selected
+            sugarStyleSection.style.display = 'none';
+            connectionStyleSection.style.display = 'none';
+            textStyleSection.style.display = 'none';
+        }
+    }
+    
+    updateStyleControlValues() {
+        // Update control values based on the first selected sugar
+        let referenceSugar = this.selectedSugar;
+        if (!referenceSugar && this.selectedSugars.size > 0) {
+            referenceSugar = Array.from(this.selectedSugars)[0];
+        }
+        
+        if (referenceSugar) {
+            // Update size slider
+            const currentSize = this.getSugarSize(referenceSugar);
+            const sizeSlider = document.getElementById('sugarSize');
+            const sizeValue = document.getElementById('sugarSizeValue');
+            if (sizeSlider && sizeValue) {
+                sizeSlider.value = currentSize;
+                sizeValue.textContent = currentSize;
+            }
+            
+            // Update border width slider
+            const shape = referenceSugar.querySelector('.sugar-shape');
+            if (shape) {
+                const currentWidth = shape.style.strokeWidth || shape.getAttribute('stroke-width') || '2';
+                const widthSlider = document.getElementById('sugarBorderWidth');
+                const widthValue = document.getElementById('sugarBorderWidthValue');
+                if (widthSlider && widthValue) {
+                    widthSlider.value = parseFloat(currentWidth);
+                    widthValue.textContent = parseFloat(currentWidth);
+                }
+            }
+        }
+    }
+    
+    updateTextStyleControlValues() {
+        if (!this.selectedText) return;
+        
+        // selectedText is already the text element
+        const textElement = this.selectedText;
+        
+        // Get current styles
+        const computedStyle = window.getComputedStyle(textElement);
+        
+        // Update font size
+        const fontSize = document.getElementById('fontSize');
+        const fontSizeValue = document.getElementById('fontSizeValue');
+        const currentFontSize = parseFloat(textElement.style.fontSize || computedStyle.fontSize || '16');
+        if (fontSize && fontSizeValue) {
+            fontSize.value = currentFontSize;
+            fontSizeValue.textContent = currentFontSize;
+        }
+        
+        // Update font family
+        const fontFamily = document.getElementById('fontFamily');
+        const currentFontFamily = textElement.style.fontFamily || computedStyle.fontFamily || 'Arial';
+        if (fontFamily) {
+            // Try to match the font family with available options
+            const cleanFontFamily = currentFontFamily.replace(/['"]/g, '').split(',')[0];
+            fontFamily.value = cleanFontFamily;
+        }
+        
+        // Update text color
+        const textColor = document.getElementById('textColor');
+        const textColorHex = document.getElementById('textColorHex');
+        const currentColor = textElement.style.fill || textElement.getAttribute('fill') || '#000000';
+        if (textColor && textColorHex) {
+            textColor.value = currentColor;
+            textColorHex.value = currentColor;
+        }
+        
+        // Update style buttons
+        const boldBtn = document.getElementById('boldBtn');
+        const italicBtn = document.getElementById('italicBtn');
+        const underlineBtn = document.getElementById('underlineBtn');
+        
+        if (boldBtn) {
+            const isBold = textElement.style.fontWeight === 'bold' || 
+                          computedStyle.fontWeight === 'bold' || 
+                          parseInt(computedStyle.fontWeight) >= 700;
+            boldBtn.classList.toggle('active', isBold);
+        }
+        
+        if (italicBtn) {
+            const isItalic = textElement.style.fontStyle === 'italic' || 
+                            computedStyle.fontStyle === 'italic';
+            italicBtn.classList.toggle('active', isItalic);
+        }
+        
+        if (underlineBtn) {
+            const isUnderlined = textElement.style.textDecoration === 'underline' || 
+                                computedStyle.textDecoration.includes('underline');
+            underlineBtn.classList.toggle('active', isUnderlined);
+        }
+    }
+    
+    getSugarSize(sugar) {
+        // Get current size from the sugar's shape
+        const shape = sugar.querySelector('.sugar-shape');
+        if (!shape) return 20; // default size
+        
+        const shapeType = sugar.getAttribute('data-shape');
+        switch (shapeType) {
+            case 'circle':
+                return parseFloat(shape.getAttribute('r') || '20');
+            case 'square':
+                const width = parseFloat(shape.getAttribute('width') || '40');
+                return width / 2; // return radius equivalent
+            default:
+                return 20; // default
+        }
+    }
+    
+    getConnectionsForSelection() {
+        const connections = [];
+        const allConnections = this.canvas.querySelectorAll('.connection');
+        
+        if (this.selectedSugar) {
+            // Single sugar selection
+            const sugarId = this.selectedSugar.getAttribute('id');
+            allConnections.forEach(conn => {
+                const startId = conn.getAttribute('data-start');
+                const endId = conn.getAttribute('data-end');
+                if (startId === sugarId || endId === sugarId) {
+                    connections.push(conn);
+                }
+            });
+        } else if (this.selectedSugars.size > 1) {
+            // Multiple sugar selection - find connections between selected sugars
+            const selectedIds = Array.from(this.selectedSugars).map(sugar => sugar.getAttribute('id'));
+            allConnections.forEach(conn => {
+                const startId = conn.getAttribute('data-start');
+                const endId = conn.getAttribute('data-end');
+                if (selectedIds.includes(startId) && selectedIds.includes(endId)) {
+                    connections.push(conn);
+                }
+            });
+        }
+        
+        return connections;
+    }
+    
+    applySugarSize() {
+        if (this.currentTool !== 'select') return;
+        
+        const size = parseFloat(document.getElementById('sugarSize').value);
+        
+        // Apply to selected sugar(s)
+        const sugarsToResize = [];
+        if (this.selectedSugar) {
+            sugarsToResize.push(this.selectedSugar);
+        }
+        if (this.selectedSugars.size > 0) {
+            sugarsToResize.push(...Array.from(this.selectedSugars));
+        }
+        
+        sugarsToResize.forEach(sugar => {
+            const shape = sugar.querySelector('.sugar-shape');
+            const shapeType = sugar.getAttribute('data-shape');
+            const x = parseFloat(sugar.getAttribute('data-x'));
+            const y = parseFloat(sugar.getAttribute('data-y'));
+            
+            if (shape) {
+                this.updateShapeSize(shape, shapeType, size);
+                
+                // Update selection highlight to match new size
+                const highlightId = sugar.getAttribute('data-highlight-id');
+                if (highlightId) {
+                    const highlight = this.canvas.querySelector('#' + highlightId);
+                    if (highlight) {
+                        highlight.setAttribute('r', size + 5);
+                    }
+                }
+            }
+        });
+    }
+    
+    updateShapeSize(shape, shapeType, size) {
+        switch (shapeType) {
+            case 'circle':
+                shape.setAttribute('r', size);
+                break;
+                
+            case 'square':
+                const squareSize = size * 2;
+                const x = parseFloat(shape.getAttribute('x'));
+                const y = parseFloat(shape.getAttribute('y'));
+                const centerX = x + parseFloat(shape.getAttribute('width')) / 2;
+                const centerY = y + parseFloat(shape.getAttribute('height')) / 2;
+                shape.setAttribute('x', centerX - size);
+                shape.setAttribute('y', centerY - size);
+                shape.setAttribute('width', squareSize);
+                shape.setAttribute('height', squareSize);
+                break;
+                
+            case 'triangle':
+            case 'diamond':
+            case 'star':
+            case 'hexagon':
+            case 'flat-hexagon':
+            case 'flat-diamond':
+            case 'pentagon':
+                // For polygons, we need to recalculate points
+                const sugar = shape.closest('.sugar');
+                if (sugar) {
+                    const x = parseFloat(sugar.getAttribute('data-x'));
+                    const y = parseFloat(sugar.getAttribute('data-y'));
+                    const color = sugar.getAttribute('data-color');
+                    
+                    // Remove old shape and create new one with updated size
+                    const newShape = this.createSugarShape(x, y, shapeType, color, size);
+                    newShape.classList.add('sugar-shape');
+                    
+                    // Copy any custom styles
+                    if (shape.style.strokeWidth) {
+                        newShape.style.setProperty('stroke-width', shape.style.strokeWidth, 'important');
+                    }
+                    if (shape.style.strokeDasharray) {
+                        newShape.style.setProperty('stroke-dasharray', shape.style.strokeDasharray, 'important');
+                    }
+                    
+                    // Replace the shape
+                    sugar.replaceChild(newShape, shape);
+                }
+                break;
+        }
+    }
+    
+    applySugarBorderStyle() {
+        if (this.currentTool !== 'select') return;
+        
+        const width = document.getElementById('sugarBorderWidth').value;
+        const styleBtn = document.querySelector('.border-style-btn.active');
+        const style = styleBtn ? styleBtn.dataset.style : 'solid';
+        
+        // Apply to selected sugar(s)
+        const sugarsToStyle = [];
+        if (this.selectedSugar) {
+            sugarsToStyle.push(this.selectedSugar);
+        }
+        if (this.selectedSugars.size > 0) {
+            sugarsToStyle.push(...Array.from(this.selectedSugars));
+        }
+        
+        sugarsToStyle.forEach(sugar => {
+            const shape = sugar.querySelector('.sugar-shape');
+            if (shape) {
+                // Use style property with important to override CSS
+                shape.style.setProperty('stroke-width', width, 'important');
+                
+                // Apply dash pattern based on style
+                switch (style) {
+                    case 'dashed':
+                        shape.style.setProperty('stroke-dasharray', `${width * 3},${width * 2}`, 'important');
+                        break;
+                    case 'dotted':
+                        shape.style.setProperty('stroke-dasharray', `${width},${width}`, 'important');
+                        break;
+                    default: // solid
+                        shape.style.removeProperty('stroke-dasharray');
+                }
+            }
+        });
+    }
+    
+    applyConnectionStyle() {
+        if (this.currentTool !== 'select') return;
+        
+        const width = document.getElementById('connectionWidth').value;
+        const styleBtn = document.querySelector('.connection-style-btn.active');
+        const style = styleBtn ? styleBtn.dataset.style : 'solid';
+        
+        const connections = this.getConnectionsForSelection();
+
+        connections.forEach(conn => {
+            // Use style property with important to override CSS
+            conn.style.setProperty('stroke-width', width, 'important');
+            
+            // Apply dash pattern based on style
+            switch (style) {
+                case 'dashed':
+                    conn.style.setProperty('stroke-dasharray', `${width * 4},${width * 2}`, 'important');
+                    break;
+                case 'dotted':
+                    conn.style.setProperty('stroke-dasharray', `${width},${width}`, 'important');
+                    break;
+                default: // solid
+                    conn.style.removeProperty('stroke-dasharray');
+            }
+        });
+    }
+    
+    applyTextStyle() {
+        if (this.currentTool !== 'select') return;
+        
+        // Only apply to selected text
+        if (!this.selectedText) return;
+        
+        const fontSize = document.getElementById('fontSize').value;
+        const fontFamily = document.getElementById('fontFamily').value;
+        const textColor = document.getElementById('textColor').value;
+        const boldBtn = document.getElementById('boldBtn');
+        const italicBtn = document.getElementById('italicBtn');
+        const underlineBtn = document.getElementById('underlineBtn');
+        
+        // Get the text element (selectedText is already the text element)
+        const textElement = this.selectedText;
+        
+        // Apply font size
+        textElement.style.setProperty('font-size', fontSize + 'px', 'important');
+        
+        // Apply font family
+        textElement.style.setProperty('font-family', fontFamily, 'important');
+        
+        // Apply color
+        textElement.style.setProperty('fill', textColor, 'important');
+        
+        // Apply font weight (bold)
+        if (boldBtn.classList.contains('active')) {
+            textElement.style.setProperty('font-weight', 'bold', 'important');
+        } else {
+            textElement.style.removeProperty('font-weight');
+        }
+        
+        // Apply font style (italic)
+        if (italicBtn.classList.contains('active')) {
+            textElement.style.setProperty('font-style', 'italic', 'important');
+        } else {
+            textElement.style.removeProperty('font-style');
+        }
+        
+        // Apply text decoration (underline)
+        if (underlineBtn.classList.contains('active')) {
+            textElement.style.setProperty('text-decoration', 'underline', 'important');
+        } else {
+            textElement.style.removeProperty('text-decoration');
         }
     }
 }

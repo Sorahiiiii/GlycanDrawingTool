@@ -316,12 +316,10 @@ h1 {
 }
 
 .sugar:hover .sugar-shape {
-    stroke-width: 3;
     filter: brightness(1.1);
 }
 
 .sugar.selected .sugar-shape {
-    stroke-width: 3;
     filter: brightness(1.2);
 }
 
@@ -378,12 +376,10 @@ h1 {
 
 /* Text Elements */
 .text-element {
-    font-family: Arial, sans-serif;
-    font-size: 14px;
-    fill: #2c3e50;
     cursor: pointer;
     user-select: none;
     pointer-events: all;
+    /* Note: font styles are set by JavaScript with !important */
 }
 
 .text-element.selected {
@@ -439,6 +435,131 @@ h1 {
     cursor: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTkuNSAxM0wxMy41IDlMMjAuNSAxNkwxNi41IDIwTDkuNSAxM1oiIGZpbGw9IiNmZjY2NjYiIHN0cm9rZT0iIzMzMzMzMyIgc3Ryb2tlLXdpZHRoPSIxLjUiLz4KPHBhdGggZD0iTTMuNSAxOS41SDE2LjUiIHN0cm9rZT0iIzMzMzMzMyIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4K') 12 12, auto;
 }
 
+/* Style Control Panel */
+.style-subsection {
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.style-subsection:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.style-subsection h4 {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 10px;
+    font-weight: bold;
+}
+
+.control-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+    gap: 8px;
+}
+
+.control-row label {
+    font-size: 11px;
+    color: #555;
+    min-width: 40px;
+}
+
+.control-row input[type="range"] {
+    flex: 1;
+    height: 4px;
+    background: #ddd;
+    outline: none;
+    border-radius: 2px;
+}
+
+.control-row input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #3498db;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.control-row input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: #3498db;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
+.control-row span {
+    font-size: 11px;
+    color: #666;
+    min-width: 20px;
+    text-align: center;
+}
+
+/* Style buttons */
+.border-style-buttons,
+.connection-style-buttons {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.border-style-btn,
+.connection-style-btn {
+    padding: 4px 8px;
+    font-size: 10px;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex: 1;
+    min-width: 45px;
+    text-align: center;
+}
+
+.border-style-btn:hover,
+.connection-style-btn:hover {
+    border-color: #3498db;
+    background: #f8f9fa;
+}
+
+.border-style-btn.active,
+.connection-style-btn.active {
+    background: #3498db;
+    color: white;
+    border-color: #3498db;
+}
+
+/* Connection status */
+.connection-status {
+    margin-top: 8px;
+    padding: 6px 8px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    border: 1px solid #eee;
+}
+
+.status-text {
+    font-size: 10px;
+    color: #666;
+    font-style: italic;
+}
+
+.connection-status.has-connections .status-text {
+    color: #27ae60;
+    font-style: normal;
+}
+
+.connection-status.no-connections .status-text {
+    color: #95a5a6;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
     .main-content {
@@ -456,4 +577,67 @@ h1 {
         min-width: 150px;
         margin-bottom: 0;
     }
+}
+
+/* Default hidden state for style subsections */
+#sugarStyleSection, 
+#connectionStyleSection,
+#textStyleSection {
+    display: none;
+}
+
+/* Text style controls */
+.text-style-buttons {
+    display: flex;
+    gap: 5px;
+}
+
+.text-style-btn {
+    width: 32px;
+    height: 32px;
+    border: 2px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.text-style-btn:hover {
+    border-color: #007bff;
+    background-color: #f8f9fa;
+}
+
+.text-style-btn.active {
+    border-color: #007bff;
+    background-color: #007bff;
+    color: white;
+}
+
+#fontFamily {
+    flex: 1;
+    padding: 4px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+#textColor {
+    width: 40px;
+    height: 30px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#textColorHex {
+    width: 80px;
+    padding: 4px 6px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-left: 5px;
 }

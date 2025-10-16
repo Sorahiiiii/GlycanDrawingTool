@@ -165,6 +165,97 @@
                     </button>
                 </div>
                 
+                <!-- Style Controls Panel -->
+                <div class="panel-section" id="stylePanel">
+                    <h3>样式调整</h3>
+                    
+                    <!-- Sugar Properties (only visible when sugars are selected) -->
+                    <div class="style-subsection" id="sugarStyleSection">
+                        <h4>糖属性</h4>
+                        <div class="control-row">
+                            <label for="sugarSize">大小:</label>
+                            <input type="range" id="sugarSize" min="10" max="40" value="20" step="2">
+                            <span id="sugarSizeValue">20</span>
+                        </div>
+                        <div class="control-row">
+                            <label for="sugarBorderWidth">边缘粗细:</label>
+                            <input type="range" id="sugarBorderWidth" min="1" max="5" value="2" step="0.5">
+                            <span id="sugarBorderWidthValue">2</span>
+                        </div>
+                        <div class="control-row">
+                            <label>边缘样式:</label>
+                            <div class="border-style-buttons">
+                                <button class="border-style-btn active" data-style="solid">实线</button>
+                                <button class="border-style-btn" data-style="dashed">虚线</button>
+                                <button class="border-style-btn" data-style="dotted">点线</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Connection Line Style (only visible when connections exist) -->
+                    <div class="style-subsection" id="connectionStyleSection">
+                        <h4>连接线样式</h4>
+                        <div class="control-row">
+                            <label for="connectionWidth">粗细:</label>
+                            <input type="range" id="connectionWidth" min="1" max="8" value="2" step="0.5">
+                            <span id="connectionWidthValue">2</span>
+                        </div>
+                        <div class="control-row">
+                            <label>样式:</label>
+                            <div class="connection-style-buttons">
+                                <button class="connection-style-btn active" data-style="solid">实线</button>
+                                <button class="connection-style-btn" data-style="dashed">虚线</button>
+                                <button class="connection-style-btn" data-style="dotted">点线</button>
+                            </div>
+                        </div>
+                        <div class="connection-status" id="connectionStatus">
+                            <span class="status-text">请选择有连接的糖</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Text Style (only visible when text is selected) -->
+                    <div class="style-subsection" id="textStyleSection">
+                        <h4>文字样式</h4>
+                        <div class="control-row">
+                            <label for="fontSize">字号:</label>
+                            <input type="range" id="fontSize" min="8" max="48" value="16" step="1">
+                            <span id="fontSizeValue">16</span>
+                        </div>
+                        <div class="control-row">
+                            <label for="fontFamily">字体:</label>
+                            <select id="fontFamily">
+                                <option value="Arial">Arial</option>
+                                <option value="Times New Roman">Times New Roman</option>
+                                <option value="Helvetica">Helvetica</option>
+                                <option value="Georgia">Georgia</option>
+                                <option value="Verdana">Verdana</option>
+                                <option value="SimSun">宋体</option>
+                                <option value="SimHei">黑体</option>
+                                <option value="KaiTi">楷体</option>
+                            </select>
+                        </div>
+                        <div class="control-row">
+                            <label>样式:</label>
+                            <div class="text-style-buttons">
+                                <button class="text-style-btn" id="boldBtn" data-style="bold" title="粗体">
+                                    <strong>B</strong>
+                                </button>
+                                <button class="text-style-btn" id="italicBtn" data-style="italic" title="斜体">
+                                    <em>I</em>
+                                </button>
+                                <button class="text-style-btn" id="underlineBtn" data-style="underline" title="下划线">
+                                    <u>U</u>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="control-row">
+                            <label for="textColor">颜色:</label>
+                            <input type="color" id="textColor" value="#000000">
+                            <input type="text" id="textColorHex" value="#000000" maxlength="7" placeholder="#000000">
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="panel-section">
                     <h3>操作</h3>
                     <button id="downloadBtn" class="action-btn">导出 SVG</button>
