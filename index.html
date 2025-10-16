@@ -63,226 +63,190 @@
             </div>
             
             <!-- Right Panel: Sugar Presets and Customization -->
+            <!-- Right Panel - Adjustments -->
             <div class="right-panel">
-                <!-- SFNG Presets Section -->
-                <div class="panel-section" id="presetsSection">
-                    <h3>SFNG 糖预设</h3>
-                    <div class="preset-grid" id="presetGrid">
-                        <div class="preset-item" data-preset="glc">
-                            <svg width="40" height="40" viewBox="0 0 40 40">
-                                <circle cx="20" cy="20" r="15" fill="#3498db" stroke="#2980b9" stroke-width="2"/>
-                            </svg>
-                            <span>Glc</span>
-                        </div>
-                        <div class="preset-item" data-preset="gal">
-                            <svg width="40" height="40" viewBox="0 0 40 40">
-                                <circle cx="20" cy="20" r="15" fill="#e74c3c" stroke="#c0392b" stroke-width="2"/>
-                            </svg>
-                            <span>Gal</span>
-                        </div>
-                        <div class="preset-item" data-preset="man">
-                            <svg width="40" height="40" viewBox="0 0 40 40">
-                                <circle cx="20" cy="20" r="15" fill="#2ecc71" stroke="#27ae60" stroke-width="2"/>
-                            </svg>
-                            <span>Man</span>
-                        </div>
-                        <div class="preset-item" data-preset="fuc">
-                            <svg width="40" height="40" viewBox="0 0 40 40">
-                                <polygon points="20,5 35,20 20,35 5,20" fill="#f39c12" stroke="#e67e22" stroke-width="2"/>
-                            </svg>
-                            <span>Fuc</span>
-                        </div>
-                        <div class="preset-item" data-preset="xyl">
-                            <svg width="40" height="40" viewBox="0 0 40 40">
-                                <polygon points="20,8 30,28 10,28" fill="#9b59b6" stroke="#8e44ad" stroke-width="2"/>
-                            </svg>
-                            <span>Xyl</span>
-                        </div>
-                        <div class="preset-item" data-preset="glcnac">
-                            <svg width="40" height="40" viewBox="0 0 40 40">
-                                <rect x="5" y="5" width="30" height="30" fill="#3498db" stroke="#2980b9" stroke-width="2"/>
-                            </svg>
-                            <span>GlcNAc</span>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Custom Sugar Section -->
-                <div class="panel-section" id="customSugarSection">
-                    <h3>自定义糖型</h3>
-                    
-                    <!-- Shape Selection -->
-                    <div class="custom-subsection">
-                        <h4>形状</h4>
-                        <div class="shape-grid" id="shapeGrid">
-                            <button class="shape-btn active" data-shape="circle">
-                                <svg width="30" height="30" viewBox="0 0 30 30">
-                                    <circle cx="15" cy="15" r="12" fill="currentColor" stroke="#333" stroke-width="1"/>
+                <!-- Sugar Controls (visible when add tool or sugars selected) -->
+                <div class="panel-section" id="sugarControlsSection" style="display: block;">
+                    <!-- SFNG Presets -->
+                    <div class="control-subsection">
+                        <h4>SNFG 糖预设</h4>
+                        <div class="preset-grid" id="presetGrid">
+                            <div class="preset-item" data-preset="glc">
+                                <svg width="32" height="32" viewBox="0 0 32 32">
+                                    <circle cx="16" cy="16" r="12" fill="#3498db" stroke="#2980b9" stroke-width="2"/>
                                 </svg>
-                            </button>
-                            <button class="shape-btn" data-shape="square">
-                                <svg width="30" height="30" viewBox="0 0 30 30">
-                                    <rect x="3" y="3" width="24" height="24" fill="currentColor" stroke="#333" stroke-width="1"/>
+                                <span>Glc</span>
+                            </div>
+                            <div class="preset-item" data-preset="gal">
+                                <svg width="32" height="32" viewBox="0 0 32 32">
+                                    <circle cx="16" cy="16" r="12" fill="#e74c3c" stroke="#c0392b" stroke-width="2"/>
                                 </svg>
-                            </button>
-                            <button class="shape-btn" data-shape="triangle">
-                                <svg width="30" height="30" viewBox="0 0 30 30">
-                                    <polygon points="15,3 27,25 3,25" fill="currentColor" stroke="#333" stroke-width="1"/>
+                                <span>Gal</span>
+                            </div>
+                            <div class="preset-item" data-preset="man">
+                                <svg width="32" height="32" viewBox="0 0 32 32">
+                                    <circle cx="16" cy="16" r="12" fill="#2ecc71" stroke="#27ae60" stroke-width="2"/>
                                 </svg>
-                            </button>
-                            <button class="shape-btn" data-shape="diamond">
-                                <svg width="30" height="30" viewBox="0 0 30 30">
-                                    <polygon points="15,3 27,15 15,27 3,15" fill="currentColor" stroke="#333" stroke-width="1"/>
+                                <span>Man</span>
+                            </div>
+                            <div class="preset-item" data-preset="fuc">
+                                <svg width="32" height="32" viewBox="0 0 32 32">
+                                    <polygon points="16,4 28,16 16,28 4,16" fill="#f39c12" stroke="#e67e22" stroke-width="2"/>
                                 </svg>
-                            </button>
-                            <button class="shape-btn" data-shape="star">
-                                <svg width="30" height="30" viewBox="0 0 30 30">
-                                    <polygon points="15,2 18,12 28,12 20,18 23,28 15,22 7,28 10,18 2,12 12,12" fill="currentColor" stroke="#333" stroke-width="1"/>
+                                <span>Fuc</span>
+                            </div>
+                            <div class="preset-item" data-preset="xyl">
+                                <svg width="32" height="32" viewBox="0 0 32 32">
+                                    <polygon points="16,6 26,24 6,24" fill="#9b59b6" stroke="#8e44ad" stroke-width="2"/>
                                 </svg>
-                            </button>
-                            <button class="shape-btn" data-shape="hexagon">
-                                <svg width="30" height="30" viewBox="0 0 30 30">
-                                    <polygon points="15,3 25,9 25,21 15,27 5,21 5,9" fill="currentColor" stroke="#333" stroke-width="1"/>
+                                <span>Xyl</span>
+                            </div>
+                            <div class="preset-item" data-preset="glcnac">
+                                <svg width="32" height="32" viewBox="0 0 32 32">
+                                    <rect x="4" y="4" width="24" height="24" fill="#3498db" stroke="#2980b9" stroke-width="2"/>
                                 </svg>
-                            </button>
-                            <button class="shape-btn" data-shape="flat-hexagon">
-                                <svg width="30" height="30" viewBox="0 0 30 30">
-                                    <polygon points="5,15 9,5 21,5 25,15 21,25 9,25" fill="currentColor" stroke="#333" stroke-width="1"/>
-                                </svg>
-                            </button>
-                            <button class="shape-btn" data-shape="flat-diamond">
-                                <svg width="30" height="30" viewBox="0 0 30 30">
-                                    <polygon points="8,15 15,8 22,15 15,22" fill="currentColor" stroke="#333" stroke-width="1"/>
-                                </svg>
-                            </button>
-                            <button class="shape-btn" data-shape="pentagon">
-                                <svg width="30" height="30" viewBox="0 0 30 30">
-                                    <polygon points="15,3 26,11 21,25 9,25 4,11" fill="currentColor" stroke="#333" stroke-width="1"/>
-                                </svg>
-                            </button>
+                                <span>GlcNAc</span>
+                            </div>
                         </div>
                     </div>
                     
-                    <!-- Color Selection -->
-                    <div class="custom-subsection">
-                        <h4>颜色</h4>
-                        <div class="color-section">
+                    <!-- Custom Sugar Type -->
+                    <div class="control-subsection">
+                        <h4>自定义糖型</h4>
+                        
+                        <!-- Shape Selection -->
+                        <div class="control-group">
+                            <label>形状:</label>
+                            <div class="shape-grid" id="shapeGrid">
+                                <button class="shape-btn active" data-shape="circle" title="圆形">●</button>
+                                <button class="shape-btn" data-shape="square" title="方形">■</button>
+                                <button class="shape-btn" data-shape="triangle" title="三角形">▲</button>
+                                <button class="shape-btn" data-shape="diamond" title="菱形">♦</button>
+                                <button class="shape-btn" data-shape="star" title="星形">★</button>
+                            </div>
+                        </div>
+                        
+                        <!-- Color Selection -->
+                        <div class="control-group">
+                            <label>颜色:</label>
                             <div class="color-grid" id="colorGrid">
                                 <button class="color-btn active" data-color="#3498db" style="background-color: #3498db;"></button>
                                 <button class="color-btn" data-color="#e74c3c" style="background-color: #e74c3c;"></button>
                                 <button class="color-btn" data-color="#2ecc71" style="background-color: #2ecc71;"></button>
                                 <button class="color-btn" data-color="#f39c12" style="background-color: #f39c12;"></button>
                                 <button class="color-btn" data-color="#9b59b6" style="background-color: #9b59b6;"></button>
-                                <button class="color-btn" data-color="#1abc9c" style="background-color: #1abc9c;"></button>
                                 <button class="color-btn" data-color="#34495e" style="background-color: #34495e;"></button>
-                                <button class="color-btn" data-color="#e67e22" style="background-color: #e67e22;"></button>
                             </div>
                             <div class="custom-color">
-                                <input type="text" id="customColorInput" placeholder="#000000" maxlength="7">
+                                <input type="text" id="customColorInput" placeholder="#3498db" maxlength="7">
                                 <button id="applyCustomColor">应用</button>
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Bottom Panel: Style Controls -->
-        <div class="bottom-panel" id="stylePanel">
-            <div class="style-controls">
-                <!-- Sugar Style (only visible when sugars are selected) -->
-                <div class="style-subsection" id="sugarStyleSection">
-                    <h4>糖样式</h4>
-                    <div class="control-row">
-                        <label for="sugarSize">大小:</label>
-                        <input type="range" id="sugarSize" min="10" max="40" value="20" step="2">
-                        <span id="sugarSizeValue">20</span>
-                    </div>
-                    <div class="control-row">
-                        <label for="sugarBorderWidth">边缘粗细:</label>
-                        <input type="range" id="sugarBorderWidth" min="1" max="5" value="2" step="0.5">
-                        <span id="sugarBorderWidthValue">2</span>
-                    </div>
-                    <div class="control-row">
-                        <label>边缘样式:</label>
-                        <div class="border-style-buttons">
-                            <button class="border-style-btn active" data-style="solid">实线</button>
-                            <button class="border-style-btn" data-style="dashed">虚线</button>
-                            <button class="border-style-btn" data-style="dotted">点线</button>
+                    
+                    <!-- Sugar Style -->
+                    <div class="control-subsection">
+                        <h4>糖样式</h4>
+                        <div class="control-group">
+                            <label for="sugarSize">大小:</label>
+                            <input type="range" id="sugarSize" min="10" max="40" value="20" step="2">
+                            <span id="sugarSizeValue">20</span>
+                        </div>
+                        <div class="control-group">
+                            <label for="sugarBorderWidth">边缘粗细:</label>
+                            <input type="range" id="sugarBorderWidth" min="1" max="5" value="2" step="0.5">
+                            <span id="sugarBorderWidthValue">2</span>
+                        </div>
+                        <div class="control-group">
+                            <label>边缘样式:</label>
+                            <div class="border-style-buttons">
+                                <button class="border-style-btn active" data-style="solid">实线</button>
+                                <button class="border-style-btn" data-style="dashed">虚线</button>
+                                <button class="border-style-btn" data-style="dotted">点线</button>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label for="sugarBorderColor">边缘颜色:</label>
+                            <input type="color" id="sugarBorderColor" value="#333333">
+                            <input type="text" id="sugarBorderColorHex" value="#333333" maxlength="7" placeholder="#333333">
                         </div>
                     </div>
-                    <div class="control-row">
-                        <label for="sugarBorderColor">边缘颜色:</label>
-                        <input type="color" id="sugarBorderColor" value="#333333">
-                        <input type="text" id="sugarBorderColorHex" value="#333333" maxlength="7" placeholder="#333333">
-                    </div>
-                </div>
-                
-                <!-- Connection Line Style (only visible when connections exist) -->
-                <div class="style-subsection" id="connectionStyleSection">
-                    <h4>连接线样式</h4>
-                    <div class="control-row">
-                        <label for="connectionWidth">粗细:</label>
-                        <input type="range" id="connectionWidth" min="1" max="8" value="2" step="0.5">
-                        <span id="connectionWidthValue">2</span>
-                    </div>
-                    <div class="control-row">
-                        <label>样式:</label>
-                        <div class="connection-style-buttons">
-                            <button class="connection-style-btn active" data-style="solid">实线</button>
-                            <button class="connection-style-btn" data-style="dashed">虚线</button>
-                            <button class="connection-style-btn" data-style="dotted">点线</button>
+                    
+                    <!-- Connection Line Style -->
+                    <div class="control-subsection">
+                        <h4>连接线样式</h4>
+                        <div class="connection-status" id="connectionStatus">
+                            <span class="status-text">选中了 0 条连接线</span>
                         </div>
-                    </div>
-                    <div class="control-row">
-                        <label for="connectionColor">连接线颜色:</label>
-                        <input type="color" id="connectionColor" value="#333333">
-                        <input type="text" id="connectionColorHex" value="#333333" maxlength="7" placeholder="#333333">
-                    </div>
-                    <div class="connection-status" id="connectionStatus">
-                        <span class="status-text">请选择有连接的糖</span>
+                        <div class="control-group">
+                            <label for="connectionWidth">粗细:</label>
+                            <input type="range" id="connectionWidth" min="1" max="8" value="2" step="0.5">
+                            <span id="connectionWidthValue">2</span>
+                        </div>
+                        <div class="control-group">
+                            <label>样式:</label>
+                            <div class="connection-style-buttons">
+                                <button class="connection-style-btn active" data-style="solid">实线</button>
+                                <button class="connection-style-btn" data-style="dashed">虚线</button>
+                                <button class="connection-style-btn" data-style="dotted">点线</button>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label for="connectionColor">颜色:</label>
+                            <input type="color" id="connectionColor" value="#333333">
+                            <input type="text" id="connectionColorHex" value="#333333" maxlength="7" placeholder="#333333">
+                        </div>
                     </div>
                 </div>
                 
-                <!-- Text Style (only visible when text is selected) -->
-                <div class="style-subsection" id="textStyleSection">
-                    <h4>文字样式</h4>
-                    <div class="control-row">
-                        <label for="fontSize">字号:</label>
-                        <input type="range" id="fontSize" min="8" max="48" value="16" step="1">
-                        <span id="fontSizeValue">16</span>
-                    </div>
-                    <div class="control-row">
-                        <label for="fontFamily">字体:</label>
-                        <select id="fontFamily">
-                            <option value="Arial">Arial</option>
-                            <option value="Times New Roman">Times New Roman</option>
-                            <option value="Helvetica">Helvetica</option>
-                            <option value="Georgia">Georgia</option>
-                            <option value="Verdana">Verdana</option>
-                            <option value="SimSun">宋体</option>
-                            <option value="SimHei">黑体</option>
-                            <option value="KaiTi">楷体</option>
-                        </select>
-                    </div>
-                    <div class="control-row">
-                        <label>样式:</label>
-                        <div class="text-style-buttons">
-                            <button class="text-style-btn" id="boldBtn" data-style="bold" title="粗体">
-                                <strong>B</strong>
-                            </button>
-                            <button class="text-style-btn" id="italicBtn" data-style="italic" title="斜体">
-                                <em>I</em>
-                            </button>
-                            <button class="text-style-btn" id="underlineBtn" data-style="underline" title="下划线">
-                                <u>U</u>
-                            </button>
+                <!-- Text Controls (visible when text tool or text selected) -->
+                <div class="panel-section" id="textControlsSection" style="display: none;">
+                    <div class="control-subsection">
+                        <h4>文字样式</h4>
+                        <div class="control-group">
+                            <label for="fontSize">字号:</label>
+                            <input type="range" id="fontSize" min="8" max="48" value="16" step="1">
+                            <span id="fontSizeValue">16</span>
+                        </div>
+                        <div class="control-group">
+                            <label for="fontFamily">字体:</label>
+                            <select id="fontFamily">
+                                <option value="Arial">Arial</option>
+                                <option value="Times New Roman">Times New Roman</option>
+                                <option value="Helvetica">Helvetica</option>
+                                <option value="Georgia">Georgia</option>
+                                <option value="Verdana">Verdana</option>
+                                <option value="SimSun">宋体</option>
+                                <option value="SimHei">黑体</option>
+                                <option value="KaiTi">楷体</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>样式:</label>
+                            <div class="text-style-buttons">
+                                <button class="text-style-btn" id="boldBtn" data-style="bold" title="粗体">
+                                    <strong>B</strong>
+                                </button>
+                                <button class="text-style-btn" id="italicBtn" data-style="italic" title="斜体">
+                                    <em>I</em>
+                                </button>
+                                <button class="text-style-btn" id="underlineBtn" data-style="underline" title="下划线">
+                                    <u>U</u>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label for="textColor">颜色:</label>
+                            <input type="color" id="textColor" value="#000000">
+                            <input type="text" id="textColorHex" value="#000000" maxlength="7" placeholder="#000000">
                         </div>
                     </div>
-                    <div class="control-row">
-                        <label for="textColor">颜色:</label>
-                        <input type="color" id="textColor" value="#000000">
-                        <input type="text" id="textColorHex" value="#000000" maxlength="7" placeholder="#000000">
+                </div>
+                
+                <!-- Empty State (when no relevant selections) -->
+                <div class="panel-section" id="emptyControlsSection" style="display: none;">
+                    <div class="empty-state">
+                        <p>选择工具或元素以显示调整选项</p>
                     </div>
                 </div>
             </div>

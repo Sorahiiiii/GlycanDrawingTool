@@ -182,6 +182,7 @@ h1 {
     font-size: 16px;
 }
 
+
 /* Center Panel - Canvas */
 .center-panel {
     flex: 1;
@@ -194,7 +195,7 @@ h1 {
     padding: 50px 20px;
     margin-left: 200px; /* Space for fixed left panel */
     margin-right: 250px; /* Space for fixed right panel */
-    padding-bottom: 200px; /* Reserve space for bottom panel */
+    padding-bottom: 50px;
 }
 
 #canvas {
@@ -349,108 +350,53 @@ h1 {
     font-size: 12px;
 }
 
-/* Bottom Panel - Style Controls */
-.bottom-panel {
-    background-color: white;
-    border-top: 2px solid #ddd;
-    padding: 15px;
-    display: none; /* Hidden by default */
-    position: fixed;
-    bottom: 0;
-    left: 200px; /* Account for left panel */
-    right: 250px; /* Account for right panel */
-    z-index: 15;
-    max-height: 40vh;
-    overflow-y: auto;
+/* Right Panel - New Control Styles */
+.control-subsection {
+    margin-bottom: 20px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 15px;
 }
 
-.style-controls {
-    display: flex;
-    gap: 30px;
-    justify-content: center;
-    flex-wrap: wrap;
+.control-subsection:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
 }
 
-.style-subsection {
-    display: none; /* Hidden by default */
-    min-width: 200px;
-}
-
-.style-subsection h4 {
-    margin-bottom: 10px;
+.control-subsection h4 {
+    margin: 0 0 12px 0;
     color: #2c3e50;
     font-size: 14px;
+    font-weight: 600;
     border-bottom: 2px solid #3498db;
     padding-bottom: 5px;
 }
 
-.control-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
+.control-group {
+    margin-bottom: 12px;
 }
 
-.control-row label {
-    min-width: 80px;
-    font-size: 12px;
+.control-group:last-child {
+    margin-bottom: 0;
+}
+
+.control-group label {
+    display: block;
+    margin-bottom: 6px;
     color: #555;
+    font-size: 13px;
+    font-weight: 500;
 }
 
-.control-row input[type="range"] {
-    flex: 1;
-    max-width: 100px;
+/* Sliders and Values */
+.control-group input[type="range"] {
+    width: 100%;
+    margin-bottom: 4px;
 }
 
-.control-row span {
-    min-width: 30px;
+.control-group span {
+    color: #3498db;
+    font-weight: 600;
     font-size: 12px;
-    color: #333;
-    text-align: center;
-}
-
-/* Style Control Buttons */
-.border-style-buttons,
-.connection-style-buttons,
-.text-style-buttons {
-    display: flex;
-    gap: 5px;
-}
-
-.border-style-btn,
-.connection-style-btn,
-.text-style-btn {
-    padding: 4px 8px;
-    border: 2px solid #ddd;
-    background: white;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 12px;
-    transition: all 0.2s ease;
-}
-
-.border-style-btn:hover,
-.connection-style-btn:hover,
-.text-style-btn:hover {
-    border-color: #007bff;
-    background-color: #f8f9fa;
-}
-
-.border-style-btn.active,
-.connection-style-btn.active,
-.text-style-btn.active {
-    border-color: #007bff;
-    background-color: #007bff;
-    color: white;
-}
-
-.text-style-btn {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
 }
 
 /* Color controls */
@@ -460,6 +406,7 @@ input[type="color"] {
     border: 1px solid #ddd;
     border-radius: 4px;
     cursor: pointer;
+    margin-right: 8px;
 }
 
 input[type="text"] {
@@ -470,21 +417,140 @@ input[type="text"] {
     font-size: 12px;
 }
 
-#fontFamily {
+/* Custom color input */
+.custom-color {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.custom-color input {
     flex: 1;
-    padding: 4px 8px;
+}
+
+.custom-color button {
+    padding: 4px 12px;
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.custom-color button:hover {
+    background: #2980b9;
+}
+
+/* Select dropdown */
+#fontFamily {
+    width: 100%;
+    padding: 6px 8px;
     border: 1px solid #ddd;
     border-radius: 4px;
+    font-size: 13px;
+    background: white;
+}
+
+/* Button groups */
+.border-style-buttons,
+.connection-style-buttons,
+.text-style-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+.border-style-btn,
+.connection-style-btn,
+.text-style-btn {
+    padding: 6px 12px;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
     font-size: 12px;
+    transition: all 0.2s ease;
+}
+
+.border-style-btn:hover,
+.connection-style-btn:hover,
+.text-style-btn:hover {
+    border-color: #3498db;
+    background-color: #f8f9fa;
+}
+
+.border-style-btn.active,
+.connection-style-btn.active,
+.text-style-btn.active {
+    border-color: #3498db;
+    background-color: #3498db;
+    color: white;
+}
+
+.text-style-btn.mixed {
+    border-color: #f39c12;
+    background-color: #f39c12;
+    color: white;
+    position: relative;
+}
+
+.text-style-btn.mixed::after {
+    content: '?';
+    position: absolute;
+    font-size: 10px;
+    top: 2px;
+    right: 2px;
+}
+
+.text-style-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    padding: 0;
+}
+
+/* Mixed state for color inputs */
+input[type="color"].mixed,
+input[type="text"].mixed {
+    border: 2px solid #f39c12;
+    background-color: #fef9e7;
+}
+
+input[type="color"].mixed {
+    background: linear-gradient(45deg, #f39c12 25%, transparent 25%, transparent 75%, #f39c12 75%),
+                linear-gradient(45deg, #f39c12 25%, #fef9e7 25%, #fef9e7 75%, #f39c12 75%);
+    background-size: 4px 4px;
+    background-position: 0 0, 2px 2px;
+}
+
+/* Mixed state for range slider and value display */
+input[type="range"].mixed {
+    border: 2px solid #f39c12;
+    background-color: #fef9e7;
+}
+
+span.mixed {
+    color: #f39c12;
+    font-weight: bold;
+    border: 1px solid #f39c12;
+    background-color: #fef9e7;
+    padding: 2px 6px;
+    border-radius: 3px;
 }
 
 /* Connection Status */
 .connection-status {
-    margin-top: 10px;
+    margin-bottom: 12px;
     padding: 8px;
     border-radius: 4px;
     text-align: center;
     font-size: 12px;
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
 }
 
 .connection-status.has-connections {
@@ -493,10 +559,53 @@ input[type="text"] {
     border: 1px solid #c3e6cb;
 }
 
-.connection-status.no-connections {
-    background-color: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #6c757d;
+}
+
+.empty-state p {
+    margin: 0;
+    font-size: 14px;
+}
+
+/* Preset grid adjustments */
+.preset-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 15px;
+}
+
+.preset-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px;
+    border: 2px solid #e0e0e0;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: white;
+}
+
+.preset-item:hover {
+    border-color: #3498db;
+    background: #f8f9fa;
+}
+
+.preset-item.active {
+    border-color: #3498db;
+    background: #e3f2fd;
+}
+
+.preset-item span {
+    font-size: 11px;
+    color: #555;
+    font-weight: 500;
 }
 
 /* Canvas Cursor States */
@@ -507,6 +616,8 @@ input[type="text"] {
 #canvas.select-mode {
     cursor: default;
 }
+
+
 
 #canvas.text-mode {
     cursor: text;
@@ -521,6 +632,8 @@ input[type="text"] {
     opacity: 0.5;
     filter: brightness(0.7);
 }
+
+
 
 /* Sugar Elements */
 .sugar {
@@ -573,6 +686,15 @@ input[type="text"] {
     stroke-dasharray: 4,2;
     opacity: 0.8;
     pointer-events: none;
+}
+
+/* Connection drag highlight styles */
+.connection-start-highlight {
+    opacity: 0.9;
+}
+
+.connection-target-highlight {
+    opacity: 0.8;
 }
 
 /* Box Selection */
@@ -640,12 +762,7 @@ input[type="text"] {
         padding-bottom: 50px;
     }
     
-    .bottom-panel {
-        position: relative;
-        left: auto;
-        right: auto;
-        bottom: auto;
-    }
+
     
     #canvas {
         max-width: 90vw;
@@ -654,10 +771,6 @@ input[type="text"] {
 }
 
 @media (max-width: 768px) {
-    .style-controls {
-        flex-direction: column;
-        gap: 15px;
-    }
     
     .preset-grid {
         grid-template-columns: repeat(3, 1fr);
@@ -687,3 +800,4 @@ input[type="text"] {
         max-height: 50vh;
     }
 }
+
