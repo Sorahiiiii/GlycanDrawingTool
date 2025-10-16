@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>-</title>
+  <style>
+    html {
+      line-height: 1.5;
+      font-family: Georgia, serif;
+      font-size: 20px;
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 1em;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, 'Lucida Console', Consolas, monospace;
+      font-size: 85%;
+      margin: 0;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    span.underline{text-decoration: underline;}
+    div.column{display: inline-block; vertical-align: top; width: 50%;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+</head>
+<body>
+<h1 id="glycan-drawing-tool-用户说明文档">🧩 Glycan Drawing Tool
+用户说明文档</h1>
+<h2 id="简介">📘 简介</h2>
+<p><strong>Glycan Drawing Tool</strong>
+是一个基于网页的糖链结构绘制与编辑工具。<br />
+用户可以通过可视化界面轻松绘制单糖节点、连接关系以及文字注释，并根据
+SNFG（Symbol Nomenclature for Glycans）标准自动生成标准符号表示。</p>
+<p>该工具特别适合用于科研场景下的糖链结构示意图制作、论文配图和教学展示。</p>
+<hr />
+<h2 id="功能概述">🧱 功能概述</h2>
+<h3 id="主界面结构">1. 主界面结构</h3>
+<p>界面由三个主要部分组成：</p>
+<ul>
+<li><strong>左侧面板</strong>：工具栏（选择、添加糖、添加文字、预设、橡皮擦）</li>
+<li><strong>中间画布</strong>：主绘图区域（支持缩放、拖动、导出）</li>
+<li><strong>右侧面板</strong>：糖形状、颜色、连接样式、文字样式等详细自定义选项</li>
+</ul>
+<hr />
+<h2 id="工具栏说明">🧭 工具栏说明</h2>
+<table>
+<thead>
+<tr class="header">
+<th>工具</th>
+<th>图标</th>
+<th>功能说明</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>选择 (<code>select</code>)</td>
+<td>↖️</td>
+<td>选择已有元素进行移动、复制或样式修改</td>
+</tr>
+<tr class="even">
+<td>添加糖 (<code>add</code>)</td>
+<td>🍬</td>
+<td>在画布中点击放置新的单糖符号</td>
+</tr>
+<tr class="odd">
+<td>添加文字 (<code>text</code>)</td>
+<td>📝</td>
+<td>在画布中添加文字注释或标签</td>
+</tr>
+<tr class="even">
+<td>预设寡糖 (<code>preset</code>)</td>
+<td>🧩</td>
+<td>从内置模板中插入完整糖链结构</td>
+</tr>
+<tr class="odd">
+<td>橡皮擦 (<code>delete</code>)</td>
+<td>🧽</td>
+<td>删除选中的元素或连续擦除</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="糖结构绘制与样式">🎨 糖结构绘制与样式</h2>
+<h3 id="snfg-糖预设">1. SNFG 糖预设</h3>
+<p>右侧面板提供常见单糖预设（Glc、Gal、Man、GlcNAc、GalNAc、Fuc、GlcA、Sia、Xyl），<br />
+符合 <strong>SNFG 2.0 标准</strong>，颜色和形状均已自动配置。</p>
+<h3 id="自定义糖型">2. 自定义糖型</h3>
+<p>可自定义： - <strong>形状</strong>（圆、方、菱形、三角形、星形等） -
+<strong>边框宽度与不透明度</strong> - <strong>填充颜色与透明度</strong>
+- <strong>尺寸大小</strong></p>
+<p>支持实时更新与撤销/恢复。</p>
+<hr />
+<h2 id="连接与linkage文字">🔗 连接与Linkage文字</h2>
+<p>用户可在糖与糖之间拖动鼠标建立连接（代表糖苷键）。</p>
+<p>可设置： - 线条样式（实线、虚线等） - 线条颜色、不透明度、粗细 -
+是否显示Linkage文字（如 α1-2、β1-4） -
+Linkage文字的字体、颜色、透明度</p>
+<hr />
+<h2 id="文本添加与样式">✏️ 文本添加与样式</h2>
+<p>通过“添加文字”工具可在任意位置插入文本标签。<br />
+支持调整： - 字体大小与字体族 - 粗体 / 斜体 / 下划线 - 颜色与透明度</p>
+<hr />
+<h2 id="预设寡糖模板">🧩 预设寡糖模板</h2>
+<p>支持导入和插入完整的糖链 SVG
+模板文件（<code>presetGlycanToolbar</code>）。
+用户点击预设缩略图后，点击画布即可放置模板。</p>
+<hr />
+<h2 id="撤销与重做">🧮 撤销与重做</h2>
+<p>内置完整的撤销/重做系统：</p>
+<ul>
+<li><strong>撤销 (Undo)</strong>：回退上一步操作<br />
+</li>
+<li><strong>重做 (Redo)</strong>：恢复被撤销的步骤<br />
+</li>
+<li>最多保存 50 步历史记录</li>
+</ul>
+<p>包括对元素样式变化、位置移动、添加与删除等所有修改。</p>
+<hr />
+<h2 id="导出与画布控制">🖼️ 导出与画布控制</h2>
+<h3 id="导出选项">导出选项：</h3>
+<table>
+<thead>
+<tr class="header">
+<th>格式</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>SVG</strong></td>
+<td>可编辑矢量格式，保留全部图形信息</td>
+</tr>
+<tr class="even">
+<td><strong>PNG</strong></td>
+<td>带透明背景的高分辨率位图</td>
+</tr>
+<tr class="odd">
+<td><strong>JPG</strong></td>
+<td>适合展示的白底位图</td>
+</tr>
+</tbody>
+</table>
+<h3 id="导出尺寸">导出尺寸：</h3>
+<ul>
+<li>小（800×600）</li>
+<li>中（1000×700）</li>
+<li>大（1200×800）</li>
+</ul>
+<h3 id="画布操作">画布操作：</h3>
+<ul>
+<li>拖动：使用鼠标拖动画布</li>
+<li>缩放：滑块控制 50%–300%</li>
+<li>重置：恢复至 100%</li>
+</ul>
+<hr />
+<h2 id="其他功能">🧰 其他功能</h2>
+<ul>
+<li><strong>批量选择</strong>：框选多个元素进行统一调整<br />
+</li>
+<li><strong>连续擦除</strong>：长按橡皮擦可快速删除多个元素<br />
+</li>
+<li><strong>快捷键支持</strong>：
+<ul>
+<li><code>Ctrl/Cmd + Z</code>：撤销<br />
+</li>
+<li><code>Ctrl/Cmd + Y</code>：重做<br />
+</li>
+<li><code>Delete</code>：删除选中元素<br />
+</li>
+<li><code>Esc</code>：退出当前模式（如预设放置）</li>
+</ul></li>
+</ul>
+<hr />
+<h2 id="技术实现">🧑‍💻 技术实现</h2>
+<ul>
+<li><strong>前端框架</strong>：纯原生 JavaScript + SVG 操作<br />
+</li>
+<li><strong>主类结构</strong>：<code>GlycanDrawer</code>
+<ul>
+<li>管理画布、事件绑定、元素绘制、撤销重做系统等<br />
+</li>
+</ul></li>
+<li><strong>核心逻辑模块</strong>：
+<ul>
+<li><code>setupToolbar()</code> 工具栏交互</li>
+<li><code>setupStyleControls()</code> 样式控制与绑定</li>
+<li><code>initializeWorkspace()</code> 初始化画布</li>
+<li><code>exportCanvas()</code> 导出逻辑</li>
+<li><code>handleMouseDown/Move/Up()</code> 用户交互响应</li>
+</ul></li>
+</ul>
+<hr />
+<h2 id="联系与帮助">📄 联系与帮助</h2>
+<ul>
+<li><strong>开发者</strong>：x-yguo@pku.edu.cn<br />
+</li>
+<li><strong>参考标准</strong>：<a
+href="https://www.ncbi.nlm.nih.gov/glycans/snfg2_0.html">NCBI SNFG
+2.0</a><br />
+</li>
+<li><strong>版本</strong>：v1.0 alpha</li>
+</ul>
+</body>
+</html>

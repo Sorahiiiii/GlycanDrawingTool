@@ -65,6 +65,9 @@ class GlycanDrawer {
         this.boxSelectionStart = { x: 0, y: 0 };
         this.selectionBox = null;
         
+        // Add preview dot for sugar placement
+        this.addPreviewDot = null;
+        
         // UI update flag to prevent style application during UI updates
         this.isUpdatingUI = false;
         
@@ -138,16 +141,24 @@ class GlycanDrawer {
             'xyl': { shape: 'star-5', color: '#F47920', name: 'Xyl' }
         };
         
-        // 8 directional positions around a sugar (N, NE, E, SE, S, SW, W, NW)
+        // 16 directional positions around a sugar
         this.directions = [
             { name: 'N', dx: 0, dy: -1 },
+            { name: 'NNE', dx: 0.3827, dy: -0.9239 },
             { name: 'NE', dx: 0.707, dy: -0.707 },
+            { name: 'ENE', dx: 0.9239, dy: -0.3827 },
             { name: 'E', dx: 1, dy: 0 },
+            { name: 'ESE', dx: 0.9239, dy: 0.3827 },
             { name: 'SE', dx: 0.707, dy: 0.707 },
+            { name: 'SSE', dx: 0.3827, dy: 0.9239 },
             { name: 'S', dx: 0, dy: 1 },
+            { name: 'SSW', dx: -0.3827, dy: 0.9239 },
             { name: 'SW', dx: -0.707, dy: 0.707 },
+            { name: 'WSW', dx: -0.9239, dy: 0.3827 },
             { name: 'W', dx: -1, dy: 0 },
-            { name: 'NW', dx: -0.707, dy: -0.707 }
+            { name: 'WNW', dx: -0.9239, dy: -0.3827 },
+            { name: 'NW', dx: -0.707, dy: -0.707 },
+            { name: 'NNW', dx: -0.3827, dy: -0.9239 }
         ];
         
         this.init();
@@ -227,6 +238,14 @@ class GlycanDrawer {
         
         // Initialize workspace first
         this.initializeWorkspace();
+        
+        // Create add preview dot
+        this.addPreviewDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        this.addPreviewDot.setAttribute('r', '10');
+        this.addPreviewDot.setAttribute('fill', 'blue');
+        this.addPreviewDot.setAttribute('opacity', '0.3');
+        this.addPreviewDot.style.display = 'none';
+        this.canvas.appendChild(this.addPreviewDot);
         
         // Then setup zoom controls (needs workspace to be ready)
         this.setupZoomControl();
@@ -2767,8 +2786,18 @@ class GlycanDrawer {
             if (targetSugar && targetSugar !== this.connectionStartSugar) {
                 this.connectionTargetSugar = targetSugar;
                 this.highlightConnectionTarget(targetSugar);
+                this.addPreviewDot.style.display = 'none'; // Hide dot when targeting existing sugar
             } else {
                 this.connectionTargetSugar = null;
+                // Show preview dot at best position for adding new sugar
+                const startX = parseFloat(this.connectionStartSugar.getAttribute('data-x'));
+                const startY = parseFloat(this.connectionStartSugar.getAttribute('data-y'));
+                const bestDir = this.findBestDirection(startX, startY, x, y);
+                const previewX = startX + bestDir.dx * this.connectionDistance;
+                const previewY = startY + bestDir.dy * this.connectionDistance;
+                this.addPreviewDot.setAttribute('cx', previewX);
+                this.addPreviewDot.setAttribute('cy', previewY);
+                this.addPreviewDot.style.display = 'block';
             }
             
             e.preventDefault();
@@ -2787,6 +2816,23 @@ class GlycanDrawer {
                 // Create connection between start and target sugars
                 const linkage = this.currentLinkageConfig.linkage || document.getElementById('linkageInput')?.value || null;
                 this.createConnection(this.connectionStartSugar, this.connectionTargetSugar, false, linkage);
+            } else if (this.connectionStartSugar) {
+                // Add new sugar at the preview position
+                const coords = this.getSVGCoordinates(e);
+                const x = coords.x;
+                const y = coords.y;
+                const startX = parseFloat(this.connectionStartSugar.getAttribute('data-x'));
+                const startY = parseFloat(this.connectionStartSugar.getAttribute('data-y'));
+                const bestDir = this.findBestDirection(startX, startY, x, y);
+                const newX = startX + bestDir.dx * this.connectionDistance;
+                const newY = startY + bestDir.dy * this.connectionDistance;
+                const sugar = this.createSugar(newX, newY, this.currentSugarConfig);
+                this.selectElement(sugar);
+                this.recordObjectAdded(this.createObjectData(sugar));
+                
+                // Create connection between start sugar and new sugar
+                const linkage = this.currentLinkageConfig.linkage || document.getElementById('linkageInput')?.value || null;
+                this.createConnection(this.connectionStartSugar, sugar, false, linkage);
             }
             
             // Clean up connection dragging state
@@ -3248,7 +3294,7 @@ class GlycanDrawer {
         
         // Normalize the direction vector
         const length = Math.sqrt(dx * dx + dy * dy);
-        if (length === 0) return this.directions[4]; // Default to South
+        if (length === 0) return this.directions[8]; // Default to South
         
         const normalizedDx = dx / length;
         const normalizedDy = dy / length;
@@ -5215,6 +5261,15 @@ class GlycanDrawer {
             this.isConnectionDragging = true;
             this.highlightConnectionStart(sugar);
             
+            // Show add preview dot at start position initially
+            if (this.addPreviewDot) {
+                const startX = parseFloat(sugar.getAttribute('data-x'));
+                const startY = parseFloat(sugar.getAttribute('data-y'));
+                this.addPreviewDot.setAttribute('cx', startX);
+                this.addPreviewDot.setAttribute('cy', startY);
+                this.addPreviewDot.style.display = 'block';
+            }
+            
             // Change cursor to indicate connection mode
             this.canvas.style.cursor = 'crosshair';
             
@@ -5234,6 +5289,11 @@ class GlycanDrawer {
         // Clear highlights
         this.clearConnectionStartHighlight();
         this.clearConnectionTargetHighlight();
+        
+        // Hide add preview dot
+        if (this.addPreviewDot) {
+            this.addPreviewDot.style.display = 'none';
+        }
         
         // Reset cursor
         this.canvas.style.cursor = '';
@@ -5476,21 +5536,74 @@ class GlycanDrawer {
     
     // Normalize linkage information to standard format
     normalizeLinkage(linkage) {
-        if (!linkage || linkage.trim() === '') {
+        if (!linkage || linkage.trim() === '') return '??-?';
+
+        // Normalize whitespace and to lower-case for easier parsing
+        let s = ('' + linkage).trim();
+
+        // Replace ASCII A/a and B/b with Greek α/β equivalents (accept both cases)
+        s = s.replace(/A/gi, 'α');
+        s = s.replace(/B/gi, 'β');
+
+        // Replace common latin alternatives that users might type (like "a"/"b")
+        s = s.replace(/^a/iu, 'α');
+        s = s.replace(/^b/iu, 'β');
+
+        // Remove surrounding spaces
+        s = s.replace(/\s+/g, '');
+
+        // Now possible valid forms:
+        // 1) single greek letter: "α" or "β"
+        // 2) greek + digits with optional dash: "α1-2", "α12" (means 1-2), "β13" (means 1-3)
+        // 3) already normalized forms
+
+        // Accept single-letter forms
+        if (/^[αβ]$/i.test(s)) return s;
+
+        // Match greek + digits (with or without dash)
+        const m = s.match(/^([αβ])(\d+)(?:-(\d+))?$/i);
+        if (m) {
+            const letter = m[1];
+            const numA = m[2];
+            const numB = m[3];
+
+            // If both numbers are provided via dash, use them
+            if (numB !== undefined) {
+                return `${letter}${numA}-${numB}`;
+            }
+
+            // If only one numeric string provided, try to split into two single-digit numbers
+            if (numA.length === 2) {
+                const a = numA.charAt(0);
+                const b = numA.charAt(1);
+                if (/^\d$/.test(a) && /^\d$/.test(b)) {
+                    return `${letter}${a}-${b}`;
+                }
+            }
+
+            // If more than 2 digits or cannot interpret, fallback to unknown
             return '??-?';
         }
-        
-        const trimmed = linkage.trim();
-        
-        // Check if it's a valid linkage format (α/β followed by numbers, dashes, etc.)
-        // Valid formats: α1-2, β1-4, α, β, α2-6, etc.
-        const validPattern = /^[αβ](\d+-\d+)?$/;
-        
-        if (validPattern.test(trimmed)) {
-            return trimmed;
+
+        // Also accept inputs where user typed greek name words like 'alpha'/'beta' (lower/upper)
+        const alphaMatch = s.match(/^(alpha)(\d+)(?:-(\d+))?$/i);
+        if (alphaMatch) {
+            const numA = alphaMatch[2];
+            const numB = alphaMatch[3];
+            if (numB !== undefined) return `α${numA}-${numB}`;
+            if (numA.length === 2) return `α${numA.charAt(0)}-${numA.charAt(1)}`;
+            return '??-?';
         }
-        
-        // If invalid format, return unknown
+        const betaMatch = s.match(/^(beta)(\d+)(?:-(\d+))?$/i);
+        if (betaMatch) {
+            const numA = betaMatch[2];
+            const numB = betaMatch[3];
+            if (numB !== undefined) return `β${numA}-${numB}`;
+            if (numA.length === 2) return `β${numA.charAt(0)}-${numA.charAt(1)}`;
+            return '??-?';
+        }
+
+        // If none matched, it's unformattable
         return '??-?';
     }
     
@@ -6584,24 +6697,37 @@ class GlycanDrawer {
             const allElementsSelected = elementsInBox.every(element => 
                 this.selectedElements.has(element)
             );
-            
+
             if (allElementsSelected) {
                 // All elements are selected - remove them from selection
                 elementsInBox.forEach(element => {
-                    this.deselectElement(element);
+                    // Use type-aware deselection for connections
+                    if (this.getElementType(element) === 'connection') {
+                        this.deselectConnection(element);
+                    } else {
+                        this.deselectElement(element);
+                    }
                 });
             } else {
                 // Some elements are not selected - add all unselected to selection
                 elementsInBox.forEach(element => {
                     if (!this.selectedElements.has(element)) {
-                        this.selectElement(element, true);
+                        if (this.getElementType(element) === 'connection') {
+                            this.selectConnection(element, true);
+                        } else {
+                            this.selectElement(element, true);
+                        }
                     }
                 });
             }
         } else {
             // Normal selection - select all elements in box
             elementsInBox.forEach(element => {
-                this.selectElement(element, true);
+                if (this.getElementType(element) === 'connection') {
+                    this.selectConnection(element, true);
+                } else {
+                    this.selectElement(element, true);
+                }
             });
         }
         
@@ -6713,6 +6839,16 @@ class GlycanDrawer {
         
         // Update connection status
         this.updateConnectionStatus();
+
+        // Ensure add-mode linkage preselection panel is only visible in add mode
+        const linkagePreselectionSection = document.getElementById('linkagePreselectionSection');
+        if (linkagePreselectionSection) {
+            if (this.currentTool === 'add') {
+                linkagePreselectionSection.style.display = 'block';
+            } else {
+                linkagePreselectionSection.style.display = 'none';
+            }
+        }
     }
     
     shouldShowSugarControls() {

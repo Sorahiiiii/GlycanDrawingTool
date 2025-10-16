@@ -132,12 +132,19 @@ h1 {
     margin-left: 8px;
 }
 
+/* External links above Feedback text */
 .help-links {
+    position: absolute;
+    bottom: 240px;
+    left: 10px;
+    width: 180px;
+    padding: 5px 10px;
+    font-size: 16px;
+    font-weight: 500;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
-    margin-top: 10px;
+    gap: 5px;
 }
 
 .help-link {
@@ -173,6 +180,25 @@ h1 {
     left: 0;
     right: 0;
     z-index: 20;
+}
+
+/* Language Switch */
+.language-switch {
+    position: absolute;
+    top: 10px;
+    right: 20px;
+}
+
+.language-link {
+    color: #2980b9;
+    text-decoration: none;
+    font-size: 14px;
+    border-bottom: 1px dotted rgba(41, 128, 185, 0.3);
+}
+
+.language-link:hover {
+    color: #1f6ea8;
+    border-bottom-color: rgba(31, 110, 168, 0.6);
 }
 
 .action-buttons {
@@ -1836,6 +1862,16 @@ span.mixed {
 }
 
 #linkageInput {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: 'Arial', sans-serif;
+    margin-top: 5px;
+}
+
+#linkageInputAdd {
     width: 100%;
     padding: 8px;
     border: 1px solid #ddd;
