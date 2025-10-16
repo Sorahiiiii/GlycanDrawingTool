@@ -239,24 +239,43 @@
                                         <span class="dropdown-arrow">▼</span>
                                     </button>
                                     <div class="shape-dropdown-menu" data-category="diamond">
-                                        <div class="shape-dropdown-item active" data-shape="diamond" title="菱形">
+                                        <div class="shape-dropdown-item active" data-shape="diamond" title="常规菱形">
                                             <svg width="16" height="16" viewBox="0 0 16 16">
                                                 <polygon points="8,2.4 13.6,8 8,13.6 2.4,8" fill="#888888" stroke="#000000" stroke-width="1"/>
                                             </svg>
                                         </div>
-                                        <div class="shape-dropdown-item" data-shape="diamond-filled" title="实心菱形">
+                                        <div class="shape-dropdown-item" data-shape="diamond-flat" title="扁菱形">
                                             <svg width="16" height="16" viewBox="0 0 16 16">
-                                                <polygon points="8,2.4 13.6,8 8,13.6 2.4,8" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                                <polygon points="8,4.4 12.6,8 8,11.6 3.4,8" fill="#888888" stroke="#000000" stroke-width="1"/>
                                             </svg>
                                         </div>
-                                        <div class="shape-dropdown-item" data-shape="diamond-outline" title="空心菱形">
+                                        <div class="shape-dropdown-item" data-shape="diamond-narrow" title="窄菱形">
                                             <svg width="16" height="16" viewBox="0 0 16 16">
-                                                <polygon points="8,2.4 13.6,8 8,13.6 2.4,8" fill="none" stroke="#888888" stroke-width="1"/>
+                                                <polygon points="8,1.4 11.6,8 8,14.6 4.4,8" fill="#888888" stroke="#000000" stroke-width="1"/>
                                             </svg>
                                         </div>
-                                        <div class="shape-dropdown-item" data-shape="diamond-small" title="小菱形">
+                                        <div class="shape-dropdown-item" data-shape="diamond-divided-top" title="分割菱形（下白）">
                                             <svg width="16" height="16" viewBox="0 0 16 16">
-                                                <polygon points="8,4 12,8 8,12 4,8" fill="#888888" stroke="#000000" stroke-width="1"/>
+                                                <defs>
+                                                    <linearGradient id="diamond-divided-top-icon" x1="0%" y1="0%" x2="0%" y2="100%">
+                                                        <stop offset="50%" stop-color="#888888" stop-opacity="1"/>
+                                                        <stop offset="50%" stop-color="white" stop-opacity="1"/>
+                                                    </linearGradient>
+                                                </defs>
+                                                <polygon points="8,2.4 13.6,8 8,13.6 2.4,8" fill="url(#diamond-divided-top-icon)" stroke="#000000" stroke-width="1"/>
+                                                <line x1="2.4" y1="8" x2="13.6" y2="8" stroke="#000000" stroke-width="1"/>
+                                            </svg>
+                                        </div>
+                                        <div class="shape-dropdown-item" data-shape="diamond-divided-bottom" title="分割菱形（上白）">
+                                            <svg width="16" height="16" viewBox="0 0 16 16">
+                                                <defs>
+                                                    <linearGradient id="diamond-divided-bottom-icon" x1="0%" y1="0%" x2="0%" y2="100%">
+                                                        <stop offset="50%" stop-color="white" stop-opacity="1"/>
+                                                        <stop offset="50%" stop-color="#888888" stop-opacity="1"/>
+                                                    </linearGradient>
+                                                </defs>
+                                                <polygon points="8,2.4 13.6,8 8,13.6 2.4,8" fill="url(#diamond-divided-bottom-icon)" stroke="#000000" stroke-width="1"/>
+                                                <line x1="2.4" y1="8" x2="13.6" y2="8" stroke="#000000" stroke-width="1"/>
                                             </svg>
                                         </div>
                                     </div>

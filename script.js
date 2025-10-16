@@ -1709,6 +1709,140 @@ class GlycanDrawer {
                 element.setAttribute('points', diamondPoints);
                 break;
                 
+            case 'diamond-flat':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                const diamondFlatPoints = `${x},${y-actualSize*0.7} ${x+actualSize*1.4},${y} ${x},${y+actualSize*0.7} ${x-actualSize*1.4},${y}`;
+                element.setAttribute('points', diamondFlatPoints);
+                break;
+                
+            case 'diamond-narrow':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                const diamondNarrowPoints = `${x},${y-actualSize*1.4} ${x+actualSize*0.7},${y} ${x},${y+actualSize*1.4} ${x-actualSize*0.7},${y}`;
+                element.setAttribute('points', diamondNarrowPoints);
+                break;
+                
+            case 'diamond-divided-top':
+                // 分割菱形：下半部分白色，上半部分用户颜色
+                const dividedTopGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                
+                // 主菱形
+                const diamondTopElement = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                const diamondTopPoints = `${x},${y-actualSize} ${x+actualSize},${y} ${x},${y+actualSize} ${x-actualSize},${y}`;
+                diamondTopElement.setAttribute('points', diamondTopPoints);
+                
+                // 创建唯一的渐变ID
+                const gradientTopId = `diamond-divided-top-gradient-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                
+                // 创建渐变定义
+                const defsTop = this.canvas.querySelector('defs') || this.canvas.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'defs'));
+                const gradientTop = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+                gradientTop.id = gradientTopId;
+                gradientTop.setAttribute('x1', '0%');
+                gradientTop.setAttribute('y1', '0%');
+                gradientTop.setAttribute('x2', '0%');
+                gradientTop.setAttribute('y2', '100%');
+                
+                // 上半部分：用户颜色
+                const stopTop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+                stopTop1.setAttribute('offset', '50%');
+                stopTop1.setAttribute('stop-color', color || '#0072BC');
+                stopTop1.setAttribute('stop-opacity', '1');
+                
+                // 下半部分：白色
+                const stopTop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+                stopTop2.setAttribute('offset', '50%');
+                stopTop2.setAttribute('stop-color', 'white');
+                stopTop2.setAttribute('stop-opacity', '1');
+                
+                gradientTop.appendChild(stopTop1);
+                gradientTop.appendChild(stopTop2);
+                defsTop.appendChild(gradientTop);
+                
+                // 应用渐变
+                diamondTopElement.setAttribute('fill', `url(#${gradientTopId})`);
+                diamondTopElement.setAttribute('stroke', strokeColor);
+                diamondTopElement.setAttribute('stroke-width', '2');
+                
+                // 创建水平分割线
+                const dividingLineTop = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                dividingLineTop.setAttribute('x1', x - actualSize);
+                dividingLineTop.setAttribute('y1', y);
+                dividingLineTop.setAttribute('x2', x + actualSize);
+                dividingLineTop.setAttribute('y2', y);
+                dividingLineTop.setAttribute('stroke', strokeColor);
+                dividingLineTop.setAttribute('stroke-width', '2');
+                dividingLineTop.classList.add('dividing-line');
+                
+                dividedTopGroup.appendChild(diamondTopElement);
+                dividedTopGroup.appendChild(dividingLineTop);
+                
+                // 存储渐变信息
+                dividedTopGroup.setAttribute('data-gradient-id', gradientTopId);
+                dividedTopGroup.classList.add('diamond-divided-top-group');
+                element = dividedTopGroup;
+                break;
+                
+            case 'diamond-divided-bottom':
+                // 分割菱形：上半部分白色，下半部分用户颜色
+                const dividedBottomGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                
+                // 主菱形
+                const diamondBottomElement = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                const diamondBottomPoints = `${x},${y-actualSize} ${x+actualSize},${y} ${x},${y+actualSize} ${x-actualSize},${y}`;
+                diamondBottomElement.setAttribute('points', diamondBottomPoints);
+                
+                // 创建唯一的渐变ID
+                const gradientBottomId = `diamond-divided-bottom-gradient-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                
+                // 创建渐变定义
+                const defsBottom = this.canvas.querySelector('defs') || this.canvas.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'defs'));
+                const gradientBottom = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+                gradientBottom.id = gradientBottomId;
+                gradientBottom.setAttribute('x1', '0%');
+                gradientBottom.setAttribute('y1', '0%');
+                gradientBottom.setAttribute('x2', '0%');
+                gradientBottom.setAttribute('y2', '100%');
+                
+                // 上半部分：白色
+                const stopBottom1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+                stopBottom1.setAttribute('offset', '50%');
+                stopBottom1.setAttribute('stop-color', 'white');
+                stopBottom1.setAttribute('stop-opacity', '1');
+                
+                // 下半部分：用户颜色
+                const stopBottom2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+                stopBottom2.setAttribute('offset', '50%');
+                stopBottom2.setAttribute('stop-color', color || '#0072BC');
+                stopBottom2.setAttribute('stop-opacity', '1');
+                
+                gradientBottom.appendChild(stopBottom1);
+                gradientBottom.appendChild(stopBottom2);
+                defsBottom.appendChild(gradientBottom);
+                
+                // 应用渐变
+                diamondBottomElement.setAttribute('fill', `url(#${gradientBottomId})`);
+                diamondBottomElement.setAttribute('stroke', strokeColor);
+                diamondBottomElement.setAttribute('stroke-width', '2');
+                
+                // 创建水平分割线
+                const dividingLineBottom = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                dividingLineBottom.setAttribute('x1', x - actualSize);
+                dividingLineBottom.setAttribute('y1', y);
+                dividingLineBottom.setAttribute('x2', x + actualSize);
+                dividingLineBottom.setAttribute('y2', y);
+                dividingLineBottom.setAttribute('stroke', strokeColor);
+                dividingLineBottom.setAttribute('stroke-width', '2');
+                dividingLineBottom.classList.add('dividing-line');
+                
+                dividedBottomGroup.appendChild(diamondBottomElement);
+                dividedBottomGroup.appendChild(dividingLineBottom);
+                
+                // 存储渐变信息
+                dividedBottomGroup.setAttribute('data-gradient-id', gradientBottomId);
+                dividedBottomGroup.classList.add('diamond-divided-bottom-group');
+                element = dividedBottomGroup;
+                break;
+                
             case 'star':
             case 'star-5':
                 element = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
@@ -1793,8 +1927,8 @@ class GlycanDrawer {
         }
         
         // Set fill and stroke
-        if (shape === 'triangle-divided') {
-            // 分割三角形的特殊处理已经在case中完成（渐变填充和分割线）
+        if (shape === 'triangle-divided' || shape === 'diamond-divided-top' || shape === 'diamond-divided-bottom') {
+            // 分割形状的特殊处理已经在case中完成（渐变填充和分割线）
             // 组级别不需要额外的填充和描边设置
         } else {
             element.setAttribute('fill', color);
@@ -2103,6 +2237,62 @@ class GlycanDrawer {
             case 'diamond':
                 const diamondPoints = `${x},${y-size} ${x+size},${y} ${x},${y+size} ${x-size},${y}`;
                 shape.setAttribute('points', diamondPoints);
+                break;
+                
+            case 'diamond-flat':
+                const diamondFlatPoints = `${x},${y-size*0.7} ${x+size*1.4},${y} ${x},${y+size*0.7} ${x-size*1.4},${y}`;
+                shape.setAttribute('points', diamondFlatPoints);
+                break;
+                
+            case 'diamond-narrow':
+                const diamondNarrowPoints = `${x},${y-size*1.4} ${x+size*0.7},${y} ${x},${y+size*1.4} ${x-size*0.7},${y}`;
+                shape.setAttribute('points', diamondNarrowPoints);
+                break;
+                
+            case 'diamond-divided-top':
+                // 分割菱形（下白）结构：group包含polygon+line
+                if (shape.classList.contains('diamond-divided-top-group')) {
+                    // 重新计算菱形点
+                    const newDiamondTopPoints = `${x},${y-size} ${x+size},${y} ${x},${y+size} ${x-size},${y}`;
+                    
+                    // 更新多边形
+                    const polygon = shape.querySelector('polygon');
+                    if (polygon) {
+                        polygon.setAttribute('points', newDiamondTopPoints);
+                    }
+                    
+                    // 更新水平分割线
+                    const line = shape.querySelector('.dividing-line');
+                    if (line) {
+                        line.setAttribute('x1', x - size);
+                        line.setAttribute('y1', y);
+                        line.setAttribute('x2', x + size);
+                        line.setAttribute('y2', y);
+                    }
+                }
+                break;
+                
+            case 'diamond-divided-bottom':
+                // 分割菱形（上白）结构：group包含polygon+line
+                if (shape.classList.contains('diamond-divided-bottom-group')) {
+                    // 重新计算菱形点
+                    const newDiamondBottomPoints = `${x},${y-size} ${x+size},${y} ${x},${y+size} ${x-size},${y}`;
+                    
+                    // 更新多边形
+                    const polygon = shape.querySelector('polygon');
+                    if (polygon) {
+                        polygon.setAttribute('points', newDiamondBottomPoints);
+                    }
+                    
+                    // 更新水平分割线
+                    const line = shape.querySelector('.dividing-line');
+                    if (line) {
+                        line.setAttribute('x1', x - size);
+                        line.setAttribute('y1', y);
+                        line.setAttribute('x2', x + size);
+                        line.setAttribute('y2', y);
+                    }
+                }
                 break;
                 
             case 'star':
@@ -4246,6 +4436,10 @@ class GlycanDrawer {
             case 'triangle-inverted':
             case 'triangle-divided':
             case 'diamond':
+            case 'diamond-flat':
+            case 'diamond-narrow':
+            case 'diamond-divided-top':
+            case 'diamond-divided-bottom':
             case 'star':
             case 'hexagon':
             case 'flat-hexagon':
@@ -4524,10 +4718,11 @@ class GlycanDrawer {
             diamond: {
                 name: '菱形',
                 shapes: [
-                    { id: 'diamond', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,2.7 15.3,9 9,15.3 2.7,9" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '菱形' },
-                    { id: 'diamond-filled', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,2.7 15.3,9 9,15.3 2.7,9" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '实心菱形' },
-                    { id: 'diamond-outline', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,2.7 15.3,9 9,15.3 2.7,9" fill="none" stroke="#888888" stroke-width="1"/></svg>', name: '空心菱形' },
-                    { id: 'diamond-small', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,4.5 13.5,9 9,13.5 4.5,9" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '小菱形' }
+                    { id: 'diamond', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,2.7 15.3,9 9,15.3 2.7,9" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '常规菱形' },
+                    { id: 'diamond-flat', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,4.95 14.175,9 9,13.05 3.825,9" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '扁菱形' },
+                    { id: 'diamond-narrow', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,1.32 13.05,9 9,16.68 4.95,9" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '窄菱形' },
+                    { id: 'diamond-divided-top', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><defs><linearGradient id="dd-top-main" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="50%" stop-color="#888888"/><stop offset="50%" stop-color="white"/></linearGradient></defs><polygon points="9,2.7 15.3,9 9,15.3 2.7,9" fill="url(#dd-top-main)" stroke="#000000" stroke-width="1"/><line x1="2.7" y1="9" x2="15.3" y2="9" stroke="#000000" stroke-width="1"/></svg>', name: '分割菱形（下白）' },
+                    { id: 'diamond-divided-bottom', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><defs><linearGradient id="dd-bottom-main" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="50%" stop-color="white"/><stop offset="50%" stop-color="#888888"/></linearGradient></defs><polygon points="9,2.7 15.3,9 9,15.3 2.7,9" fill="url(#dd-bottom-main)" stroke="#000000" stroke-width="1"/><line x1="2.7" y1="9" x2="15.3" y2="9" stroke="#000000" stroke-width="1"/></svg>', name: '分割菱形（上白）' }
                 ]
             },
             triangle: {
@@ -4842,6 +5037,25 @@ class GlycanDrawer {
                         const diamondPoints = `${x},${y-currentSize} ${x+currentSize},${y} ${x},${y+currentSize} ${x-currentSize},${y}`;
                         newShape.setAttribute('points', diamondPoints);
                         break;
+                    case 'diamond-flat':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                        const diamondFlatPoints = `${x},${y-currentSize*0.7} ${x+currentSize*1.4},${y} ${x},${y+currentSize*0.7} ${x-currentSize*1.4},${y}`;
+                        newShape.setAttribute('points', diamondFlatPoints);
+                        break;
+                    case 'diamond-narrow':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                        const diamondNarrowPoints = `${x},${y-currentSize*1.4} ${x+currentSize*0.7},${y} ${x},${y+currentSize*1.4} ${x-currentSize*0.7},${y}`;
+                        newShape.setAttribute('points', diamondNarrowPoints);
+                        break;
+                    case 'diamond-divided-top':
+                    case 'diamond-divided-bottom':
+                        // 分割菱形需要重新创建完整的形状
+                        newShape = this.createSugarShape(x, y, shapeType, currentFillColor, currentSize);
+                        // 移除sugar-shape类，因为createSugarShape已经添加了
+                        if (newShape.classList) {
+                            newShape.classList.remove('sugar-shape');
+                        }
+                        break;
                     case 'star':
                         newShape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
                         const starPoints = this.generateStarPoints(x, y, currentSize, 5);
@@ -4912,6 +5126,72 @@ class GlycanDrawer {
                                 // 右半部分更新为新颜色（stop[1]）
                                 stops[1].setAttribute('stop-color', color);
                                 console.log('Updated gradient stops:', stops[0].getAttribute('stop-color'), stops[1].getAttribute('stop-color'));
+                            }
+                        } else {
+                            console.log('Gradient not found:', gradientId);
+                        }
+                    }
+                    
+                    // 设置边框样式（对组内的多边形和线条）
+                    const polygon = shape.querySelector('polygon');
+                    const line = shape.querySelector('.dividing-line');
+                    
+                    if (polygon) {
+                        polygon.style.setProperty('stroke', '#000000', 'important');
+                        polygon.style.setProperty('stroke-width', '2', 'important');
+                    }
+                    if (line) {
+                        line.style.setProperty('stroke', '#000000', 'important');
+                        line.style.setProperty('stroke-width', '2', 'important');
+                    }
+                } else if (shapeType === 'diamond-divided-top' && shape.classList.contains('diamond-divided-top-group')) {
+                    // 分割菱形（下白）的特殊颜色处理：更新渐变中的上半部分颜色
+                    const gradientId = shape.getAttribute('data-gradient-id');
+                    console.log('Updating diamond-divided-top color:', color, 'gradientId:', gradientId);
+                    
+                    if (gradientId) {
+                        const gradient = this.canvas.querySelector(`#${gradientId}`);
+                        if (gradient) {
+                            const stops = gradient.querySelectorAll('stop');
+                            if (stops.length >= 2) {
+                                // 上半部分更新为新颜色（stop[0]）
+                                stops[0].setAttribute('stop-color', color);
+                                // 下半部分保持白色（stop[1]）
+                                stops[1].setAttribute('stop-color', 'white');
+                                console.log('Updated diamond-divided-top gradient stops:', stops[0].getAttribute('stop-color'), stops[1].getAttribute('stop-color'));
+                            }
+                        } else {
+                            console.log('Gradient not found:', gradientId);
+                        }
+                    }
+                    
+                    // 设置边框样式（对组内的多边形和线条）
+                    const polygon = shape.querySelector('polygon');
+                    const line = shape.querySelector('.dividing-line');
+                    
+                    if (polygon) {
+                        polygon.style.setProperty('stroke', '#000000', 'important');
+                        polygon.style.setProperty('stroke-width', '2', 'important');
+                    }
+                    if (line) {
+                        line.style.setProperty('stroke', '#000000', 'important');
+                        line.style.setProperty('stroke-width', '2', 'important');
+                    }
+                } else if (shapeType === 'diamond-divided-bottom' && shape.classList.contains('diamond-divided-bottom-group')) {
+                    // 分割菱形（上白）的特殊颜色处理：更新渐变中的下半部分颜色
+                    const gradientId = shape.getAttribute('data-gradient-id');
+                    console.log('Updating diamond-divided-bottom color:', color, 'gradientId:', gradientId);
+                    
+                    if (gradientId) {
+                        const gradient = this.canvas.querySelector(`#${gradientId}`);
+                        if (gradient) {
+                            const stops = gradient.querySelectorAll('stop');
+                            if (stops.length >= 2) {
+                                // 上半部分保持白色（stop[0]）
+                                stops[0].setAttribute('stop-color', 'white');
+                                // 下半部分更新为新颜色（stop[1]）
+                                stops[1].setAttribute('stop-color', color);
+                                console.log('Updated diamond-divided-bottom gradient stops:', stops[0].getAttribute('stop-color'), stops[1].getAttribute('stop-color'));
                             }
                         } else {
                             console.log('Gradient not found:', gradientId);
