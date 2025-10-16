@@ -538,10 +538,74 @@ class GlycanDrawer {
         const connectionWidthValue = document.getElementById('connectionStrokeWidthValue');
         const connectionStyleButtons = document.querySelectorAll('.connection-style-btn');
         
+        // --- Fix: Only record one undo step when dragging connection stroke width in select mode ---
         connectionWidth.addEventListener('input', (e) => {
             const value = e.target.value;
             connectionWidthValue.textContent = value;
-            this.applyConnectionStyle();
+            
+            if (this.currentTool === 'add') {
+                // 添加模式：只更新配置，不应用到任何元素
+                this.currentLinkageConfig.strokeWidth = parseFloat(value);
+            } else if (this.currentTool === 'select') {
+                // 选择模式：只应用到选中元素，不更新配置
+                if (this.connectionWidthSliderDragging) {
+                    // Only apply style, don't record step
+                    this.applyLinkageStyle();
+                } else {
+                    this.applyConnectionStyle();
+                }
+            }
+        });
+
+        // Handle undo/redo step recording for connection stroke width slider drag
+        connectionWidth.addEventListener('mousedown', () => {
+            if (this.currentTool === 'select') {
+                this.startStep('Change connection stroke width');
+                this.connectionWidthSliderDragging = true;
+                // Record initial state of all selected connections
+                const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                this.initialConnectionStatesForStrokeWidth = selectedConnections.map(conn => ({
+                    id: conn.getAttribute('id'),
+                    beforeData: this.createObjectData(conn)
+                }));
+            }
+        });
+
+        connectionWidth.addEventListener('mouseup', () => {
+            if (this.currentTool === 'select' && this.connectionWidthSliderDragging) {
+                // Record final state and finish step
+                if (this.initialConnectionStatesForStrokeWidth) {
+                    this.initialConnectionStatesForStrokeWidth.forEach(state => {
+                        const conn = document.getElementById(state.id);
+                        if (conn) {
+                            const afterData = this.createObjectData(conn);
+                            this.recordObjectModified(state.id, state.beforeData, afterData);
+                        }
+                    });
+                    this.initialConnectionStatesForStrokeWidth = null;
+                }
+                this.finishStep();
+                this.connectionWidthSliderDragging = false;
+            }
+        });
+
+        // Handle case where mouse is released outside the slider
+        document.addEventListener('mouseup', () => {
+            if (this.currentTool === 'select' && this.connectionWidthSliderDragging) {
+                // Record final state and finish step
+                if (this.initialConnectionStatesForStrokeWidth) {
+                    this.initialConnectionStatesForStrokeWidth.forEach(state => {
+                        const conn = document.getElementById(state.id);
+                        if (conn) {
+                            const afterData = this.createObjectData(conn);
+                            this.recordObjectModified(state.id, state.beforeData, afterData);
+                        }
+                    });
+                    this.initialConnectionStatesForStrokeWidth = null;
+                }
+                this.finishStep();
+                this.connectionWidthSliderDragging = false;
+            }
         });
         
         connectionStyleButtons.forEach(btn => {
@@ -551,11 +615,14 @@ class GlycanDrawer {
                 });
                 btn.classList.add('active');
                 
-                // Apply style in select mode (for selected connections)
-                if (this.currentTool === 'select') {
-                    this.applyLinkageStyle();
-                } else {
+                if (this.currentTool === 'add') {
+                    // 添加模式：只更新配置，不应用到任何元素
+                    this.currentLinkageConfig.strokeStyle = btn.dataset.style;
+                } else if (this.currentTool === 'select') {
+                    // 选择模式：只应用到选中元素，不更新配置
+                    this.startStep('Change connection style');
                     this.applyConnectionStyle();
+                    this.finishStep();
                 }
             });
         });
@@ -565,6 +632,20 @@ class GlycanDrawer {
         const connectionOpacityValue = document.getElementById('linkageOpacityValue');
         
         if (connectionOpacity && connectionOpacityValue) {
+            // Handle undo/redo step recording for connection opacity slider drag
+            connectionOpacity.addEventListener('mousedown', () => {
+                if (this.currentTool === 'select') {
+                    this.startStep('Change connection opacity');
+                    this.connectionOpacitySliderDragging = true;
+                    // Record initial state of all selected connections
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                    this.initialConnectionStatesForOpacity = selectedConnections.map(conn => ({
+                        id: conn.getAttribute('id'),
+                        beforeData: this.createObjectData(conn)
+                    }));
+                }
+            });
+
             connectionOpacity.addEventListener('input', (e) => {
                 const value = parseFloat(e.target.value);
                 connectionOpacityValue.textContent = Math.round(value * 100) + '%';
@@ -575,25 +656,66 @@ class GlycanDrawer {
                 
                 // Apply opacity in select mode (for selected connections)
                 if (this.currentTool === 'select') {
-                    this.applyLinkageStyle();
-                } else {
-                    this.applyConnectionOpacity();
+                    if (this.connectionOpacitySliderDragging) {
+                        // During dragging, apply without starting/finishing steps
+                        this.applyConnectionOpacityWithoutStep();
+                    } else {
+                        // Single click/change: use normal undo logic
+                        this.applyConnectionOpacity();
+                    }
+                }
+            });
+
+            connectionOpacity.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.connectionOpacitySliderDragging) {
+                    // Record final state and finish step
+                    if (this.initialConnectionStatesForOpacity) {
+                        this.initialConnectionStatesForOpacity.forEach(state => {
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                        });
+                        this.initialConnectionStatesForOpacity = null;
+                    }
+                    this.finishStep();
+                    this.connectionOpacitySliderDragging = false;
+                }
+            });
+
+            // Handle case where mouse is released outside the slider
+            document.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.connectionOpacitySliderDragging) {
+                    // Record final state and finish step
+                    if (this.initialConnectionStatesForOpacity) {
+                        this.initialConnectionStatesForOpacity.forEach(state => {
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                        });
+                        this.initialConnectionStatesForOpacity = null;
+                    }
+                    this.finishStep();
+                    this.connectionOpacitySliderDragging = false;
                 }
             });
         }
         
-        // Linkage-specific opacity control
-        const linkageOpacity = document.getElementById('linkageOpacity');
-        const linkageOpacityValue = document.getElementById('linkageOpacityValue');
+        // Linkage text opacity control
+        const linkageTextOpacityControl = document.getElementById('linkageTextOpacity');
+        const linkageTextOpacityControlValue = document.getElementById('linkageTextOpacityValue');
         
-        if (linkageOpacity && linkageOpacityValue) {
-            linkageOpacity.addEventListener('input', (e) => {
+        if (linkageTextOpacityControl && linkageTextOpacityControlValue) {
+            linkageTextOpacityControl.addEventListener('input', (e) => {
                 const value = parseFloat(e.target.value);
-                linkageOpacityValue.textContent = Math.round(value * 100) + '%';
+                linkageTextOpacityControlValue.textContent = Math.round(value * 100) + '%';
                 
                 // Clear mixed state when user manually changes value
                 e.target.classList.remove('mixed');
-                if (linkageOpacityValue) linkageOpacityValue.classList.remove('mixed');
+                if (linkageTextOpacityControlValue) linkageTextOpacityControlValue.classList.remove('mixed');
                 
                 // Apply to selected connections in select mode
                 this.applyLinkageStyle();
@@ -823,14 +945,32 @@ class GlycanDrawer {
         connectionColor.addEventListener('input', (e) => {
             const color = e.target.value;
             connectionColorHex.value = color;
-            this.applyConnectionStyle();
+            
+            if (this.currentTool === 'add') {
+                // 添加模式：只更新配置，不应用到任何元素
+                this.currentLinkageConfig.strokeColor = color;
+            } else if (this.currentTool === 'select') {
+                // 选择模式：只应用到选中元素，不更新配置
+                this.startStep('Change connection color');
+                this.applyConnectionStyle();
+                this.finishStep();
+            }
         });
         
         connectionColorHex.addEventListener('input', (e) => {
             const color = e.target.value;
             if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
                 connectionColor.value = color;
-                this.applyConnectionStyle();
+                
+                if (this.currentTool === 'add') {
+                    // 添加模式：只更新配置，不应用到任何元素
+                    this.currentLinkageConfig.strokeColor = color;
+                } else if (this.currentTool === 'select') {
+                    // 选择模式：只应用到选中元素，不更新配置
+                    this.startStep('Change connection color');
+                    this.applyConnectionStyle();
+                    this.finishStep();
+                }
             }
         });
         
@@ -848,23 +988,57 @@ class GlycanDrawer {
                 
                 // Apply style to selected connections in select mode
                 if (this.currentTool === 'select') {
-                    this.applyLinkageStyle();
+                    if (this.connectionWidthSliderDragging) {
+                        this.applyConnectionStyle();
+                    } else {
+                        this.startStep('Change connection stroke width');
+                        this.applyConnectionStyle();
+                        this.finishStep();
+                    }
                 } else {
                     this.applyConnectionStyle();
                 }
             });
         }
         
+        // --- Undo/Redo step recording for linkage text size slider drag ---
+        this.linkageTextSizeSliderDragging = false;
+        this.initialConnectionStatesForTextSize = null;
         if (linkageTextSize && linkageTextSizeValue) {
+            linkageTextSize.addEventListener('mousedown', () => {
+                if (this.currentTool === 'select') {
+                    this.startStep('Change linkage text size');
+                    this.linkageTextSizeSliderDragging = true;
+                    // Record initial states
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                    this.initialConnectionStatesForTextSize = selectedConnections.map(conn => ({
+                        id: conn.getAttribute('id'),
+                        beforeData: this.createObjectData(conn)
+                    }));
+                }
+            });
             linkageTextSize.addEventListener('input', (e) => {
                 const value = e.target.value;
                 linkageTextSizeValue.textContent = value;
-                
-                // In select mode, apply to selected connections
                 if (this.currentTool === 'select') {
                     this.applyLinkageStyle();
                 }
-                // In add mode, just store for future connections (no immediate update)
+            });
+            linkageTextSize.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.linkageTextSizeSliderDragging) {
+                    if (this.initialConnectionStatesForTextSize) {
+                        this.initialConnectionStatesForTextSize.forEach(state => {
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                        });
+                        this.initialConnectionStatesForTextSize = null;
+                    }
+                    this.finishStep();
+                    this.linkageTextSizeSliderDragging = false;
+                }
             });
         }
         
@@ -873,99 +1047,292 @@ class GlycanDrawer {
         const linkageTextColorHex = document.getElementById('linkageTextColorHex');
         const linkageTextColorButtons = document.querySelectorAll('[data-target="linkageTextColor"]');
         
+        // --- Undo/Redo step recording for linkage text color ---
+        this.linkageTextColorDragging = false;
+        this.initialConnectionStatesForTextColor = null;
         linkageTextColorButtons.forEach(btn => {
+            btn.addEventListener('mousedown', () => {
+                if (this.currentTool === 'select') {
+                    this.startStep('Change linkage text color');
+                    this.linkageTextColorDragging = true;
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                    this.initialConnectionStatesForTextColor = selectedConnections.map(conn => ({
+                        id: conn.id,
+                        beforeData: this.createObjectData(conn)
+                    }));
+                }
+            });
             btn.addEventListener('click', (e) => {
                 const color = e.target.dataset.color;
                 if (linkageTextColor) {
                     linkageTextColor.value = color;
                     if (linkageTextColorHex) linkageTextColorHex.value = color;
                 }
-                // Update active state
                 linkageTextColorButtons.forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
-                
-                // In select mode, apply to selected connections
                 if (this.currentTool === 'select') {
                     this.applyLinkageStyle();
                 }
-                // In add mode, just store for future connections (no immediate update)
+            });
+            btn.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.linkageTextColorDragging) {
+                    if (this.initialConnectionStatesForTextColor) {
+                        this.initialConnectionStatesForTextColor.forEach(state => {
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                        });
+                        this.initialConnectionStatesForTextColor = null;
+                    }
+                    this.finishStep();
+                    this.linkageTextColorDragging = false;
+                }
             });
         });
         
         if (linkageTextColor) {
+            linkageTextColor.addEventListener('mousedown', () => {
+                if (this.currentTool === 'select') {
+                    this.startStep('Change linkage text color');
+                    this.linkageTextColorDragging = true;
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                    this.initialConnectionStatesForTextColor = selectedConnections.map(conn => ({
+                        id: conn.id,
+                        beforeData: this.createObjectData(conn)
+                    }));
+                }
+            });
             linkageTextColor.addEventListener('input', (e) => {
                 const color = e.target.value;
                 if (linkageTextColorHex) linkageTextColorHex.value = color;
                 linkageTextColorButtons.forEach(b => b.classList.remove('active'));
-                
-                // In select mode, apply to selected connections
                 if (this.currentTool === 'select') {
                     this.applyLinkageStyle();
                 }
-                // In add mode, just store for future connections (no immediate update)
+            });
+            linkageTextColor.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.linkageTextColorDragging) {
+                    if (this.initialConnectionStatesForTextColor) {
+                        this.initialConnectionStatesForTextColor.forEach(state => {
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                        });
+                        this.initialConnectionStatesForTextColor = null;
+                    }
+                    this.finishStep();
+                    this.linkageTextColorDragging = false;
+                }
             });
         }
         
         if (linkageTextColorHex) {
+            linkageTextColorHex.addEventListener('mousedown', () => {
+                if (this.currentTool === 'select') {
+                    this.startStep('Change linkage text color');
+                    this.linkageTextColorDragging = true;
+                    const selectedConnections = Array.from(this.selectedConnections || []);
+                    this.initialConnectionStatesForTextColor = selectedConnections.map(conn => ({
+                        id: conn.id,
+                        beforeData: this.createObjectData(conn)
+                    }));
+                }
+            });
             linkageTextColorHex.addEventListener('input', (e) => {
                 const color = e.target.value;
                 if (/^#[0-9A-F]{6}$/i.test(color)) {
                     if (linkageTextColor) linkageTextColor.value = color;
                     linkageTextColorButtons.forEach(b => b.classList.remove('active'));
-                    
-                    // In select mode, apply to selected connections
                     if (this.currentTool === 'select') {
                         this.applyLinkageStyle();
                     }
-                    // In add mode, just store for future connections (no immediate update)
+                }
+            });
+            linkageTextColorHex.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.linkageTextColorDragging) {
+                    if (this.initialConnectionStatesForTextColor) {
+                        this.initialConnectionStatesForTextColor.forEach(state => {
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                        });
+                        this.initialConnectionStatesForTextColor = null;
+                    }
+                    this.finishStep();
+                    this.linkageTextColorDragging = false;
                 }
             });
         }
         
-        // Linkage text font family control
+        // --- Undo/Redo step recording for linkage text font family ---
+        this.linkageTextFontFamilyDragging = false;
+        this.initialConnectionStatesForTextFontFamily = null;
         const linkageTextFontFamily = document.getElementById('linkageTextFontFamily');
         if (linkageTextFontFamily) {
+            linkageTextFontFamily.addEventListener('mousedown', () => {
+                if (this.currentTool === 'select') {
+                    this.startStep('Change linkage text font family');
+                    this.linkageTextFontFamilyDragging = true;
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                    this.initialConnectionStatesForTextFontFamily = selectedConnections.map(conn => ({
+                        id: conn.id,
+                        beforeData: this.createObjectData(conn)
+                    }));
+                }
+            });
             linkageTextFontFamily.addEventListener('change', (e) => {
                 const fontFamily = e.target.value;
-                
-                // In select mode, apply to selected connections
                 if (this.currentTool === 'select') {
                     this.applyLinkageStyle();
                 }
-                // In add mode, just store for future connections (no immediate update)
+            });
+            linkageTextFontFamily.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.linkageTextFontFamilyDragging) {
+                    if (this.initialConnectionStatesForTextFontFamily) {
+                        this.initialConnectionStatesForTextFontFamily.forEach(state => {
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                        });
+                        this.initialConnectionStatesForTextFontFamily = null;
+                    }
+                    this.finishStep();
+                    this.linkageTextFontFamilyDragging = false;
+                }
             });
         }
         
-        // Linkage text style buttons (bold, italic, underline)
+        // --- Undo/Redo step recording for linkage text style buttons ---
+        this.linkageTextStyleDragging = false;
+        this.initialConnectionStatesForTextStyle = null;
         const linkageTextStyleButtons = document.querySelectorAll('.linkage-text-style-btn');
         linkageTextStyleButtons.forEach(btn => {
+            btn.addEventListener('mousedown', () => {
+                if (this.currentTool === 'select') {
+                    // If another linkage text UI drag (color/size/font family/opacity) is active,
+                    // the UI handler is already recording a step. Avoid starting a duplicate
+                    // "Change linkage text style" step here. Still mark dragging so mouseup
+                    // handlers work, but don't capture before snapshots.
+                    if (this.linkageTextColorDragging || this.linkageTextSizeSliderDragging || this.linkageTextFontFamilyDragging || this.linkageTextOpacitySliderDragging) {
+                        this.linkageTextStyleDragging = true;
+                        this.initialConnectionStatesForTextStyle = null;
+                        return;
+                    }
+
+                    this.startStep('Change linkage text style');
+                    this.linkageTextStyleDragging = true;
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+
+                    // Ensure linkage text elements exist before recording
+                    selectedConnections.forEach(conn => {
+                        this.updateLinkageText(conn);
+                    });
+
+                    this.initialConnectionStatesForTextStyle = selectedConnections.map(conn => {
+                        const connectionId = conn.getAttribute('id');
+                        const configText = this.canvas.querySelector(`#${connectionId}-config-text`);
+                        const positionText = this.canvas.querySelector(`#${connectionId}-position-text`);
+                        
+                        return {
+                            id: conn.id,
+                            beforeData: this.createObjectData(conn),
+                            configTextId: configText ? configText.getAttribute('id') : null,
+                            configTextBeforeData: configText ? this.createObjectData(configText) : null,
+                            positionTextId: positionText ? positionText.getAttribute('id') : null,
+                            positionTextBeforeData: positionText ? this.createObjectData(positionText) : null
+                        };
+                    });
+                }
+            });
             btn.addEventListener('click', (e) => {
                 const style = e.target.closest('.linkage-text-style-btn').dataset.style;
-                
-                // Toggle active state
                 e.target.closest('.linkage-text-style-btn').classList.toggle('active');
-                
-                // In select mode, apply to selected connections
                 if (this.currentTool === 'select') {
                     this.applyLinkageStyle();
                 }
-                // In add mode, just store for future connections (no immediate update)
+            });
+            btn.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.linkageTextStyleDragging) {
+                    if (this.initialConnectionStatesForTextStyle) {
+                        this.initialConnectionStatesForTextStyle.forEach(state => {
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                            
+                            // Also record text elements
+                            if (state.configTextId) {
+                                const configText = document.getElementById(state.configTextId);
+                                if (configText && state.configTextBeforeData) {
+                                    const configAfterData = this.createObjectData(configText);
+                                    this.recordObjectModified(state.configTextId, state.configTextBeforeData, configAfterData);
+                                }
+                            }
+                            
+                            if (state.positionTextId) {
+                                const positionText = document.getElementById(state.positionTextId);
+                                if (positionText && state.positionTextBeforeData) {
+                                    const positionAfterData = this.createObjectData(positionText);
+                                    this.recordObjectModified(state.positionTextId, state.positionTextBeforeData, positionAfterData);
+                                }
+                            }
+                        });
+                        this.initialConnectionStatesForTextStyle = null;
+                    }
+                    this.finishStep();
+                    this.linkageTextStyleDragging = false;
+                }
             });
         });
         
-        // Linkage text opacity control
+        // --- Undo/Redo step recording for linkage text opacity slider drag ---
+        this.linkageTextOpacitySliderDragging = false;
+        this.initialConnectionStatesForTextOpacity = null;
         const linkageTextOpacity = document.getElementById('linkageTextOpacity');
         const linkageTextOpacityValue = document.getElementById('linkageTextOpacityValue');
         if (linkageTextOpacity && linkageTextOpacityValue) {
+            linkageTextOpacity.addEventListener('mousedown', () => {
+                if (this.currentTool === 'select') {
+                    this.startStep('Change linkage text opacity');
+                    this.linkageTextOpacitySliderDragging = true;
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                    this.initialConnectionStatesForTextOpacity = selectedConnections.map(conn => ({
+                        id: conn.id,
+                        beforeData: this.createObjectData(conn)
+                    }));
+                }
+            });
             linkageTextOpacity.addEventListener('input', (e) => {
                 const value = e.target.value;
                 linkageTextOpacityValue.textContent = Math.round(value * 100) + '%';
-                
-                // In select mode, apply to selected connections
                 if (this.currentTool === 'select') {
                     this.applyLinkageStyle();
                 }
-                // In add mode, just store for future connections (no immediate update)
+            });
+            linkageTextOpacity.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.linkageTextOpacitySliderDragging) {
+                    if (this.initialConnectionStatesForTextOpacity) {
+                        this.initialConnectionStatesForTextOpacity.forEach(state => {
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                        });
+                        this.initialConnectionStatesForTextOpacity = null;
+                    }
+                    this.finishStep();
+                    this.linkageTextOpacitySliderDragging = false;
+                }
             });
         }
         
@@ -985,7 +1352,8 @@ class GlycanDrawer {
             // Handle blur (clicking outside) to confirm linkage
             linkageInput.addEventListener('blur', (e) => {
                 const linkage = linkageInput.value.trim();
-                if (linkage !== '' && this.selectedConnections.size > 0) {
+                const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                if (linkage !== '' && selectedConnections.length > 0) {
                     this.applyLinkageToConnections(linkage);
                 }
             });
@@ -1013,9 +1381,12 @@ class GlycanDrawer {
                 }
                 
                 // Apply linkage based on current mode
-                if (this.currentTool === 'select' && this.selectedConnections.size > 0) {
-                    // Select mode with selected connections - apply immediately
-                    this.applyLinkageToConnections(linkage);
+                if (this.currentTool === 'select') {
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                    if (selectedConnections.length > 0) {
+                        // Select mode with selected connections - apply immediately
+                        this.applyLinkageToConnections(linkage);
+                    }
                 } else if (this.currentTool === 'add') {
                     // Add mode - store for next connection
                     this.currentLinkageConfig.linkage = linkage;
@@ -1052,12 +1423,14 @@ class GlycanDrawer {
         }
 
             // Linkage text font family for add mode
-            const linkageTextFontFamilyAdd = document.getElementById('linkageTextFontFamilyAdd');
-            if (linkageTextFontFamilyAdd) {
-                linkageTextFontFamilyAdd.addEventListener('change', (e) => {
-                    this.currentLinkageConfig.textFontFamily = e.target.value;
-                });
-            }
+        const linkageTextFontFamilyAdd = document.getElementById('linkageTextFontFamilyAdd');
+        if (linkageTextFontFamilyAdd) {
+            linkageTextFontFamilyAdd.addEventListener('change', (e) => {
+                this.currentLinkageConfig.textFontFamily = e.target.value;
+            });
+            // Initialize config on load
+            this.currentLinkageConfig.textFontFamily = linkageTextFontFamilyAdd.value;
+        }
 
             // Linkage text style buttons (bold, italic, underline) for add mode
             const linkageTextStyleButtonsAdd = document.querySelectorAll('.linkage-text-style-btn-add');
@@ -1072,15 +1445,17 @@ class GlycanDrawer {
             });
 
             // Linkage text opacity for add mode
-            const linkageTextOpacityAdd = document.getElementById('linkageTextOpacityAdd');
-            const linkageTextOpacityAddValue = document.getElementById('linkageTextOpacityAddValue');
-            if (linkageTextOpacityAdd && linkageTextOpacityAddValue) {
-                linkageTextOpacityAdd.addEventListener('input', (e) => {
-                    const value = e.target.value;
-                    this.currentLinkageConfig.textOpacity = parseFloat(value);
-                    linkageTextOpacityAddValue.textContent = Math.round(value * 100) + '%';
-                });
-            }
+        const linkageTextOpacityAdd = document.getElementById('linkageTextOpacityAdd');
+        const linkageTextOpacityAddValue = document.getElementById('linkageTextOpacityAddValue');
+        if (linkageTextOpacityAdd && linkageTextOpacityAddValue) {
+            linkageTextOpacityAdd.addEventListener('input', (e) => {
+                const value = e.target.value;
+                this.currentLinkageConfig.textOpacity = parseFloat(value);
+                linkageTextOpacityAddValue.textContent = Math.round(value * 100) + '%';
+            });
+            // Initialize config on load
+            this.currentLinkageConfig.textOpacity = parseFloat(linkageTextOpacityAdd.value);
+        }
         
         // Reverse linkage button for add mode
         const reverseLinkageAdd = document.getElementById('reverseLinkageAdd');
@@ -1254,7 +1629,10 @@ class GlycanDrawer {
                 // Update active state
                 linkageColorButtons.forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
-                this.applyLinkageStyle();
+                
+                if (this.currentTool === 'select') {
+                    this.applyLinkageStyle();
+                }
             });
         });
         
@@ -4404,8 +4782,15 @@ class GlycanDrawer {
             
             // Store text style preferences from currentLinkageConfig when in add mode
             if (this.currentTool === 'add') {
-                line.setAttribute('data-text-size', this.currentLinkageConfig.textSize || 12);
-                line.setAttribute('data-text-color', this.currentLinkageConfig.textColor || '#000000');
+                  line.setAttribute('data-text-size', this.currentLinkageConfig.textSize || 12);
+                  line.setAttribute('data-text-color', this.currentLinkageConfig.textColor || '#000000');
+                  line.setAttribute('data-text-font-family', this.currentLinkageConfig.textFontFamily || 'Arial');
+                  line.setAttribute('data-text-opacity', this.currentLinkageConfig.textOpacity != null ? this.currentLinkageConfig.textOpacity : 1);
+                  if (this.currentLinkageConfig.textStyle) {
+                     line.setAttribute('data-text-bold', this.currentLinkageConfig.textStyle.bold ? 'true' : 'false');
+                     line.setAttribute('data-text-italic', this.currentLinkageConfig.textStyle.italic ? 'true' : 'false');
+                     line.setAttribute('data-text-underline', this.currentLinkageConfig.textStyle.underline ? 'true' : 'false');
+                  }
             }
         }
         
@@ -4524,13 +4909,28 @@ class GlycanDrawer {
             finalTextFontFamily = connection.getAttribute('data-text-font-family') || document.getElementById('linkageTextFontFamily')?.value || 'Arial';
         }
         if (finalTextBold === undefined) {
-            finalTextBold = connection.getAttribute('data-text-bold') === 'true' || document.getElementById('linkageTextBoldBtn')?.classList.contains('active') || false;
+            const attr = connection.getAttribute('data-text-bold');
+            if (attr !== null) {
+                finalTextBold = attr === 'true';
+            } else {
+                finalTextBold = document.getElementById('linkageTextBoldBtn')?.classList.contains('active') || false;
+            }
         }
         if (finalTextItalic === undefined) {
-            finalTextItalic = connection.getAttribute('data-text-italic') === 'true' || document.getElementById('linkageTextItalicBtn')?.classList.contains('active') || false;
+            const attr = connection.getAttribute('data-text-italic');
+            if (attr !== null) {
+                finalTextItalic = attr === 'true';
+            } else {
+                finalTextItalic = document.getElementById('linkageTextItalicBtn')?.classList.contains('active') || false;
+            }
         }
         if (finalTextUnderline === undefined) {
-            finalTextUnderline = connection.getAttribute('data-text-underline') === 'true' || document.getElementById('linkageTextUnderlineBtn')?.classList.contains('active') || false;
+            const attr = connection.getAttribute('data-text-underline');
+            if (attr !== null) {
+                finalTextUnderline = attr === 'true';
+            } else {
+                finalTextUnderline = document.getElementById('linkageTextUnderlineBtn')?.classList.contains('active') || false;
+            }
         }
         if (!finalTextOpacity) {
             finalTextOpacity = connection.getAttribute('data-text-opacity') || document.getElementById('linkageTextOpacity')?.value || '1';
@@ -4577,6 +4977,7 @@ class GlycanDrawer {
             configText.classList.add('linkage-label');
             configText.setAttribute('data-connection-id', connectionId);
             configText.setAttribute('data-linkage-part', 'config');
+            configText.setAttribute('id', `${connectionId}-config-text`);
             this.canvas.appendChild(configText);
         }
         
@@ -4617,6 +5018,7 @@ class GlycanDrawer {
             positionText.classList.add('linkage-label');
             positionText.setAttribute('data-connection-id', connectionId);
             positionText.setAttribute('data-linkage-part', 'position');
+            positionText.setAttribute('id', `${connectionId}-position-text`);
             this.canvas.appendChild(positionText);
         }
         
@@ -4653,12 +5055,22 @@ class GlycanDrawer {
     }
     
     // Update linkage information for selected connection(s)
-    updateConnectionLinkage(linkage) {
+    updateConnectionLinkage(linkage, selectedConnections = null) {
         const normalizedLinkage = this.normalizeLinkage(linkage);
-        
-        this.selectedConnections.forEach(connection => {
+
+        // Use provided connections or fall back to legacy selection for backward compatibility
+        const connections = selectedConnections || Array.from(this.selectedConnections || []);
+
+        connections.forEach(connection => {
+            // Record before state if we're in an undo/redo step
+            const beforeData = this.createObjectData(connection);
+
             connection.setAttribute('data-linkage', normalizedLinkage);
             this.updateLinkageText(connection);
+
+            // Record after state if we're in an undo/redo step
+            const afterData = this.createObjectData(connection);
+            this.recordObjectModified(connection.getAttribute('id'), beforeData, afterData);
         });
     }
     
@@ -5638,6 +6050,7 @@ class GlycanDrawer {
         const firstTextSize = firstConn.getAttribute('data-text-size') || '12';
         const firstTextColorRaw = firstConn.getAttribute('data-text-color') || '#000000';
         const firstTextColor = this.normalizeColorToHex(firstTextColorRaw); // Convert to hex format
+        const firstTextOpacity = parseFloat(firstConn.getAttribute('data-text-opacity')) || 1;
         
         // Determine style from dash array
         let firstStyle = 'solid';
@@ -5652,7 +6065,7 @@ class GlycanDrawer {
         
         // Check if all connections have same values
         let mixedLinkage = false, mixedWidth = false, mixedColor = false, mixedOpacity = false;
-        let mixedStyle = false, mixedVisible = false, mixedTextSize = false, mixedTextColor = false;
+        let mixedStyle = false, mixedVisible = false, mixedTextSize = false, mixedTextColor = false, mixedTextOpacity = false;
         
         for (let i = 1; i < connections.length; i++) {
             const conn = connections[i];
@@ -5672,6 +6085,8 @@ class GlycanDrawer {
             const connTextColorRaw = conn.getAttribute('data-text-color') || '#000000';
             const connTextColor = this.normalizeColorToHex(connTextColorRaw);
             if (connTextColor !== firstTextColor) mixedTextColor = true;
+            
+            if ((parseFloat(conn.getAttribute('data-text-opacity')) || 1) !== firstTextOpacity) mixedTextOpacity = true;
             
             const dashArray = conn.style.strokeDasharray || conn.getAttribute('stroke-dasharray') || '';
             let style = 'solid';
@@ -5699,6 +6114,8 @@ class GlycanDrawer {
         const linkageTextSizeValue = document.getElementById('linkageTextSizeValue');
         const linkageTextColor = document.getElementById('linkageTextColor');
         const linkageTextColorHex = document.getElementById('linkageTextColorHex');
+        const linkageTextOpacity = document.getElementById('linkageTextOpacity');
+        const linkageTextOpacityValue = document.getElementById('linkageTextOpacityValue');
         
         if (linkageInput) {
             linkageInput.value = mixedLinkage ? '' : firstLinkage;
@@ -5753,6 +6170,11 @@ class GlycanDrawer {
             }
         }
         
+        if (linkageTextOpacity && linkageTextOpacityValue) {
+            linkageTextOpacity.value = mixedTextOpacity ? '1' : firstTextOpacity;
+            linkageTextOpacityValue.textContent = mixedTextOpacity ? '混合' : Math.round(firstTextOpacity * 100) + '%';
+        }
+        
         // Update style buttons
         document.querySelectorAll('.connection-style-btn').forEach(btn => {
             btn.classList.toggle('active', !mixedStyle && btn.dataset.style === firstStyle);
@@ -5766,7 +6188,45 @@ class GlycanDrawer {
         document.querySelectorAll('.color-btn-compact[data-target="linkageTextColor"]').forEach(btn => {
             btn.classList.toggle('active', !mixedTextColor && btn.dataset.color.toLowerCase() === firstTextColor.toLowerCase());
         });
-        
+
+        // Sync bold/italic/underline buttons based on selected connections.
+        try {
+            const boldBtn = document.getElementById('linkageTextBoldBtn');
+            const italicBtn = document.getElementById('linkageTextItalicBtn');
+            const underlineBtn = document.getElementById('linkageTextUnderlineBtn');
+
+            if (connections.length > 0) {
+                let boldCount = 0, italicCount = 0, underlineCount = 0;
+                connections.forEach(conn => {
+                    const b = conn.getAttribute('data-text-bold');
+                    const i = conn.getAttribute('data-text-italic');
+                    const u = conn.getAttribute('data-text-underline');
+                    if (b === 'true') boldCount++;
+                    if (i === 'true') italicCount++;
+                    if (u === 'true') underlineCount++;
+                });
+
+                const total = connections.length;
+                if (boldBtn) {
+                    if (boldCount === total) { boldBtn.classList.add('active'); boldBtn.removeAttribute('data-mixed'); }
+                    else if (boldCount === 0) { boldBtn.classList.remove('active'); boldBtn.removeAttribute('data-mixed'); }
+                    else { boldBtn.classList.remove('active'); boldBtn.setAttribute('data-mixed', 'true'); }
+                }
+                if (italicBtn) {
+                    if (italicCount === total) { italicBtn.classList.add('active'); italicBtn.removeAttribute('data-mixed'); }
+                    else if (italicCount === 0) { italicBtn.classList.remove('active'); italicBtn.removeAttribute('data-mixed'); }
+                    else { italicBtn.classList.remove('active'); italicBtn.setAttribute('data-mixed', 'true'); }
+                }
+                if (underlineBtn) {
+                    if (underlineCount === total) { underlineBtn.classList.add('active'); underlineBtn.removeAttribute('data-mixed'); }
+                    else if (underlineCount === 0) { underlineBtn.classList.remove('active'); underlineBtn.removeAttribute('data-mixed'); }
+                    else { underlineBtn.classList.remove('active'); underlineBtn.setAttribute('data-mixed', 'true'); }
+                }
+            }
+        } catch (e) {
+            console.error('Error syncing linkage style buttons:', e);
+        }
+
         this.isUpdatingUI = false;
     }
     
@@ -7186,9 +7646,6 @@ class GlycanDrawer {
         
         if (connections.length === 0) return;
 
-        // Start recording step for undo/redo
-        this.startStep('Change connection style');
-
         connections.forEach(conn => {
             // Record before state
             const beforeData = this.createObjectData(conn);
@@ -7214,9 +7671,6 @@ class GlycanDrawer {
             const afterData = this.createObjectData(conn);
             this.recordObjectModified(conn.getAttribute('id'), beforeData, afterData);
         });
-        
-        // Finish recording step
-        this.finishStep();
     }
     
     applyConnectionOpacity() {
@@ -7249,62 +7703,47 @@ class GlycanDrawer {
         this.finishStep();
     }
     
+    applyConnectionOpacityWithoutStep() {
+        // Prevent applying opacity during UI updates
+        if (this.isUpdatingUI) return;
+        
+        // Only work in select mode with selected connections
+        if (this.currentTool !== 'select') return;
+        
+        const opacity = document.getElementById('linkageOpacity')?.value || '1';
+        const connections = this.selectedConnections ? Array.from(this.selectedConnections) : [];
+        
+        if (connections.length === 0) return;
+
+        connections.forEach(conn => {
+            conn.style.setProperty('stroke-opacity', opacity, 'important');
+        });
+    }
+    
     applyLinkageStyle() {
         // Only work in select mode
         if (this.currentTool !== 'select') return;
         
-        const width = document.getElementById('connectionStrokeWidth')?.value || '2';
-        const color = document.getElementById('connectionColor')?.value || '#000000';
         const textSize = document.getElementById('linkageTextSize')?.value || '12';
         const textColor = document.getElementById('linkageTextColor')?.value || '#000000';
         const textFontFamily = document.getElementById('linkageTextFontFamily')?.value || 'Arial';
         const textOpacity = document.getElementById('linkageTextOpacity')?.value || '1';
-        const opacity = document.getElementById('linkageOpacity')?.value || '1';
         
         // Get text style states
         const textBold = document.getElementById('linkageTextBoldBtn')?.classList.contains('active') || false;
         const textItalic = document.getElementById('linkageTextItalicBtn')?.classList.contains('active') || false;
         const textUnderline = document.getElementById('linkageTextUnderlineBtn')?.classList.contains('active') || false;
         
-        // Get active style button for dash pattern
-        const styleBtn = document.querySelector('.connection-style-btn.active');
-        const style = styleBtn ? styleBtn.dataset.style : 'solid';
-        
-        // Apply styles to selected connections
+        // Apply styles to selected connections (UI handlers are responsible for undo recording)
         if (this.selectedConnections) {
             const connections = Array.from(this.selectedConnections);
-            
             if (connections.length === 0) return;
 
-            // Start recording step for undo/redo
-            this.startStep('Change linkage style');
-
-            this.selectedConnections.forEach(conn => {
-                // Record before state
-                const beforeData = this.createObjectData(conn);
-                
-                // Apply connection line styles
-                conn.style.setProperty('stroke-width', width, 'important');
-                const normalizedLinkageStrokeColor = this.normalizeColorToHex(color);
-                conn.style.setProperty('stroke', normalizedLinkageStrokeColor, 'important');
-                conn.style.setProperty('stroke-opacity', opacity, 'important');
-                
-                // Apply dash pattern based on style
-                switch (style) {
-                    case 'dashed':
-                        conn.style.setProperty('stroke-dasharray', `${width * 4},${width * 2}`, 'important');
-                        break;
-                    case 'dotted':
-                        conn.style.setProperty('stroke-dasharray', `${width},${width}`, 'important');
-                        break;
-                    default: // solid
-                        conn.style.removeProperty('stroke-dasharray');
-                }
-                
+            connections.forEach(conn => {
                 // Update linkage text display with new styles
                 this.updateLinkageText(conn, textSize, textColor, textFontFamily, textBold, textItalic, textUnderline, textOpacity);
-                
-                // Store text style attributes on the connection for undo/redo
+
+                // Store text style attributes on the connection
                 conn.setAttribute('data-text-size', textSize);
                 conn.setAttribute('data-text-color', textColor);
                 conn.setAttribute('data-text-font-family', textFontFamily);
@@ -7312,15 +7751,34 @@ class GlycanDrawer {
                 conn.setAttribute('data-text-italic', textItalic ? 'true' : 'false');
                 conn.setAttribute('data-text-underline', textUnderline ? 'true' : 'false');
                 conn.setAttribute('data-text-opacity', textOpacity);
-                
-                // Record after state
-                const afterData = this.createObjectData(conn);
-                this.recordObjectModified(conn.getAttribute('id'), beforeData, afterData);
             });
-            
-            // Finish recording step
-            this.finishStep();
         }
+    }
+
+    applyLinkageStyleWithoutStep() {
+        // Prevent applying styles during UI updates
+        if (this.isUpdatingUI) return;
+        if (this.currentTool !== 'select') return;
+
+        const textSize = document.getElementById('linkageTextSize')?.value || '12';
+        const textColor = document.getElementById('linkageTextColor')?.value || '#000000';
+        const textFontFamily = document.getElementById('linkageTextFontFamily')?.value || 'Arial';
+        const textOpacity = document.getElementById('linkageTextOpacity')?.value || '1';
+        const textBold = document.getElementById('linkageTextBoldBtn')?.classList.contains('active') || false;
+        const textItalic = document.getElementById('linkageTextItalicBtn')?.classList.contains('active') || false;
+        const textUnderline = document.getElementById('linkageTextUnderlineBtn')?.classList.contains('active') || false;
+
+        if (!this.selectedConnections) return;
+        this.selectedConnections.forEach(conn => {
+            this.updateLinkageText(conn, textSize, textColor, textFontFamily, textBold, textItalic, textUnderline, textOpacity);
+            conn.setAttribute('data-text-size', textSize);
+            conn.setAttribute('data-text-color', textColor);
+            conn.setAttribute('data-text-font-family', textFontFamily);
+            conn.setAttribute('data-text-bold', textBold ? 'true' : 'false');
+            conn.setAttribute('data-text-italic', textItalic ? 'true' : 'false');
+            conn.setAttribute('data-text-underline', textUnderline ? 'true' : 'false');
+            conn.setAttribute('data-text-opacity', textOpacity);
+        });
     }
     
     // Apply linkage text visibility to selected connections
@@ -7343,12 +7801,16 @@ class GlycanDrawer {
     
     // Apply linkage information to selected connections
     applyLinkageToConnections(linkage) {
-        if (this.selectedConnections.size === 0) {
+        const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+
+        if (selectedConnections.length === 0) {
             return;
         }
-        
-        this.updateConnectionLinkage(linkage);
-        
+
+        this.startStep('Apply linkage');
+        this.updateConnectionLinkage(linkage, selectedConnections);
+        this.finishStep();
+
         // Update UI to show the applied linkage
         const linkageInput = document.getElementById('linkageInput');
         if (linkageInput) {
@@ -7357,27 +7819,40 @@ class GlycanDrawer {
     }
     
     reverseLinkageDirection() {
-        if (this.selectedConnections.size === 0) {
+        const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+
+        if (selectedConnections.length === 0) {
             return;
         }
-        
+
+        this.startStep('Reverse linkage direction');
+
         // Reverse each selected connection
-        this.selectedConnections.forEach(connection => {
+        selectedConnections.forEach(connection => {
+            // Record before state
+            const beforeData = this.createObjectData(connection);
+
             // Get current coordinates
             const x1 = parseFloat(connection.getAttribute('x1'));
             const y1 = parseFloat(connection.getAttribute('y1'));
             const x2 = parseFloat(connection.getAttribute('x2'));
             const y2 = parseFloat(connection.getAttribute('y2'));
-            
+
             // Swap the coordinates
             connection.setAttribute('x1', x2);
             connection.setAttribute('y1', y2);
             connection.setAttribute('x2', x1);
             connection.setAttribute('y2', y1);
-            
+
             // Update linkage text positions if they exist
             this.updateLinkageText(connection);
+
+            // Record after state
+            const afterData = this.createObjectData(connection);
+            this.recordObjectModified(connection.getAttribute('id'), beforeData, afterData);
         });
+
+        this.finishStep();
     }
     
     // Initialize the new shape selector system
@@ -10506,6 +10981,12 @@ class GlycanDrawer {
             modified: []    // Array of {before, after} for modified objects
         };
         this.isRecordingStep = true;
+        // Debug: log when a step begins
+        try {
+            console.log(`startStep: "${description}" | undoStack=${this.undoStack ? this.undoStack.length : 0} redoStack=${this.redoStack ? this.redoStack.length : 0}`);
+        } catch (e) {
+            // ignore
+        }
     }
     
     // Record an object addition
@@ -10543,10 +11024,22 @@ class GlycanDrawer {
         if (!this.isRecordingStep) {
             this.startStep('Auto-created step');
         }
-        
+        // Debug: log key before/after fields for connections (helps trace color/style steps)
+        try {
+            const beforeSummary = beforeData && beforeData.type === 'connection' ?
+                `conn(before) id=${objectId} textColor=${beforeData.textColor} textBold=${beforeData.textBold} textItalic=${beforeData.textItalic} textUnderline=${beforeData.textUnderline} textSize=${beforeData.textSize}` :
+                (beforeData ? `obj(before) id=${objectId} type=${beforeData.type}` : `obj(before) id=${objectId} <null>`);
+            const afterSummary = afterData && afterData.type === 'connection' ?
+                `conn(after) id=${objectId} textColor=${afterData.textColor} textBold=${afterData.textBold} textItalic=${afterData.textItalic} textUnderline=${afterData.textUnderline} textSize=${afterData.textSize}` :
+                (afterData ? `obj(after) id=${objectId} type=${afterData.type}` : `obj(after) id=${objectId} <null>`);
+            console.log('recordObjectModified:', this.currentStep ? `step="${this.currentStep.description}"` : '', beforeSummary, '->', afterSummary);
+        } catch (e) {
+            // ignore logging errors
+        }
+
         // Update objectList with new data
         this.objectList.set(objectId, afterData);
-        
+
         // Record in current step
         this.currentStep.modified.push({
             id: objectId,
@@ -11052,7 +11545,11 @@ class GlycanDrawer {
             if (objectData.styleStroke) element.style.setProperty('stroke', objectData.styleStroke, 'important');
             if (objectData.styleStrokeWidth) element.style.setProperty('stroke-width', objectData.styleStrokeWidth, 'important');
             if (objectData.styleStrokeOpacity) element.style.setProperty('stroke-opacity', objectData.styleStrokeOpacity, 'important');
-            if (objectData.styleStrokeDasharray) element.style.setProperty('stroke-dasharray', objectData.styleStrokeDasharray, 'important');
+            if (objectData.styleStrokeDasharray) {
+                element.style.setProperty('stroke-dasharray', objectData.styleStrokeDasharray, 'important');
+            } else if (objectData.hasOwnProperty('styleStrokeDasharray')) {
+                element.style.removeProperty('stroke-dasharray');
+            }
             
             if (objectData.linkage) element.setAttribute('data-linkage', objectData.linkage);
             element.setAttribute('data-reversed', objectData.reversed ? 'true' : 'false');
@@ -11060,14 +11557,54 @@ class GlycanDrawer {
                 element.setAttribute('data-linkage-visible', objectData.linkageVisible);
             }
             
-            // Restore linkage text style attributes
-            if (objectData.textSize) element.setAttribute('data-text-size', objectData.textSize);
-            if (objectData.textColor) element.setAttribute('data-text-color', objectData.textColor);
-            if (objectData.textFontFamily) element.setAttribute('data-text-font-family', objectData.textFontFamily);
-            if (objectData.textBold) element.setAttribute('data-text-bold', objectData.textBold);
-            if (objectData.textItalic) element.setAttribute('data-text-italic', objectData.textItalic);
-            if (objectData.textUnderline) element.setAttribute('data-text-underline', objectData.textUnderline);
-            if (objectData.textOpacity) element.setAttribute('data-text-opacity', objectData.textOpacity);
+            // Restore linkage text style attributes (handle explicit false/null and removal)
+            if (objectData.textSize !== null && objectData.textSize !== undefined) {
+                element.setAttribute('data-text-size', objectData.textSize);
+            } else {
+                element.removeAttribute('data-text-size');
+            }
+            if (objectData.textColor !== null && objectData.textColor !== undefined) {
+                element.setAttribute('data-text-color', objectData.textColor);
+            } else {
+                element.removeAttribute('data-text-color');
+            }
+            if (objectData.textFontFamily !== null && objectData.textFontFamily !== undefined) {
+                element.setAttribute('data-text-font-family', objectData.textFontFamily);
+            } else {
+                element.removeAttribute('data-text-font-family');
+            }
+            if (objectData.textBold !== null && objectData.textBold !== undefined) {
+                element.setAttribute('data-text-bold', objectData.textBold);
+            } else {
+                element.removeAttribute('data-text-bold');
+            }
+            if (objectData.textItalic !== null && objectData.textItalic !== undefined) {
+                element.setAttribute('data-text-italic', objectData.textItalic);
+            } else {
+                element.removeAttribute('data-text-italic');
+            }
+            if (objectData.textUnderline !== null && objectData.textUnderline !== undefined) {
+                element.setAttribute('data-text-underline', objectData.textUnderline);
+            } else {
+                element.removeAttribute('data-text-underline');
+            }
+            if (objectData.textOpacity !== null && objectData.textOpacity !== undefined) {
+                element.setAttribute('data-text-opacity', objectData.textOpacity);
+            } else {
+                element.removeAttribute('data-text-opacity');
+            }
+
+            // Update linkage text display after restoring attributes so visual <text> elements reflect restored values
+            this.updateLinkageText(element);
+
+            // If this connection is currently selected, ensure the linkage controls/buttons sync to the restored data
+            try {
+                if (this.selectedConnections && this.selectedConnections.has(element)) {
+                    this.updateLinkageControlsFromSelection();
+                }
+            } catch (e) {
+                // ignore UI sync errors
+            }
         }
     }
     
@@ -11075,7 +11612,23 @@ class GlycanDrawer {
     removeObjectFromDOM(objectId) {
         const element = document.getElementById(objectId);
         if (element) {
-            element.remove();
+        // If removing a connection, also remove its linkage text elements
+        if (element.tagName.toLowerCase() === 'line' && 
+            ((element.getAttribute('data-parent') && element.getAttribute('data-child')) ||
+             (element.getAttribute('data-start') && element.getAttribute('data-end')))) {
+            // Remove linkage text for this specific connection
+            const linkageTexts = this.canvas.querySelectorAll(`text[data-connection-id="${objectId}"]`);
+            linkageTexts.forEach(text => text.remove());
+            
+            // Also clean up any orphaned linkage text (text elements with linkage-label class that reference non-existent connections)
+            const allLinkageTexts = this.canvas.querySelectorAll('text.linkage-label');
+            allLinkageTexts.forEach(text => {
+                const connId = text.getAttribute('data-connection-id');
+                if (connId && !document.getElementById(connId)) {
+                    text.remove();
+                }
+            });
+        }            element.remove();
         }
         
         // Also remove any related elements (highlights, etc.)
@@ -11105,8 +11658,10 @@ class GlycanDrawer {
         console.log('Undoing step:', step.description, step);
         console.log('Step details - added:', step.added.length, 'removed:', step.removed.length, 'modified:', step.modified.length);
         
-        // Clear all selections to avoid issues
-        this.clearAllSelections();
+    // Preserve current selection so we can restore it after undo
+    const previouslySelectedIds = Array.from(this.selectedElements || []).map(el => el.getAttribute ? el.getAttribute('id') : null).filter(id => id);
+    // Clear all selections to avoid issues while restoring
+    this.clearAllSelections();
         
         // Process removals (re-add removed objects) - sort by dependency order
         // Sugars must be restored before connections that depend on them
@@ -11142,6 +11697,45 @@ class GlycanDrawer {
         // Update UI
         this.updateStylePanel();
         this.updateRightPanel();
+
+        // Restore previous selection (if those elements still exist) so UI controls reflect restored object states
+        if (previouslySelectedIds && previouslySelectedIds.length > 0) {
+            previouslySelectedIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    try {
+                        // Re-select element without clearing others
+                        this.selectElement(el, true);
+                    } catch (e) {
+                        // Fallback: directly add to selectedElements if selectElement fails
+                        if (!this.selectedElements) this.selectedElements = new Set();
+                        this.selectedElements.add(el);
+                    }
+                }
+            });
+
+            // Ensure legacy selection sets are in sync (so selectedConnections is populated)
+            try {
+                if (typeof this.updateLegacySelectionStates === 'function') {
+                    this.updateLegacySelectionStates();
+                }
+            } catch (e) {
+                // ignore
+            }
+
+            // If any selected connections exist, refresh linkage controls so buttons/checkboxes match restored attributes
+            if (this.selectedConnections && this.selectedConnections.size > 0) {
+                try {
+                    this.updateLinkageControlsFromSelection();
+                } catch (e) {
+                    // Fallback to general right panel update
+                    this.updateRightPanel();
+                }
+            } else {
+                // Ensure right panel syncs if selection contains other element types
+                this.updateRightPanel();
+            }
+        }
         
         console.log('Undo completed');
     }
