@@ -88,9 +88,13 @@ class GlycanDrawer {
             reversed: false  // Track if linkage direction is reversed
         };
         
-        // Keyboard state tracking
-        this.isCtrlPressed = false;
-        this.isShiftPressed = false;
+    // Keyboard state tracking
+    this.isCtrlPressed = false; // kept for backward compatibility
+    this.isShiftPressed = false;
+    // Platform detection for primary modifier (Ctrl on Windows/Linux, Command on macOS)
+    this.isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+    // Use this flag to check the 'primary' modifier key in a cross-platform way
+    this.isPrimaryModifierPressed = false;
         this.clipboard = {
             sugars: [],
             texts: [],
@@ -2188,8 +2192,8 @@ class GlycanDrawer {
         const x = coords.x;
         const y = coords.y;
         
-        // Store modifier keys state for dragging
-        this.dragWithCtrl = e.ctrlKey;
+    // Store modifier keys state for dragging (primary modifier: Ctrl or Command)
+    this.dragWithCtrl = e.ctrlKey || e.metaKey;
         this.dragWithShift = e.shiftKey;
         
         // Find clicked element using unified system
@@ -10112,14 +10116,15 @@ class GlycanDrawer {
 
     // Keyboard event handlers
     handleKeyDown(e) {
-        // Track modifier keys
-        this.isCtrlPressed = e.ctrlKey;
+        // Track modifier keys (primary modifier: Ctrl on Windows/Linux, Command(meta) on macOS)
+        this.isCtrlPressed = e.ctrlKey; // backward-compatible
+        this.isPrimaryModifierPressed = e.ctrlKey || e.metaKey;
         this.isShiftPressed = e.shiftKey;
         
         // Don't handle shortcuts when editing text
         if (this.isEditingText) {
             // Allow text formatting shortcuts even when editing
-            if (e.ctrlKey) {
+            if (e.ctrlKey || e.metaKey) {
                 switch (e.key.toLowerCase()) {
                     case 'b':
                         e.preventDefault();
@@ -10146,8 +10151,8 @@ class GlycanDrawer {
             return;
         }
         
-        // Handle keyboard shortcuts
-        if (e.ctrlKey) {
+    // Handle keyboard shortcuts (use primary modifier)
+    if (e.ctrlKey || e.metaKey) {
             switch (e.key.toLowerCase()) {
                 case 'c':
                     e.preventDefault();
@@ -10165,7 +10170,7 @@ class GlycanDrawer {
                     e.preventDefault();
                     this.undo();
                     break;
-                case 'y':
+                    case 'y':
                     e.preventDefault();
                     this.redo();
                     break;
@@ -10248,8 +10253,9 @@ class GlycanDrawer {
     }
     
     handleKeyUp(e) {
-        // Update modifier key states
+        // Update modifier key states (primary modifier included)
         this.isCtrlPressed = e.ctrlKey;
+        this.isPrimaryModifierPressed = e.ctrlKey || e.metaKey;
         this.isShiftPressed = e.shiftKey;
     }
     
@@ -10722,7 +10728,17 @@ class GlycanDrawer {
                     strokeDasharray: connection.style.strokeDasharray || connection.getAttribute('stroke-dasharray') || getComputedStyle(connection).strokeDasharray,
                     // Preserve linkage-specific attributes
                     linkageId: connection.getAttribute('data-linkage-id'),
-                    linkageType: connection.getAttribute('data-linkage')
+                    linkageType: connection.getAttribute('data-linkage'),
+                    // Preserve linkage text appearance and visibility
+                    textSize: connection.getAttribute('data-text-size'),
+                    textColor: connection.getAttribute('data-text-color'),
+                    textFontFamily: connection.getAttribute('data-text-font-family'),
+                    textBold: connection.getAttribute('data-text-bold'),
+                    textItalic: connection.getAttribute('data-text-italic'),
+                    textUnderline: connection.getAttribute('data-text-underline'),
+                    textOpacity: connection.getAttribute('data-text-opacity'),
+                    linkageVisible: connection.getAttribute('data-linkage-visible'),
+                    reversed: connection.getAttribute('data-reversed')
                 };
                 
                 connectionsToCopy.push(connectionCopy);
@@ -10788,6 +10804,7 @@ class GlycanDrawer {
         
         const pastedSugars = [];
         const pastedTexts = [];
+    const pastedConnections = [];
         
         // Paste sugars
         this.clipboard.sugars.forEach(sugarData => {
@@ -10889,6 +10906,22 @@ class GlycanDrawer {
                         if (connectionData.linkageType) {
                             newConnection.setAttribute('data-linkage', connectionData.linkageType);
                         }
+
+                        // Restore linkage text appearance and visibility attributes so updateLinkageText can use them
+                        if (connectionData.textSize) newConnection.setAttribute('data-text-size', connectionData.textSize);
+                        if (connectionData.textColor) newConnection.setAttribute('data-text-color', connectionData.textColor);
+                        if (connectionData.textFontFamily) newConnection.setAttribute('data-text-font-family', connectionData.textFontFamily);
+                        if (connectionData.textBold !== undefined && connectionData.textBold !== null) newConnection.setAttribute('data-text-bold', connectionData.textBold);
+                        if (connectionData.textItalic !== undefined && connectionData.textItalic !== null) newConnection.setAttribute('data-text-italic', connectionData.textItalic);
+                        if (connectionData.textUnderline !== undefined && connectionData.textUnderline !== null) newConnection.setAttribute('data-text-underline', connectionData.textUnderline);
+                        if (connectionData.textOpacity) newConnection.setAttribute('data-text-opacity', connectionData.textOpacity);
+                        if (connectionData.linkageVisible !== undefined && connectionData.linkageVisible !== null) newConnection.setAttribute('data-linkage-visible', connectionData.linkageVisible);
+                        if (connectionData.reversed !== undefined && connectionData.reversed !== null) newConnection.setAttribute('data-reversed', connectionData.reversed);
+
+                        // NOTE: Do not auto-create linkage text here; linkage labels are
+                        // recreated below from clipboard.linkageLabels. We restore the
+                        // connection's data-text-* attributes so the pasted labels can
+                        // pick them up when created.
                         
                         // Apply className (SVG elements require className.baseVal)
                         if (connectionData.className) {
@@ -10913,6 +10946,8 @@ class GlycanDrawer {
                         if (!connectionData.strokeOpacity || connectionData.strokeOpacity === '' || connectionData.strokeOpacity === 'none') {
                             newConnection.style.setProperty('stroke-opacity', '1', 'important');
                         }
+                        // Track pasted connection so we can ensure linkage text is updated
+                        pastedConnections.push(newConnection);
                     }
                 }
             }
@@ -10923,34 +10958,88 @@ class GlycanDrawer {
             // Find the new connection that corresponds to this label
             const newConnection = document.querySelector(`[data-linkage-id="${labelData.linkageId}"]`);
             if (newConnection) {
-                // Create new linkage label
+                // If the newer linkage text (config/position) already exists for the
+                // connection, skip creating a legacy single label to avoid duplicates.
+                const connId = newConnection.getAttribute('id');
+                if (connId && this.canvas.querySelector(`text[data-connection-id="${connId}"]`)) {
+                    // There are already linkage label(s) for this connection; skip
+                    return;
+                }
+
+                // Create new legacy-style linkage label and apply restored styles.
                 const newLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                newLabel.setAttribute('x', labelData.x + offsetX);
-                newLabel.setAttribute('y', labelData.y + offsetY);
-                newLabel.setAttribute('data-x', labelData.x + offsetX);
-                newLabel.setAttribute('data-y', labelData.y + offsetY);
+                const finalX = (labelData.x || 0) + offsetX;
+                const finalY = (labelData.y || 0) + offsetY;
+                newLabel.setAttribute('x', finalX);
+                newLabel.setAttribute('y', finalY);
+                newLabel.setAttribute('data-x', finalX);
+                newLabel.setAttribute('data-y', finalY);
                 newLabel.setAttribute('data-linkage-for', labelData.linkageId);
                 newLabel.textContent = labelData.content;
-                
-                // Apply saved styling
+
+                // Apply saved styling from labelData first
                 if (labelData.style) {
                     newLabel.setAttribute('style', labelData.style);
                 }
                 if (labelData.className) {
                     newLabel.className = labelData.className;
                 }
-                if (labelData.fill) {
-                    const normalizedFill = this.normalizeColorToHex(labelData.fill);
+
+                // Prefer connection-level saved attributes for final appearance if present
+                const connTextSize = newConnection.getAttribute('data-text-size') || labelData.fontSize;
+                const connTextColor = newConnection.getAttribute('data-text-color') || labelData.fill || labelData.style && (labelData.style.match(/fill:\s*([^;]+);?/) || [])[1];
+                const connFontFamily = newConnection.getAttribute('data-text-font-family') || labelData.style && (labelData.style.match(/font-family:\s*([^;]+);?/) || [])[1];
+                const connTextOpacity = newConnection.getAttribute('data-text-opacity') || null;
+                const connBold = newConnection.getAttribute('data-text-bold');
+                const connItalic = newConnection.getAttribute('data-text-italic');
+                const connUnderline = newConnection.getAttribute('data-text-underline');
+
+                if (connTextColor) {
+                    const normalizedFill = this.normalizeColorToHex(connTextColor);
                     newLabel.style.setProperty('fill', normalizedFill, 'important');
+                } else if (labelData.fill) {
+                    newLabel.style.setProperty('fill', this.normalizeColorToHex(labelData.fill), 'important');
                 }
-                if (labelData.fontSize) {
+
+                if (connTextSize) {
+                    // Ensure value ends with px if numeric
+                    const sizeStr = String(connTextSize).match(/\d+/) ? `${connTextSize}px` : connTextSize;
+                    newLabel.style.setProperty('font-size', sizeStr, 'important');
+                } else if (labelData.fontSize) {
                     newLabel.style.setProperty('font-size', labelData.fontSize, 'important');
                 }
-                
+
+                if (connFontFamily) {
+                    newLabel.style.setProperty('font-family', connFontFamily, 'important');
+                }
+
+                if (connTextOpacity) {
+                    newLabel.style.setProperty('fill-opacity', connTextOpacity, 'important');
+                }
+
+                if (connBold === 'true') {
+                    newLabel.style.setProperty('font-weight', 'bold', 'important');
+                }
+                if (connItalic === 'true') {
+                    newLabel.style.setProperty('font-style', 'italic', 'important');
+                }
+                if (connUnderline === 'true') {
+                    newLabel.style.setProperty('text-decoration', 'underline', 'important');
+                }
+
                 // Add to canvas
                 this.canvas.appendChild(newLabel);
             }
         });
+
+        // Ensure linkage text (config/position) is created for pasted connections
+        // Some pasted connections may rely on connection-level data-* attributes
+        // to render linkage text; call updateLinkageText to force creation.
+        try {
+            pastedConnections.forEach(conn => {
+                try { this.updateLinkageText(conn); } catch (e) { /* ignore */ }
+            });
+        } catch (e) {}
         
         // Update the style panel to reflect new selection
         this.updateStylePanel();
