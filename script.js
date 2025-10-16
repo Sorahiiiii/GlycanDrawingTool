@@ -1,8 +1,6 @@
 class GlycanDrawer {
     constructor() {
         this.canvas = document.getElementById('canvas');
-        this.undoBtn = document.getElementById('undoBtn');
-        this.redoBtn = document.getElementById('redoBtn');
         this.exportBtn = document.getElementById('exportBtn');
         this.clearBtn = document.getElementById('clearBtn');
         
@@ -70,11 +68,6 @@ class GlycanDrawer {
         // UI update flag to prevent style application during UI updates
         this.isUpdatingUI = false;
         
-        // Undo/Redo system
-        this.undoStack = [];
-        this.redoStack = [];
-        this.maxUndoSteps = 50; // Maximum number of undo steps
-        
         // Eraser states for continuous deletion
         this.isErasing = false;
         this.eraserTimer = null;
@@ -91,17 +84,32 @@ class GlycanDrawer {
             textSize: 12,
             textColor: '#000000',
             showText: false,  // Default: don't show linkage text for new connections
-            linkage: null  // Default linkage (will show as ??-? if not set)
+            linkage: null,  // Default linkage (will show as ??-? if not set)
+            reversed: false  // Track if linkage direction is reversed
         };
         
-        // Keyboard state tracking
-        this.isCtrlPressed = false;
-        this.isShiftPressed = false;
+    // Keyboard state tracking
+    this.isCtrlPressed = false; // kept for backward compatibility
+    this.isShiftPressed = false;
+    // Platform detection for primary modifier (Ctrl on Windows/Linux, Command on macOS)
+    this.isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+    // Use this flag to check the 'primary' modifier key in a cross-platform way
+    this.isPrimaryModifierPressed = false;
         this.clipboard = {
             sugars: [],
             texts: [],
             connections: []
         };
+        
+        // Undo/Redo System
+        this.objectList = new Map(); // Global object registry: id -> object data
+        this.undoStack = [];         // Array of steps for undo
+        this.redoStack = [];         // Array of steps for redo
+        this.maxHistorySize = 50;    // Maximum number of steps to keep
+        
+        // Step recording
+        this.currentStep = null;     // Current step being recorded
+        this.isRecordingStep = false; // Flag to track if we're recording a step
         
         // Workspace properties
         this.workspace = null;
@@ -125,7 +133,7 @@ class GlycanDrawer {
             'glcnac': { shape: 'square', color: '#0072BC', name: 'GlcNAc' },
             'galnac': { shape: 'square', color: '#FFD400', name: 'GalNAc' },
             'fuc': { shape: 'triangle', color: '#ED1C24', name: 'Fucose' },
-            'glca': { shape: 'diamond-divided-bottom', color: '#0072BC', name: 'GlcA' },
+            'glca': { shape: 'diamond-divided-top', color: '#0072BC', name: 'GlcA' },
             'sia': { shape: 'diamond', color: '#A54399', name: 'Sia' },
             'xyl': { shape: 'star-5', color: '#F47920', name: 'Xyl' }
         };
@@ -170,9 +178,14 @@ class GlycanDrawer {
         this.globalDragMouseUp = (e) => this.handleGlobalDragUp(e);
         
         // Add action button listeners
-        this.undoBtn.addEventListener('click', () => this.undo());
-        this.redoBtn.addEventListener('click', () => this.redo());
         this.clearBtn.addEventListener('click', () => this.clearCanvas());
+    // Undo/Redo buttons
+    this.undoBtn = document.getElementById('undoBtn');
+    this.redoBtn = document.getElementById('redoBtn');
+    if (this.undoBtn) this.undoBtn.addEventListener('click', () => this.undo());
+    if (this.redoBtn) this.redoBtn.addEventListener('click', () => this.redo());
+    // Initialize button disabled state
+    try { this.updateUndoRedoButtons(); } catch (e) {}
         
         // Add export option listeners
         const exportOptions = document.querySelectorAll('.export-option');
@@ -227,8 +240,10 @@ class GlycanDrawer {
         // Initialize left panel visibility
         this.updateLeftPanel();
         
-        // Initialize undo/redo button states
-        this.updateUndoRedoButtons();
+        // Initialize object list for undo/redo system
+        this.initializeObjectList();
+        // Preset glycan setup (load templates)
+        this.setupPresetGlycans();
     }
     
     setupToolbar() {
@@ -256,6 +271,368 @@ class GlycanDrawer {
                 this.selectPreset(preset);
             });
         });
+    }
+
+    // New: preset glycan toolbar setup
+    setupPresetGlycans() {
+        this.presetTemplates = {}; // key -> DocumentFragment of SVG
+        this.activePreset = null; // {src, name}
+
+        const toolbar = document.getElementById('presetGlycanToolbar');
+        if (!toolbar) return;
+
+        // Bind clicks on thumbnails
+        toolbar.querySelectorAll('.preset-thumb').forEach(thumb => {
+            const src = thumb.dataset.presetSrc;
+            if (src) {
+                thumb.addEventListener('click', (e) => {
+                    // Toggle selection
+                    if (thumb.classList.contains('active')) {
+                        thumb.classList.remove('active');
+                        this.exitPresetMode();
+                    } else {
+                        toolbar.querySelectorAll('.preset-thumb').forEach(t => t.classList.remove('active'));
+                        thumb.classList.add('active');
+                        this.enterPresetMode(src);
+                    }
+                });
+                // Preload template
+                this.loadPresetSVG(src).catch(err => {
+                    console.warn('Failed to load preset SVG:', src, err);
+                });
+            }
+        });
+
+        // Esc key to cancel preset mode
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.activePreset) {
+                this.exitPresetMode();
+                document.querySelectorAll('.preset-thumb').forEach(t => t.classList.remove('active'));
+            }
+        });
+    }
+
+    async loadPresetSVG(src) {
+        if (this.presetTemplates[src]) return this.presetTemplates[src];
+
+        // Check for embedded template in DOM to avoid fetch/CORS issues when opened via file://
+        try {
+            const base = src.split('/').pop().split('?')[0].replace(/\.[^.]+$/, ''); // e.g. 'test-glycan'
+            const embeddedId = `embedded-${base}`;
+            const embedded = document.getElementById(embeddedId);
+            if (embedded) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(embedded.textContent || embedded.innerHTML, 'image/svg+xml');
+                const svg = doc.querySelector('svg');
+                if (svg) {
+                    // Store the original template but return a clone to avoid mutations
+                    this.presetTemplates[src] = svg;
+                    return document.importNode(svg, true);
+                }
+            }
+        } catch (e) {
+            // fall through to fetch
+            console.warn('Embedded preset parse failed, will try fetch:', e);
+        }
+
+        // Fallback to fetch (for HTTP/HTTPS serving)
+        try {
+            const resp = await fetch(src);
+            const text = await resp.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(text, 'image/svg+xml');
+            const svg = doc.querySelector('svg');
+            if (!svg) throw new Error('No svg root found');
+            // Store original and return a clone so caller can modify without affecting cache
+            this.presetTemplates[src] = svg;
+            return document.importNode(svg, true);
+        } catch (err) {
+            console.error('Error loading preset SVG', src, err);
+            throw err;
+        }
+    }
+
+    // Compute the minimum x/y coordinates used by the template's graphical elements
+    computeTemplateOrigin(svgRoot) {
+        let minX = Infinity;
+        let minY = Infinity;
+
+        function consider(x, y) {
+            if (typeof x === 'number' && typeof y === 'number') {
+                if (x < minX) minX = x;
+                if (y < minY) minY = y;
+            }
+        }
+
+        function scan(node) {
+            if (!node || node.nodeType !== 1) return;
+            const tag = node.tagName.toLowerCase();
+            if (tag === 'circle' || tag === 'ellipse') {
+                const cx = parseFloat(node.getAttribute('cx')) || 0;
+                const cy = parseFloat(node.getAttribute('cy')) || 0;
+                const r = parseFloat(node.getAttribute('r')) || 0;
+                consider(cx - r, cy - r);
+            } else if (tag === 'rect') {
+                const x = parseFloat(node.getAttribute('x')) || 0;
+                const y = parseFloat(node.getAttribute('y')) || 0;
+                consider(x, y);
+            } else if (tag === 'line') {
+                const x1 = parseFloat(node.getAttribute('x1')) || 0;
+                const y1 = parseFloat(node.getAttribute('y1')) || 0;
+                const x2 = parseFloat(node.getAttribute('x2')) || 0;
+                const y2 = parseFloat(node.getAttribute('y2')) || 0;
+                consider(Math.min(x1, x2), Math.min(y1, y2));
+            } else if (tag === 'polygon' || tag === 'polyline') {
+                const pts = (node.getAttribute('points') || '').trim();
+                if (pts) {
+                    pts.split(/\s+/).forEach(pair => {
+                        const parts = pair.split(',');
+                        if (parts.length >= 2) consider(parseFloat(parts[0]) || 0, parseFloat(parts[1]) || 0);
+                    });
+                }
+            } else if (tag === 'g' || tag === 'svg') {
+                Array.from(node.children).forEach(child => scan(child));
+                return;
+            } else if (tag === 'use') {
+                // try to read x/y attributes
+                const x = parseFloat(node.getAttribute('x')) || 0;
+                const y = parseFloat(node.getAttribute('y')) || 0;
+                consider(x, y);
+            } else if (tag === 'path') {
+                // skip complex path parsing; assume it sits near origin if no other hints
+            }
+
+            // Also descend into children for composite nodes
+            Array.from(node.children).forEach(child => scan(child));
+        }
+
+        scan(svgRoot);
+
+        if (!isFinite(minX)) minX = 0;
+        if (!isFinite(minY)) minY = 0;
+        return { minX, minY };
+    }
+
+    // Shift basic coordinate attributes of common SVG elements by dx/dy
+    shiftElementCoordinates(node, dx, dy) {
+        if (!node || node.nodeType !== 1) return;
+        const tag = node.tagName.toLowerCase();
+        function shiftAttr(attr) {
+            if (node.hasAttribute(attr)) {
+                const v = parseFloat(node.getAttribute(attr)) || 0;
+                node.setAttribute(attr, (v - dx).toString());
+            }
+        }
+
+        if (tag === 'circle' || tag === 'ellipse') {
+            if (node.hasAttribute('cx')) node.setAttribute('cx', (parseFloat(node.getAttribute('cx') || 0) - dx).toString());
+            if (node.hasAttribute('cy')) node.setAttribute('cy', (parseFloat(node.getAttribute('cy') || 0) - dy).toString());
+        } else if (tag === 'rect') {
+            if (node.hasAttribute('x')) node.setAttribute('x', (parseFloat(node.getAttribute('x') || 0) - dx).toString());
+            if (node.hasAttribute('y')) node.setAttribute('y', (parseFloat(node.getAttribute('y') || 0) - dy).toString());
+        } else if (tag === 'line') {
+            if (node.hasAttribute('x1')) node.setAttribute('x1', (parseFloat(node.getAttribute('x1') || 0) - dx).toString());
+            if (node.hasAttribute('y1')) node.setAttribute('y1', (parseFloat(node.getAttribute('y1') || 0) - dy).toString());
+            if (node.hasAttribute('x2')) node.setAttribute('x2', (parseFloat(node.getAttribute('x2') || 0) - dx).toString());
+            if (node.hasAttribute('y2')) node.setAttribute('y2', (parseFloat(node.getAttribute('y2') || 0) - dy).toString());
+        } else if (tag === 'polygon' || tag === 'polyline') {
+            const pts = (node.getAttribute('points') || '').trim();
+            if (pts) {
+                const newPts = pts.split(/\s+/).map(pair => {
+                    const parts = pair.split(',');
+                    if (parts.length >= 2) {
+                        const nx = (parseFloat(parts[0]) || 0) - dx;
+                        const ny = (parseFloat(parts[1]) || 0) - dy;
+                        return `${nx},${ny}`;
+                    }
+                    return pair;
+                }).join(' ');
+                node.setAttribute('points', newPts);
+            }
+        } else if (tag === 'g' || tag === 'svg') {
+            // If group has transform translate, try to incorporate it (best-effort)
+            const t = node.getAttribute('transform');
+            // For now, simply recurse children
+            Array.from(node.children).forEach(child => this.shiftElementCoordinates(child, dx, dy));
+            return;
+        }
+
+        // Recurse into children
+        Array.from(node.children).forEach(child => this.shiftElementCoordinates(child, dx, dy));
+    }
+
+    // Generate a unique id based on an original id, avoiding existing ids in the document
+    generateUniqueId(origId) {
+        if (!origId) return `id-${Date.now()}-${Math.floor(Math.random()*10000)}`;
+        this._idCounter = this._idCounter || 1;
+        let candidate;
+        do {
+            candidate = `${origId}-${this._idCounter++}`;
+        } while (document.getElementById(candidate));
+        return candidate;
+    }
+
+    // Extract numeric part from sugar id like 'sugar-12' -> 12. Returns NaN if not found.
+    getSugarNumberFromId(id) {
+        if (!id || typeof id !== 'string') return NaN;
+        const m = id.match(/sugar-?(\d+)$/i);
+        if (m) return parseInt(m[1], 10);
+        return NaN;
+    }
+
+    // Compute deterministic connection id in the form 'connection-<smaller>-<larger>' based on sugar ids
+    computeConnectionId(idA, idB) {
+        const a = this.getSugarNumberFromId(idA);
+        const b = this.getSugarNumberFromId(idB);
+        if (!isNaN(a) && !isNaN(b)) {
+            const min = Math.min(a, b);
+            const max = Math.max(a, b);
+            return `connection-${min}-${max}`;
+        }
+        // Fallback: if we can't parse numbers, create a unique-ish deterministic id using the raw ids
+        const safeA = (idA || '').replace(/[^A-Za-z0-9_-]/g, '_');
+        const safeB = (idB || '').replace(/[^A-Za-z0-9_-]/g, '_');
+        return `connection-${safeA}-${safeB}`;
+    }
+
+    // Collect all nodes under a node (or array of nodes)
+    collectNodes(rootOrArray) {
+        const nodes = [];
+        const pushNode = (n) => {
+            nodes.push(n);
+            Array.from(n.children || []).forEach(c => pushNode(c));
+        };
+        if (Array.isArray(rootOrArray)) {
+            rootOrArray.forEach(r => pushNode(r));
+        } else {
+            pushNode(rootOrArray);
+        }
+        return nodes;
+    }
+
+    // Build id map for a set of nodes (oldId -> newId)
+    // Compute next available sugar id like sugar-2, sugar-3 based on existing ids in the document and any assigned in idMap
+    getNextSugarId(existingMap) {
+        let max = 0;
+        const sugarRegex = /^sugar-?(\d+)$/i;
+
+        // Check existing document ids
+        Array.from(document.querySelectorAll('[id]')).forEach(el => {
+            const id = el.getAttribute('id');
+            if (!id) return;
+            const m = id.match(sugarRegex);
+            if (m) {
+                const n = parseInt(m[1], 10) || 0;
+                if (n > max) max = n;
+            }
+        });
+
+        // Also consider ids already assigned in existingMap
+        if (existingMap) {
+            Object.values(existingMap).forEach(id => {
+                const m = ('' + id).match(sugarRegex);
+                if (m) {
+                    const n = parseInt(m[1], 10) || 0;
+                    if (n > max) max = n;
+                }
+            });
+        }
+
+        return `sugar-${max + 1}`;
+    }
+
+    buildIdMapForNodes(nodes) {
+        const idMap = {};
+        nodes.forEach(node => {
+            if (node.getAttribute && node.getAttribute('id')) {
+                const oldId = node.getAttribute('id');
+                // If the node represents a sugar (by class) or its id looks like a sugar id, allocate a sequential sugar id
+                const looksLikeSugarId = /^sugar-?\d+$/i.test(oldId);
+                const isSugarClass = node.classList && node.classList.contains && node.classList.contains('sugar');
+                if ((isSugarClass || looksLikeSugarId) && !idMap[oldId]) {
+                    idMap[oldId] = this.getNextSugarId(idMap);
+                } else if (!idMap[oldId]) {
+                    idMap[oldId] = this.generateUniqueId(oldId);
+                }
+            }
+        });
+        return idMap;
+    }
+
+    // Escape regex special characters in string
+    escapeRegExp(s) {
+        return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // Apply id map to nodes: rename ids and update references (url(#id), href, xlink:href, and plain '#id')
+    applyIdMapToNodes(nodes, idMap) {
+        if (!idMap || Object.keys(idMap).length === 0) return;
+        const oldIds = Object.keys(idMap);
+        // Pre-build regexes for replacements
+        const urlRegexes = oldIds.map(old => ({
+            old,
+            urlRe: new RegExp('url\\(#' + this.escapeRegExp(old) + '\\)', 'g'),
+            hashRe: new RegExp('(^|[^A-Za-z0-9_-])#' + this.escapeRegExp(old) + '($|[^A-Za-z0-9_-])', 'g')
+        }));
+
+        nodes.forEach(node => {
+            if (node.getAttribute && node.getAttribute('id')) {
+                const oldId = node.getAttribute('id');
+                if (idMap[oldId]) {
+                    node.setAttribute('id', idMap[oldId]);
+                }
+            }
+
+            // Update attributes that may reference ids
+            if (node.attributes) {
+                Array.from(node.attributes).forEach(attr => {
+                    let v = attr.value;
+                    if (!v || typeof v !== 'string') return;
+                    let newV = v;
+                    urlRegexes.forEach(({old, urlRe, hashRe}) => {
+                        const newId = idMap[old];
+                        if (!newId) return;
+                        // url(#old) => url(#new)
+                        newV = newV.replace(urlRe, `url(#${newId})`);
+                        // href values like '#old' or occurrences of #old bounded by non identifier chars
+                        // Replace exact '#old' first
+                        if (newV === `#${old}`) newV = `#${newId}`;
+                        // Replace any standalone occurrences of #old (best-effort)
+                        newV = newV.replace(hashRe, (m, p1, p2) => `${p1}#${newId}${p2}`);
+                    });
+
+                    if (newV !== v) {
+                        try { node.setAttribute(attr.name, newV); } catch (e) { /* ignore */ }
+                    }
+                });
+            }
+        });
+    }
+
+    enterPresetMode(src) {
+        // Save previous tool so we can restore when exiting preset mode
+        this.previousToolBeforePreset = this.currentTool;
+        // Enter a dedicated preset mode so the right panel can show the preset UI only in this mode
+        this.setTool('preset');
+        this.activePreset = { src };
+        // show hint using temporary notification helper
+        if (typeof this.showTemporaryNotification === 'function') {
+            this.showTemporaryNotification('Preset selected: click canvas to place (Esc to cancel)', 1200);
+        } else {
+            // Fallback: simple alert (shouldn't happen in normal runtime)
+            console.log('Preset selected: click canvas to place (Esc to cancel)');
+        }
+    }
+
+    exitPresetMode() {
+        this.activePreset = null;
+        // Restore previous tool if available
+        if (this.previousToolBeforePreset) {
+            this.setTool(this.previousToolBeforePreset);
+            this.previousToolBeforePreset = null;
+        } else {
+            this.setTool('select');
+        }
     }
     
     setupCustomization() {
@@ -364,7 +741,60 @@ class GlycanDrawer {
                 }
             } else if (this.currentTool === 'select') {
                 // 选择模式：只应用到选中元素，不更新配置
-                this.applySugarSize();
+                this.applySugarSizeWithoutStep();
+            }
+        });
+        
+        // Handle undo/redo step recording for size slider drag
+        sugarSize.addEventListener('mousedown', () => {
+            if (this.currentTool === 'select') {
+                // Start recording and capture initial state
+                this.startStep();
+                this.sizeSliderDragging = true;
+                
+                // Record initial state of all selected sugars
+                const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
+                this.initialSugarStates = selectedSugars.map(sugar => ({
+                    id: sugar.getAttribute('id'),
+                    beforeData: this.createObjectData(sugar)
+                }));
+            }
+        });
+        
+        sugarSize.addEventListener('mouseup', () => {
+            if (this.currentTool === 'select' && this.sizeSliderDragging) {
+                // Record final state and finish step
+                if (this.initialSugarStates) {
+                    this.initialSugarStates.forEach(state => {
+                        const sugar = document.getElementById(state.id);
+                        if (sugar) {
+                            const afterData = this.createObjectData(sugar);
+                            this.recordObjectModified(state.id, state.beforeData, afterData);
+                        }
+                    });
+                    this.initialSugarStates = null;
+                }
+                this.finishStep();
+                this.sizeSliderDragging = false;
+            }
+        });
+        
+        // Handle case where mouse is released outside slider
+        document.addEventListener('mouseup', () => {
+            if (this.currentTool === 'select' && this.sizeSliderDragging) {
+                // Record final state and finish step
+                if (this.initialSugarStates) {
+                    this.initialSugarStates.forEach(state => {
+                        const sugar = document.getElementById(state.id);
+                        if (sugar) {
+                            const afterData = this.createObjectData(sugar);
+                            this.recordObjectModified(state.id, state.beforeData, afterData);
+                        }
+                    });
+                    this.initialSugarStates = null;
+                }
+                this.finishStep();
+                this.sizeSliderDragging = false;
             }
         });
         
@@ -388,7 +818,60 @@ class GlycanDrawer {
                 }
             } else if (this.currentTool === 'select') {
                 // 选择模式：只应用到选中元素，不更新配置
-                this.applySugarBorderWidth();
+                this.applySugarBorderWidthWithoutStep();
+            }
+        });
+        
+        // Handle undo/redo step recording for border width slider drag
+        sugarBorderWidth.addEventListener('mousedown', () => {
+            if (this.currentTool === 'select') {
+                // Start recording and capture initial state
+                this.startStep();
+                this.borderWidthSliderDragging = true;
+                
+                // Record initial state of all selected sugars
+                const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
+                this.initialSugarStatesForBorderWidth = selectedSugars.map(sugar => ({
+                    id: sugar.getAttribute('id'),
+                    beforeData: this.createObjectData(sugar)
+                }));
+            }
+        });
+        
+        sugarBorderWidth.addEventListener('mouseup', () => {
+            if (this.currentTool === 'select' && this.borderWidthSliderDragging) {
+                // Record final state and finish step
+                if (this.initialSugarStatesForBorderWidth) {
+                    this.initialSugarStatesForBorderWidth.forEach(state => {
+                        const sugar = document.getElementById(state.id);
+                        if (sugar) {
+                            const afterData = this.createObjectData(sugar);
+                            this.recordObjectModified(state.id, state.beforeData, afterData);
+                        }
+                    });
+                    this.initialSugarStatesForBorderWidth = null;
+                }
+                this.finishStep();
+                this.borderWidthSliderDragging = false;
+            }
+        });
+        
+        // Handle case where mouse is released outside border width slider
+        document.addEventListener('mouseup', () => {
+            if (this.currentTool === 'select' && this.borderWidthSliderDragging) {
+                // Record final state and finish step
+                if (this.initialSugarStatesForBorderWidth) {
+                    this.initialSugarStatesForBorderWidth.forEach(state => {
+                        const sugar = document.getElementById(state.id);
+                        if (sugar) {
+                            const afterData = this.createObjectData(sugar);
+                            this.recordObjectModified(state.id, state.beforeData, afterData);
+                        }
+                    });
+                    this.initialSugarStatesForBorderWidth = null;
+                }
+                this.finishStep();
+                this.borderWidthSliderDragging = false;
             }
         });
         
@@ -430,10 +913,74 @@ class GlycanDrawer {
         const connectionWidthValue = document.getElementById('connectionStrokeWidthValue');
         const connectionStyleButtons = document.querySelectorAll('.connection-style-btn');
         
+        // --- Fix: Only record one undo step when dragging connection stroke width in select mode ---
         connectionWidth.addEventListener('input', (e) => {
             const value = e.target.value;
             connectionWidthValue.textContent = value;
-            this.applyConnectionStyle();
+            
+            if (this.currentTool === 'add') {
+                // 添加模式：只更新配置，不应用到任何元素
+                this.currentLinkageConfig.strokeWidth = parseFloat(value);
+            } else if (this.currentTool === 'select') {
+                // 选择模式：只应用到选中元素，不更新配置
+                if (this.connectionWidthSliderDragging) {
+                    // Only apply style, don't record step
+                    this.applyLinkageStyle();
+                } else {
+                    this.applyConnectionStyle();
+                }
+            }
+        });
+
+        // Handle undo/redo step recording for connection stroke width slider drag
+        connectionWidth.addEventListener('mousedown', () => {
+            if (this.currentTool === 'select') {
+                this.startStep('Change connection stroke width');
+                this.connectionWidthSliderDragging = true;
+                // Record initial state of all selected connections
+                const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                this.initialConnectionStatesForStrokeWidth = selectedConnections.map(conn => ({
+                    id: conn.getAttribute('id'),
+                    beforeData: this.createObjectData(conn)
+                }));
+            }
+        });
+
+        connectionWidth.addEventListener('mouseup', () => {
+            if (this.currentTool === 'select' && this.connectionWidthSliderDragging) {
+                // Record final state and finish step
+                if (this.initialConnectionStatesForStrokeWidth) {
+                    this.initialConnectionStatesForStrokeWidth.forEach(state => {
+                        const conn = document.getElementById(state.id);
+                        if (conn) {
+                            const afterData = this.createObjectData(conn);
+                            this.recordObjectModified(state.id, state.beforeData, afterData);
+                        }
+                    });
+                    this.initialConnectionStatesForStrokeWidth = null;
+                }
+                this.finishStep();
+                this.connectionWidthSliderDragging = false;
+            }
+        });
+
+        // Handle case where mouse is released outside the slider
+        document.addEventListener('mouseup', () => {
+            if (this.currentTool === 'select' && this.connectionWidthSliderDragging) {
+                // Record final state and finish step
+                if (this.initialConnectionStatesForStrokeWidth) {
+                    this.initialConnectionStatesForStrokeWidth.forEach(state => {
+                        const conn = document.getElementById(state.id);
+                        if (conn) {
+                            const afterData = this.createObjectData(conn);
+                            this.recordObjectModified(state.id, state.beforeData, afterData);
+                        }
+                    });
+                    this.initialConnectionStatesForStrokeWidth = null;
+                }
+                this.finishStep();
+                this.connectionWidthSliderDragging = false;
+            }
         });
         
         connectionStyleButtons.forEach(btn => {
@@ -443,11 +990,14 @@ class GlycanDrawer {
                 });
                 btn.classList.add('active');
                 
-                // Apply style based on current tool mode
-                if (this.currentTool === 'linkage') {
-                    this.applyLinkageStyle();
-                } else {
+                if (this.currentTool === 'add') {
+                    // 添加模式：只更新配置，不应用到任何元素
+                    this.currentLinkageConfig.strokeStyle = btn.dataset.style;
+                } else if (this.currentTool === 'select') {
+                    // 选择模式：只应用到选中元素，不更新配置
+                    this.startStep('Change connection style');
                     this.applyConnectionStyle();
+                    this.finishStep();
                 }
             });
         });
@@ -457,6 +1007,20 @@ class GlycanDrawer {
         const connectionOpacityValue = document.getElementById('linkageOpacityValue');
         
         if (connectionOpacity && connectionOpacityValue) {
+            // Handle undo/redo step recording for connection opacity slider drag
+            connectionOpacity.addEventListener('mousedown', () => {
+                if (this.currentTool === 'select') {
+                    this.startStep('Change connection opacity');
+                    this.connectionOpacitySliderDragging = true;
+                    // Record initial state of all selected connections
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                    this.initialConnectionStatesForOpacity = selectedConnections.map(conn => ({
+                        id: conn.getAttribute('id'),
+                        beforeData: this.createObjectData(conn)
+                    }));
+                }
+            });
+
             connectionOpacity.addEventListener('input', (e) => {
                 const value = parseFloat(e.target.value);
                 connectionOpacityValue.textContent = Math.round(value * 100) + '%';
@@ -465,28 +1029,70 @@ class GlycanDrawer {
                 e.target.classList.remove('mixed');
                 if (connectionOpacityValue) connectionOpacityValue.classList.remove('mixed');
                 
-                // Apply opacity based on current tool mode
-                if (this.currentTool === 'linkage') {
-                    this.applyLinkageStyle();
-                } else {
-                    this.applyConnectionOpacity();
+                // Apply opacity in select mode (for selected connections)
+                if (this.currentTool === 'select') {
+                    if (this.connectionOpacitySliderDragging) {
+                        // During dragging, apply without starting/finishing steps
+                        this.applyConnectionOpacityWithoutStep();
+                    } else {
+                        // Single click/change: use normal undo logic
+                        this.applyConnectionOpacity();
+                    }
+                }
+            });
+
+            connectionOpacity.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.connectionOpacitySliderDragging) {
+                    // Record final state and finish step
+                    if (this.initialConnectionStatesForOpacity) {
+                        this.initialConnectionStatesForOpacity.forEach(state => {
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                        });
+                        this.initialConnectionStatesForOpacity = null;
+                    }
+                    this.finishStep();
+                    this.connectionOpacitySliderDragging = false;
+                }
+            });
+
+            // Handle case where mouse is released outside the slider
+            document.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.connectionOpacitySliderDragging) {
+                    // Record final state and finish step
+                    if (this.initialConnectionStatesForOpacity) {
+                        this.initialConnectionStatesForOpacity.forEach(state => {
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                        });
+                        this.initialConnectionStatesForOpacity = null;
+                    }
+                    this.finishStep();
+                    this.connectionOpacitySliderDragging = false;
                 }
             });
         }
         
-        // Linkage-specific opacity control
-        const linkageOpacity = document.getElementById('linkageOpacity');
-        const linkageOpacityValue = document.getElementById('linkageOpacityValue');
+        // Linkage text opacity control
+        const linkageTextOpacityControl = document.getElementById('linkageTextOpacity');
+        const linkageTextOpacityControlValue = document.getElementById('linkageTextOpacityValue');
         
-        if (linkageOpacity && linkageOpacityValue) {
-            linkageOpacity.addEventListener('input', (e) => {
+        if (linkageTextOpacityControl && linkageTextOpacityControlValue) {
+            linkageTextOpacityControl.addEventListener('input', (e) => {
                 const value = parseFloat(e.target.value);
-                linkageOpacityValue.textContent = Math.round(value * 100) + '%';
+                linkageTextOpacityControlValue.textContent = Math.round(value * 100) + '%';
                 
                 // Clear mixed state when user manually changes value
                 e.target.classList.remove('mixed');
-                if (linkageOpacityValue) linkageOpacityValue.classList.remove('mixed');
+                if (linkageTextOpacityControlValue) linkageTextOpacityControlValue.classList.remove('mixed');
                 
+                // Apply to selected connections in select mode
                 this.applyLinkageStyle();
             });
         }
@@ -499,7 +1105,7 @@ class GlycanDrawer {
         const textColorHex = document.getElementById('textColorHex');
         const textStyleButtons = document.querySelectorAll('.text-style-btn');
         
-        // Font size control
+        // Font size control with slider optimization
         fontSize.addEventListener('input', (e) => {
             const value = parseInt(e.target.value);
             fontSizeValue.textContent = value;
@@ -508,8 +1114,70 @@ class GlycanDrawer {
                 // 文本工具模式：只更新配置，不应用到任何元素
                 this.currentTextConfig.fontSize = value;
             } else if (this.currentTool === 'select') {
-                // 选择模式：只应用到选中元素，不更新配置
-                this.applyFontSize(value);
+                // 选择模式：使用不记录undo的方法，避免拖拽时产生多个undo步骤
+                this.applyTextStyleWithoutStep();
+            }
+        });
+        
+        // Handle undo/redo step recording for fontSize slider drag
+        fontSize.addEventListener('mousedown', () => {
+            if (this.currentTool === 'select') {
+                // Start recording and capture initial state
+                this.startStep('Change text style');
+                this.textSliderDragging = true;
+                
+                // Record initial state of all selected text elements
+                const selectedTextElements = [];
+                if (this.selectedText) selectedTextElements.push(this.selectedText);
+                if (this.selectedTexts.size > 0) {
+                    this.selectedTexts.forEach(text => {
+                        if (!selectedTextElements.includes(text)) {
+                            selectedTextElements.push(text);
+                        }
+                    });
+                }
+                
+                this.initialTextStates = selectedTextElements.map(text => ({
+                    id: text.getAttribute('id'),
+                    beforeData: this.createObjectData(text)
+                }));
+            }
+        });
+        
+        fontSize.addEventListener('mouseup', () => {
+            if (this.currentTool === 'select' && this.textSliderDragging) {
+                // Record final state and finish step
+                if (this.initialTextStates) {
+                    this.initialTextStates.forEach(state => {
+                        const text = document.getElementById(state.id);
+                        if (text) {
+                            const afterData = this.createObjectData(text);
+                            this.recordObjectModified(state.id, state.beforeData, afterData);
+                        }
+                    });
+                    this.initialTextStates = null;
+                }
+                this.finishStep();
+                this.textSliderDragging = false;
+            }
+        });
+        
+        // Handle case where mouse is released outside slider
+        document.addEventListener('mouseup', () => {
+            if (this.currentTool === 'select' && this.textSliderDragging) {
+                // Record final state and finish step
+                if (this.initialTextStates) {
+                    this.initialTextStates.forEach(state => {
+                        const text = document.getElementById(state.id);
+                        if (text) {
+                            const afterData = this.createObjectData(text);
+                            this.recordObjectModified(state.id, state.beforeData, afterData);
+                        }
+                    });
+                    this.initialTextStates = null;
+                }
+                this.finishStep();
+                this.textSliderDragging = false;
             }
         });
         
@@ -521,8 +1189,8 @@ class GlycanDrawer {
                 // 文本工具模式：只更新配置，不应用到任何元素
                 this.currentTextConfig.fontFamily = value;
             } else if (this.currentTool === 'select') {
-                // 选择模式：只应用到选中元素，不更新配置
-                this.applyFontFamily(value);
+                // 选择模式：使用统一的样式应用方法，确保为一个undo步骤
+                this.applyTextStyle();
             }
         });
         
@@ -535,8 +1203,8 @@ class GlycanDrawer {
                 // 文本工具模式：只更新配置，不应用到任何元素
                 this.currentTextConfig.color = color;
             } else if (this.currentTool === 'select') {
-                // 选择模式：只应用到选中元素，不更新配置
-                this.applyTextColor(color);
+                // 选择模式：使用统一的样式应用方法，确保为一个undo步骤
+                this.applyTextStyle();
             }
         });
         
@@ -549,7 +1217,7 @@ class GlycanDrawer {
                     // 文本工具模式：只更新配置，不应用到任何元素
                     this.currentTextConfig.color = color;
                 } else if (this.currentTool === 'select') {
-                    // 选择模式：只应用到选中元素，不更新配置
+                    // 选择模式：使用统一的样式应用方法，确保为一个undo步骤
                     this.applyTextStyle();
                 }
             }
@@ -652,14 +1320,32 @@ class GlycanDrawer {
         connectionColor.addEventListener('input', (e) => {
             const color = e.target.value;
             connectionColorHex.value = color;
-            this.applyConnectionStyle();
+            
+            if (this.currentTool === 'add') {
+                // 添加模式：只更新配置，不应用到任何元素
+                this.currentLinkageConfig.strokeColor = color;
+            } else if (this.currentTool === 'select') {
+                // 选择模式：只应用到选中元素，不更新配置
+                this.startStep('Change connection color');
+                this.applyConnectionStyle();
+                this.finishStep();
+            }
         });
         
         connectionColorHex.addEventListener('input', (e) => {
             const color = e.target.value;
             if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
                 connectionColor.value = color;
-                this.applyConnectionStyle();
+                
+                if (this.currentTool === 'add') {
+                    // 添加模式：只更新配置，不应用到任何元素
+                    this.currentLinkageConfig.strokeColor = color;
+                } else if (this.currentTool === 'select') {
+                    // 选择模式：只应用到选中元素，不更新配置
+                    this.startStep('Change connection color');
+                    this.applyConnectionStyle();
+                    this.finishStep();
+                }
             }
         });
         
@@ -675,25 +1361,60 @@ class GlycanDrawer {
                 const value = e.target.value;
                 connectionStrokeWidthValue.textContent = value;
                 
-                // Apply style based on current tool mode
-                if (this.currentTool === 'linkage') {
-                    this.applyLinkageStyle();
+                // Apply style to selected connections in select mode
+                if (this.currentTool === 'select') {
+                    if (this.connectionWidthSliderDragging) {
+                        this.applyConnectionStyle();
+                    } else {
+                        this.startStep('Change connection stroke width');
+                        this.applyConnectionStyle();
+                        this.finishStep();
+                    }
                 } else {
                     this.applyConnectionStyle();
                 }
             });
         }
         
+        // --- Undo/Redo step recording for linkage text size slider drag ---
+        this.linkageTextSizeSliderDragging = false;
+        this.initialConnectionStatesForTextSize = null;
         if (linkageTextSize && linkageTextSizeValue) {
+            linkageTextSize.addEventListener('mousedown', () => {
+                if (this.currentTool === 'select') {
+                    this.startStep('Change linkage text size');
+                    this.linkageTextSizeSliderDragging = true;
+                    // Record initial states
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                    this.initialConnectionStatesForTextSize = selectedConnections.map(conn => ({
+                        id: conn.getAttribute('id'),
+                        beforeData: this.createObjectData(conn)
+                    }));
+                }
+            });
             linkageTextSize.addEventListener('input', (e) => {
                 const value = e.target.value;
                 linkageTextSizeValue.textContent = value;
-                
-                // In linkage mode, apply to selected connections
-                if (this.currentTool === 'linkage') {
+                console.log('linkageTextSize input event fired, value:', value, 'isUpdatingUI:', this.isUpdatingUI);
+                if (this.currentTool === 'select' && !this.isUpdatingUI) {
                     this.applyLinkageStyle();
                 }
-                // In add mode, just store for future connections (no immediate update)
+            });
+            linkageTextSize.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.linkageTextSizeSliderDragging) {
+                    if (this.initialConnectionStatesForTextSize) {
+                        this.initialConnectionStatesForTextSize.forEach(state => {
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                        });
+                        this.initialConnectionStatesForTextSize = null;
+                    }
+                    this.finishStep();
+                    this.linkageTextSizeSliderDragging = false;
+                }
             });
         }
         
@@ -702,51 +1423,370 @@ class GlycanDrawer {
         const linkageTextColorHex = document.getElementById('linkageTextColorHex');
         const linkageTextColorButtons = document.querySelectorAll('[data-target="linkageTextColor"]');
         
+        // --- Undo/Redo step recording for linkage text color ---
+        this.linkageTextColorDragging = false;
+        this.initialConnectionStatesForTextColor = null;
         linkageTextColorButtons.forEach(btn => {
+            btn.addEventListener('mousedown', () => {
+                console.log('Button mousedown: currentTool =', this.currentTool);
+                if (this.currentTool === 'select') {
+                    this.startStep('Change linkage text color');
+                    this.linkageTextColorDragging = true;
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                    console.log('Button mousedown: selectedConnections count =', selectedConnections.length);
+                    this.initialConnectionStatesForTextColor = selectedConnections.map(conn => {
+                        const beforeData = this.createObjectData(conn);
+                        console.log('linkageTextColor before state - textColor:', beforeData.textColor);
+                        return {
+                            id: conn.id,
+                            beforeData: beforeData
+                        };
+                    });
+                    this.updateLegacySelectionStates();
+                }
+            });
             btn.addEventListener('click', (e) => {
                 const color = e.target.dataset.color;
+                console.log('linkageTextColor button clicked, color:', color, 'isUpdatingUI:', this.isUpdatingUI);
                 if (linkageTextColor) {
                     linkageTextColor.value = color;
                     if (linkageTextColorHex) linkageTextColorHex.value = color;
                 }
-                // Update active state
                 linkageTextColorButtons.forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
-                
-                // In linkage mode, apply to selected connections
-                if (this.currentTool === 'linkage') {
+                if (this.currentTool === 'select' && !this.isUpdatingUI) {
+                    // Apply style now (click happens after mousedown/mouseup) so the input value is updated
                     this.applyLinkageStyle();
+                    // After applying style, record after snapshots for any initial states and finish the step
+                    try {
+                        if (this.initialConnectionStatesForTextColor) {
+                            this.initialConnectionStatesForTextColor.forEach(state => {
+                                // If already recorded by applyLinkageStyle immediate recording, skip
+                                if (state._recorded) return;
+                                const conn = document.getElementById(state.id);
+                                if (conn) {
+                                    const afterData = this.createObjectData(conn);
+                                    console.log('linkageTextColor click handler after state - connection data-text-color attr:', conn.getAttribute('data-text-color'));
+                                    console.log('linkageTextColor click handler after state - textColor:', afterData.textColor);
+                                    this.recordObjectModified(state.id, state.beforeData, afterData);
+                                }
+                            });
+                            this.initialConnectionStatesForTextColor = null;
+                        }
+                    } catch (e) {}
+                    this.finishStep();
                 }
-                // In add mode, just store for future connections (no immediate update)
+            });
+            btn.addEventListener('mouseup', () => {
+                console.log('Button mouseup: linkageTextColorDragging =', this.linkageTextColorDragging, 'currentTool =', this.currentTool);
+                if (this.currentTool === 'select' && this.linkageTextColorDragging) {
+                    // Do not finish step here; click handler will apply style and finish the step.
+                    this.linkageTextColorDragging = false;
+                }
             });
         });
         
         if (linkageTextColor) {
+            linkageTextColor.addEventListener('mousedown', () => {
+                if (this.currentTool === 'select') {
+                    this.startStep('Change linkage text color');
+                    this.linkageTextColorDragging = true;
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                    this.initialConnectionStatesForTextColor = selectedConnections.map(conn => ({
+                        id: conn.id,
+                        beforeData: this.createObjectData(conn)
+                    }));
+                    this.updateLegacySelectionStates();
+                }
+            });
             linkageTextColor.addEventListener('input', (e) => {
                 const color = e.target.value;
                 if (linkageTextColorHex) linkageTextColorHex.value = color;
                 linkageTextColorButtons.forEach(b => b.classList.remove('active'));
-                
-                // In linkage mode, apply to selected connections
-                if (this.currentTool === 'linkage') {
+                if (this.currentTool === 'select' && !this.isUpdatingUI) {
                     this.applyLinkageStyle();
                 }
-                // In add mode, just store for future connections (no immediate update)
+            });
+            linkageTextColor.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.linkageTextColorDragging) {
+                    // Ensure the style is applied before recording the after state
+                    this.applyLinkageStyle();
+                    if (this.initialConnectionStatesForTextColor) {
+                        this.initialConnectionStatesForTextColor.forEach(state => {
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                        });
+                        this.initialConnectionStatesForTextColor = null;
+                    }
+                    this.finishStep();
+                    this.linkageTextColorDragging = false;
+                }
             });
         }
         
         if (linkageTextColorHex) {
+            linkageTextColorHex.addEventListener('mousedown', () => {
+                if (this.currentTool === 'select') {
+                    this.startStep('Change linkage text color');
+                    this.linkageTextColorDragging = true;
+                    const selectedConnections = Array.from(this.selectedConnections || []);
+                    this.initialConnectionStatesForTextColor = selectedConnections.map(conn => ({
+                        id: conn.id,
+                        beforeData: this.createObjectData(conn)
+                    }));
+                }
+            });
             linkageTextColorHex.addEventListener('input', (e) => {
                 const color = e.target.value;
                 if (/^#[0-9A-F]{6}$/i.test(color)) {
                     if (linkageTextColor) linkageTextColor.value = color;
                     linkageTextColorButtons.forEach(b => b.classList.remove('active'));
-                    
-                    // In linkage mode, apply to selected connections
-                    if (this.currentTool === 'linkage') {
+                    if (this.currentTool === 'select') {
                         this.applyLinkageStyle();
                     }
-                    // In add mode, just store for future connections (no immediate update)
+                }
+            });
+            linkageTextColorHex.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.linkageTextColorDragging) {
+                    if (this.initialConnectionStatesForTextColor) {
+                        this.initialConnectionStatesForTextColor.forEach(state => {
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                        });
+                        this.initialConnectionStatesForTextColor = null;
+                    }
+                    this.finishStep();
+                    this.linkageTextColorDragging = false;
+                }
+            });
+        }
+        
+        // --- Undo/Redo step recording for linkage text font family ---
+        this.linkageTextFontFamilyDragging = false;
+        this.initialConnectionStatesForTextFontFamily = null;
+        const linkageTextFontFamily = document.getElementById('linkageTextFontFamily');
+        if (linkageTextFontFamily) {
+            linkageTextFontFamily.addEventListener('mousedown', () => {
+                if (this.currentTool === 'select') {
+                    this.startStep('Change linkage text font family');
+                    this.linkageTextFontFamilyDragging = true;
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                    this.initialConnectionStatesForTextFontFamily = selectedConnections.map(conn => ({
+                        id: conn.id,
+                        beforeData: this.createObjectData(conn)
+                    }));
+                }
+            });
+            linkageTextFontFamily.addEventListener('change', (e) => {
+                const fontFamily = e.target.value;
+                if (this.currentTool === 'select' && !this.isUpdatingUI) {
+                    // Apply the style (this will update DOM and may perform immediate recording)
+                    this.applyLinkageStyle();
+
+                    // If we started a step on mousedown, finalize it here because change means the user selected a font
+                    if (this.initialConnectionStatesForTextFontFamily) {
+                        this.initialConnectionStatesForTextFontFamily.forEach(state => {
+                            // If applyLinkageStyle already recorded the after snapshot, skip recreating it
+                            if (state._recorded) return;
+
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                // Force authoritative font family value into snapshot
+                                try { afterData.textFontFamily = fontFamily; } catch (e) {}
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                        });
+                        this.initialConnectionStatesForTextFontFamily = null;
+                    }
+
+                    this.finishStep();
+                }
+            });
+            // On mouseup we don't finalize the step for dropdowns (user might still be choosing an option).
+            // Just clear the temporary dragging flag; finalization happens on 'change' or 'blur'.
+            linkageTextFontFamily.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.linkageTextFontFamilyDragging) {
+                    // don't finish here to avoid race with change event
+                    // keep initialConnectionStatesForTextFontFamily so change can finalize
+                    this.linkageTextFontFamilyDragging = true; // keep true until change/blur
+                }
+            });
+
+            // If the select loses focus without a change, finalize (will be discarded if no modifications)
+            linkageTextFontFamily.addEventListener('blur', () => {
+                if (this.currentTool === 'select' && this.linkageTextFontFamilyDragging) {
+                    // If change already recorded, initialConnectionStatesForTextFontFamily would be null
+                    this.initialConnectionStatesForTextFontFamily = null;
+                    this.finishStep();
+                    this.linkageTextFontFamilyDragging = false;
+                }
+            });
+        }
+        
+        // --- Undo/Redo step recording for linkage text style buttons ---
+        this.linkageTextStyleDragging = false;
+        this.initialConnectionStatesForTextStyle = null;
+        const linkageTextStyleButtons = document.querySelectorAll('.linkage-text-style-btn');
+        linkageTextStyleButtons.forEach(btn => {
+            btn.addEventListener('mousedown', () => {
+                if (this.currentTool === 'select') {
+                    // If another linkage text UI drag (color/size/font family/opacity) is active,
+                    // the UI handler is already recording a step. Avoid starting a duplicate
+                    // "Change linkage text style" step here. Still mark dragging so mouseup
+                    // handlers work, but don't capture before snapshots.
+                    if (this.linkageTextColorDragging || this.linkageTextSizeSliderDragging || this.linkageTextFontFamilyDragging || this.linkageTextOpacitySliderDragging) {
+                        this.linkageTextStyleDragging = true;
+                        this.initialConnectionStatesForTextStyle = null;
+                        return;
+                    }
+
+                    this.startStep('Change linkage text style');
+                    this.linkageTextStyleDragging = true;
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+
+                    // Ensure linkage text elements exist before recording
+                    selectedConnections.forEach(conn => {
+                        this.updateLinkageText(conn);
+                    });
+
+                    this.initialConnectionStatesForTextStyle = selectedConnections.map(conn => {
+                        const connectionId = conn.getAttribute('id');
+                        const configText = this.canvas.querySelector(`#${connectionId}-config-text`);
+                        const positionText = this.canvas.querySelector(`#${connectionId}-position-text`);
+                        
+                        return {
+                            id: conn.id,
+                            beforeData: this.createObjectData(conn),
+                            configTextId: configText ? configText.getAttribute('id') : null,
+                            configTextBeforeData: configText ? this.createObjectData(configText) : null,
+                            positionTextId: positionText ? positionText.getAttribute('id') : null,
+                            positionTextBeforeData: positionText ? this.createObjectData(positionText) : null
+                        };
+                    });
+                }
+            });
+            btn.addEventListener('click', (e) => {
+                const style = e.target.closest('.linkage-text-style-btn').dataset.style;
+                e.target.closest('.linkage-text-style-btn').classList.toggle('active');
+                if (this.currentTool === 'select' && !this.isUpdatingUI) {
+                    this.applyLinkageStyle();
+                }
+            });
+            btn.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.linkageTextStyleDragging) {
+                    // Delay finalization to allow click handler (which fires after mouseup) to run first.
+                    // This ensures applyLinkageStyle can perform immediate recording and set state._recorded.
+                    setTimeout(() => {
+                        if (this.initialConnectionStatesForTextStyle) {
+                            this.initialConnectionStatesForTextStyle.forEach(state => {
+                                // If applyLinkageStyle already recorded an after snapshot for this state, skip recreating it
+                                if (state._recorded) {
+                                    // Still ensure we record associated text elements if they weren't recorded
+                                    if (state.configTextId && !state._configRecorded) {
+                                        const configText = document.getElementById(state.configTextId);
+                                        if (configText && state.configTextBeforeData) {
+                                            const configAfterData = this.createObjectData(configText);
+                                            this.recordObjectModified(state.configTextId, state.configTextBeforeData, configAfterData);
+                                        }
+                                        state._configRecorded = true;
+                                    }
+                                    if (state.positionTextId && !state._positionRecorded) {
+                                        const positionText = document.getElementById(state.positionTextId);
+                                        if (positionText && state.positionTextBeforeData) {
+                                            const positionAfterData = this.createObjectData(positionText);
+                                            this.recordObjectModified(state.positionTextId, state.positionTextBeforeData, positionAfterData);
+                                        }
+                                        state._positionRecorded = true;
+                                    }
+                                    return;
+                                }
+
+                                const conn = document.getElementById(state.id);
+                                if (conn) {
+                                    const afterData = this.createObjectData(conn);
+                                    // Ensure style flags are authoritative from UI if available
+                                    try {
+                                        const ital = document.getElementById('linkageTextItalicBtn')?.classList.contains('active');
+                                        const bold = document.getElementById('linkageTextBoldBtn')?.classList.contains('active');
+                                        const underline = document.getElementById('linkageTextUnderlineBtn')?.classList.contains('active');
+                                        afterData.textItalic = (ital ? 'true' : 'false');
+                                        afterData.textBold = (bold ? 'true' : 'false');
+                                        afterData.textUnderline = (underline ? 'true' : 'false');
+                                    } catch (e) {}
+                                    this.recordObjectModified(state.id, state.beforeData, afterData);
+                                }
+
+                                // Also record text elements
+                                if (state.configTextId) {
+                                    const configText = document.getElementById(state.configTextId);
+                                    if (configText && state.configTextBeforeData) {
+                                        const configAfterData = this.createObjectData(configText);
+                                        this.recordObjectModified(state.configTextId, state.configTextBeforeData, configAfterData);
+                                    }
+                                }
+
+                                if (state.positionTextId) {
+                                    const positionText = document.getElementById(state.positionTextId);
+                                    if (positionText && state.positionTextBeforeData) {
+                                        const positionAfterData = this.createObjectData(positionText);
+                                        this.recordObjectModified(state.positionTextId, state.positionTextBeforeData, positionAfterData);
+                                    }
+                                }
+                            });
+                            this.initialConnectionStatesForTextStyle = null;
+                        }
+                        this.finishStep();
+                        this.linkageTextStyleDragging = false;
+                    }, 0);
+                }
+            });
+        });
+        
+        // --- Undo/Redo step recording for linkage text opacity slider drag ---
+        this.linkageTextOpacitySliderDragging = false;
+        this.initialConnectionStatesForTextOpacity = null;
+        const linkageTextOpacity = document.getElementById('linkageTextOpacity');
+        const linkageTextOpacityValue = document.getElementById('linkageTextOpacityValue');
+        if (linkageTextOpacity && linkageTextOpacityValue) {
+            linkageTextOpacity.addEventListener('mousedown', () => {
+                if (this.currentTool === 'select') {
+                    this.startStep('Change linkage text opacity');
+                    this.linkageTextOpacitySliderDragging = true;
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                    this.initialConnectionStatesForTextOpacity = selectedConnections.map(conn => ({
+                        id: conn.id,
+                        beforeData: this.createObjectData(conn)
+                    }));
+                }
+            });
+            linkageTextOpacity.addEventListener('input', (e) => {
+                const value = e.target.value;
+                linkageTextOpacityValue.textContent = Math.round(value * 100) + '%';
+                if (this.currentTool === 'select' && !this.isUpdatingUI) {
+                    this.applyLinkageStyle();
+                }
+            });
+            linkageTextOpacity.addEventListener('mouseup', () => {
+                if (this.currentTool === 'select' && this.linkageTextOpacitySliderDragging) {
+                    if (this.initialConnectionStatesForTextOpacity) {
+                        this.initialConnectionStatesForTextOpacity.forEach(state => {
+                            const conn = document.getElementById(state.id);
+                            if (conn) {
+                                const afterData = this.createObjectData(conn);
+                                this.recordObjectModified(state.id, state.beforeData, afterData);
+                            }
+                        });
+                        this.initialConnectionStatesForTextOpacity = null;
+                    }
+                    this.finishStep();
+                    this.linkageTextOpacitySliderDragging = false;
                 }
             });
         }
@@ -767,9 +1807,18 @@ class GlycanDrawer {
             // Handle blur (clicking outside) to confirm linkage
             linkageInput.addEventListener('blur', (e) => {
                 const linkage = linkageInput.value.trim();
-                if (linkage !== '' && this.selectedConnections.size > 0) {
+                const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                if (linkage !== '' && selectedConnections.length > 0) {
                     this.applyLinkageToConnections(linkage);
                 }
+            });
+        }
+        
+        // Reverse linkage button for selection mode
+        const reverseLinkage = document.getElementById('reverseLinkage');
+        if (reverseLinkage) {
+            reverseLinkage.addEventListener('click', () => {
+                this.reverseLinkageDirection();
             });
         }
         
@@ -787,9 +1836,12 @@ class GlycanDrawer {
                 }
                 
                 // Apply linkage based on current mode
-                if (this.currentTool === 'linkage' && this.selectedConnections.size > 0) {
-                    // Linkage mode with selected connections - apply immediately
-                    this.applyLinkageToConnections(linkage);
+                if (this.currentTool === 'select') {
+                    const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                    if (selectedConnections.length > 0) {
+                        // Select mode with selected connections - apply immediately
+                        this.applyLinkageToConnections(linkage);
+                    }
                 } else if (this.currentTool === 'add') {
                     // Add mode - store for next connection
                     this.currentLinkageConfig.linkage = linkage;
@@ -805,11 +1857,11 @@ class GlycanDrawer {
             });
         }
         
-        // Show linkage text checkbox (for selected connections in linkage mode)
+        // Show linkage text checkbox (for selected connections in select mode)
         const showLinkageText = document.getElementById('showLinkageText');
         if (showLinkageText) {
             showLinkageText.addEventListener('change', (e) => {
-                if (this.currentTool === 'linkage') {
+                if (this.currentTool === 'select') {
                     // Apply to selected connections only
                     this.applyLinkageVisibility();
                 }
@@ -822,6 +1874,59 @@ class GlycanDrawer {
         if (linkageInputAdd) {
             linkageInputAdd.addEventListener('input', (e) => {
                 this.currentLinkageConfig.linkage = e.target.value.trim() || null;
+            });
+        }
+
+            // Linkage text font family for add mode
+        const linkageTextFontFamilyAdd = document.getElementById('linkageTextFontFamilyAdd');
+        if (linkageTextFontFamilyAdd) {
+            linkageTextFontFamilyAdd.addEventListener('change', (e) => {
+                this.currentLinkageConfig.textFontFamily = e.target.value;
+            });
+            // Initialize config on load
+            this.currentLinkageConfig.textFontFamily = linkageTextFontFamilyAdd.value;
+        }
+
+            // Linkage text style buttons (bold, italic, underline) for add mode
+            const linkageTextStyleButtonsAdd = document.querySelectorAll('.linkage-text-style-btn-add');
+            linkageTextStyleButtonsAdd.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const style = btn.dataset.style;
+                    btn.classList.toggle('active');
+                    // Update config
+                    if (!this.currentLinkageConfig.textStyle) this.currentLinkageConfig.textStyle = {};
+                    this.currentLinkageConfig.textStyle[style] = btn.classList.contains('active');
+                });
+            });
+
+            // Linkage text opacity for add mode
+        const linkageTextOpacityAdd = document.getElementById('linkageTextOpacityAdd');
+        const linkageTextOpacityAddValue = document.getElementById('linkageTextOpacityAddValue');
+        if (linkageTextOpacityAdd && linkageTextOpacityAddValue) {
+            linkageTextOpacityAdd.addEventListener('input', (e) => {
+                const value = e.target.value;
+                this.currentLinkageConfig.textOpacity = parseFloat(value);
+                linkageTextOpacityAddValue.textContent = Math.round(value * 100) + '%';
+            });
+            // Initialize config on load
+            this.currentLinkageConfig.textOpacity = parseFloat(linkageTextOpacityAdd.value);
+        }
+        
+        // Reverse linkage button for add mode
+        const reverseLinkageAdd = document.getElementById('reverseLinkageAdd');
+        if (reverseLinkageAdd) {
+            reverseLinkageAdd.addEventListener('click', () => {
+                this.currentLinkageConfig.reversed = !this.currentLinkageConfig.reversed;
+                // Update button appearance to show active state
+                if (this.currentLinkageConfig.reversed) {
+                    reverseLinkageAdd.classList.add('active');
+                    reverseLinkageAdd.style.backgroundColor = '#e3f2fd';
+                    reverseLinkageAdd.style.color = '#0072BC';
+                } else {
+                    reverseLinkageAdd.classList.remove('active');
+                    reverseLinkageAdd.style.backgroundColor = '';
+                    reverseLinkageAdd.style.color = '';
+                }
             });
         }
         
@@ -864,7 +1969,7 @@ class GlycanDrawer {
         
         if (connectionColorAdd) {
             connectionColorAdd.addEventListener('input', (e) => {
-                const color = e.target.value;
+                const color = this.normalizeColorToHex(e.target.value);
                 this.currentLinkageConfig.strokeColor = color;
                 if (connectionColorAddHex) connectionColorAddHex.value = color;
                 // Update active state
@@ -919,7 +2024,7 @@ class GlycanDrawer {
         
         if (linkageTextColorAdd) {
             linkageTextColorAdd.addEventListener('input', (e) => {
-                const color = e.target.value;
+                const color = this.normalizeColorToHex(e.target.value);
                 this.currentLinkageConfig.textColor = color;
                 if (linkageTextColorAddHex) linkageTextColorAddHex.value = color;
                 // Update active state
@@ -979,7 +2084,10 @@ class GlycanDrawer {
                 // Update active state
                 linkageColorButtons.forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
-                this.applyLinkageStyle();
+                
+                if (this.currentTool === 'select') {
+                    this.applyLinkageStyle();
+                }
             });
         });
         
@@ -1092,25 +2200,12 @@ class GlycanDrawer {
         const previousTool = this.currentTool;
         this.currentTool = tool;
         
-        // Clear selections when switching to non-selection modes OR when switching between selection modes
+        // Clear selections when switching to non-selection modes
         if (tool === 'add' || tool === 'delete' || tool === 'text') {
             this.deselectAll();
             if (this.selectedConnections) {
                 this.clearConnectionSelections();
             }
-        }
-        
-        // Clear selections when switching from select to linkage or vice versa
-        if ((previousTool === 'select' && tool === 'linkage') || (previousTool === 'linkage' && tool === 'select')) {
-            this.deselectAll();
-            if (this.selectedConnections) {
-                this.clearConnectionSelections();
-            }
-        }
-        
-        // If switching away from linkage tool, clear connection selections
-        if (previousTool === 'linkage' && tool !== 'linkage' && this.selectedConnections) {
-            this.clearConnectionSelections();
         }
         
         // If switching away from text tool and currently editing, close any open text inputs
@@ -1132,13 +2227,6 @@ class GlycanDrawer {
         
         // Update canvas cursor
         this.updateCanvasCursor();
-        
-        // Show/hide linkage controls based on tool
-        if (tool === 'linkage') {
-            this.showLinkageControls();
-        } else {
-            this.hideLinkageControls();
-        }
         
         // Update style panels visibility
         this.updateStylePanel();
@@ -1183,8 +2271,7 @@ class GlycanDrawer {
                 }
                 
                 if (sugarsToChange.length > 0) {
-                    this.applySugarShape(this.snfgPresets[preset].shape);
-                    this.applySugarColor(this.snfgPresets[preset].color);
+                    this.applySugarPreset(this.snfgPresets[preset].shape, this.snfgPresets[preset].color);
                 }
             } else {
                 // In add mode, apply full preset configuration
@@ -1421,15 +2508,13 @@ class GlycanDrawer {
     
     updateCanvasCursor() {
         // Remove all cursor-related classes
-        this.canvas.classList.remove('select-mode', 'delete-mode', 'text-mode', 'linkage-mode', 'add-mode', 'add-on-sugar');
+        this.canvas.classList.remove('select-mode', 'delete-mode', 'text-mode', 'add-mode', 'add-on-sugar');
         if (this.currentTool === 'select') {
             this.canvas.classList.add('select-mode');
         } else if (this.currentTool === 'delete') {
             this.canvas.classList.add('delete-mode');
         } else if (this.currentTool === 'text') {
             this.canvas.classList.add('text-mode');
-        } else if (this.currentTool === 'linkage') {
-            this.canvas.classList.add('linkage-mode');
         } else if (this.currentTool === 'add') {
             this.canvas.classList.add('add-mode');
         }
@@ -1471,8 +2556,8 @@ class GlycanDrawer {
         const x = coords.x;
         const y = coords.y;
         
-        // Store modifier keys state for dragging
-        this.dragWithCtrl = e.ctrlKey;
+    // Store modifier keys state for dragging (primary modifier: Ctrl or Command)
+    this.dragWithCtrl = e.ctrlKey || e.metaKey;
         this.dragWithShift = e.shiftKey;
         
         // Find clicked element using unified system
@@ -1522,17 +2607,31 @@ class GlycanDrawer {
                 this.updateStylePanel();
                 e.preventDefault();
             } else {
-                // Clicked on empty space
-                this.resetPasteCounter();
-                
-                // If currently editing text, finish the edit first
-                if (this.isEditingText) {
-                    this.finishTextEditing();
+                // Check if user clicked on a connection
+                const clickedConnection = this.getConnectionAtPoint(x, y);
+                if (clickedConnection) {
+                    this.resetPasteCounter();
+                    // Handle Shift+click for multi-selection of connections
+                    if (e.shiftKey) {
+                        this.toggleConnectionSelection(clickedConnection, true);
+                    } else {
+                        // Normal click - select only this connection
+                        this.selectConnection(clickedConnection, false);
+                    }
+                    e.preventDefault();
+                } else {
+                    // Clicked on empty space
+                    this.resetPasteCounter();
+                    
+                    // If currently editing text, finish the edit first
+                    if (this.isEditingText) {
+                        this.finishTextEditing();
+                    }
+                    
+                    this.clearAllSelections();
+                    this.startBoxSelection(x, y);
+                    e.preventDefault();
                 }
-                
-                this.clearAllSelections();
-                this.startBoxSelection(x, y);
-                e.preventDefault();
             }
         } else if (this.currentTool === 'add') {
             this.resetPasteCounter();
@@ -1546,25 +2645,6 @@ class GlycanDrawer {
             // Start erasing on mouse down
             this.startErasing(x, y);
             e.preventDefault();
-        } else if (this.currentTool === 'linkage') {
-            this.resetPasteCounter();
-            // Handle connection selection in linkage mode
-            const clickedConnection = this.getConnectionAtPoint(x, y);
-            if (clickedConnection) {
-                // Handle Shift+click for multi-selection of connections
-                if (e.shiftKey) {
-                    this.toggleConnectionSelection(clickedConnection, true);
-                } else {
-                    // Normal click - select only this connection
-                    this.selectConnection(clickedConnection, false);
-                }
-                e.preventDefault();
-            } else {
-                // Start box selection for connections
-                this.clearConnectionSelections();
-                this.startBoxSelection(x, y);
-                e.preventDefault();
-            }
         }
     }
     
@@ -1594,7 +2674,7 @@ class GlycanDrawer {
         }
 
         // Handle box selection
-        if (this.isBoxSelecting && (this.currentTool === 'select' || this.currentTool === 'linkage')) {
+        if (this.isBoxSelecting && this.currentTool === 'select') {
             this.updateBoxSelection(x, y);
             e.preventDefault();
         }
@@ -1738,10 +2818,13 @@ class GlycanDrawer {
             this.finishBoxSelection(e.shiftKey);
         }
         
-        // Handle Ctrl+drag copy functionality
-        if (this.isDragging && this.dragWithCtrl && this.currentTool === 'select') {
-            this.saveState(); // Save state before copying
-            
+    // Handle Ctrl+drag copy functionality
+    // Temporarily disabled: creating duplicated elements during Ctrl+drag
+    // has been causing accidental duplicate creations in some workflows.
+    // To re-enable this behavior later, remove the `&& false` from
+    // the condition below (or change to a configurable flag).
+    if (this.isDragging && this.dragWithCtrl && this.currentTool === 'select' && false) {
+  
             // Copy all selected elements
             const copies = [];
             this.selectedElements.forEach(element => {
@@ -1768,10 +2851,28 @@ class GlycanDrawer {
         
         // Clean up drag state for all selected elements
         this.selectedElements.forEach(element => {
+            // Record modification if element was moved during dragging
+            if (this.isDragging && element.hasAttribute('data-before-move')) {
+                const beforeDataStr = element.getAttribute('data-before-move');
+                const beforeData = JSON.parse(beforeDataStr);
+                const afterData = this.createObjectData(element);
+                
+                if (afterData && (beforeData.x !== afterData.x || beforeData.y !== afterData.y)) {
+                    this.recordObjectModified(element.getAttribute('id'), beforeData, afterData);
+                }
+                
+                element.removeAttribute('data-before-move');
+            }
+            
             element.removeAttribute('data-initial-x');
             element.removeAttribute('data-initial-y');
             element.classList.remove('dragging');
         });
+        
+        // Finish the drag step if we were dragging
+        if (this.isDragging) {
+            this.finishStep();
+        }
         
         // Reset drag flags
         this.isDraggingMultiple = false;
@@ -1853,6 +2954,7 @@ class GlycanDrawer {
         const clickedText = this.getTextAtPoint(x, y);
         
         if (this.currentTool === 'add') {
+            this.startStep('Add sugar');
             if (clickedSugar) {
                 // Add sugar connected to existing sugar
                 this.addConnectedSugar(clickedSugar, x, y);
@@ -1860,6 +2962,7 @@ class GlycanDrawer {
                 // Place sugar on empty canvas
                 this.createSugar(x, y, this.currentSugarConfig);
             }
+            this.finishStep();
         } else if (this.currentTool === 'text') {
             this.resetPasteCounter();
             if (this.isEditingText) {
@@ -1872,13 +2975,203 @@ class GlycanDrawer {
                 this.editText(clickedText);
             } else {
                 // Create new text at click position
+                this.startStep('Add text');
                 this.createText(x, y, 'Text');
+                this.finishStep();
             }
         } else if (this.currentTool === 'delete') {
+            this.startStep('Delete object');
             if (clickedSugar) {
                 this.deleteSugar(clickedSugar);
             } else if (clickedText) {
                 this.deleteText(clickedText);
+            }
+            this.finishStep();
+        } else {
+            // If preset mode active (selected from right panel), insert preset glyph
+            if (this.activePreset && this.activePreset.src) {
+                const src = this.activePreset.src;
+                // Attempt to clone the loaded SVG template and insert at click position
+                    this.startStep('Insert preset glycan');
+                    console.debug('Preset insertion requested', src, { x, y });
+                    this.loadPresetSVG(src).then((svgTemplate) => {
+                            try {
+                                // Work on a deep clone so we don't touch the original template
+                                const cloned = svgTemplate.cloneNode(true);
+
+                                // Compute origin of template graphical objects so we ignore large svg canvas origin
+                                const origin = this.computeTemplateOrigin(cloned);
+                                const ox = origin.minX;
+                                const oy = origin.minY;
+
+                                // Final placement coordinates
+                                const dx = x;
+                                const dy = y;
+
+                                // Map from original template sugar id -> newly created sugar element
+                                const sugarMap = {};
+                                const addedNodeIds = [];
+
+                                // Helper to determine sugar coordinates from a template sugar node
+                                const getTemplateSugarPosition = (node) => {
+                                    let tx = parseFloat(node.getAttribute('data-x'));
+                                    let ty = parseFloat(node.getAttribute('data-y'));
+                                    if (!isFinite(tx) || !isFinite(ty)) {
+                                        // Try common child shapes
+                                        const c = node.querySelector('circle,ellipse');
+                                        if (c) {
+                                            tx = parseFloat(c.getAttribute('cx')) || tx || 0;
+                                            ty = parseFloat(c.getAttribute('cy')) || ty || 0;
+                                        } else {
+                                            const r = node.querySelector('rect');
+                                            if (r) {
+                                                const rx = parseFloat(r.getAttribute('x')) || 0;
+                                                const ry = parseFloat(r.getAttribute('y')) || 0;
+                                                const w = parseFloat(r.getAttribute('width')) || 0;
+                                                const h = parseFloat(r.getAttribute('height')) || 0;
+                                                tx = rx + w/2;
+                                                ty = ry + h/2;
+                                            } else {
+                                                // Fallback to origin
+                                                tx = tx || ox || 0;
+                                                ty = ty || oy || 0;
+                                            }
+                                        }
+                                    }
+                                    return { tx, ty };
+                                };
+
+                                // 1) Create sugars via canonical createSugar(...) to preserve sequencing/side-effects
+                                const templateSugars = Array.from(cloned.querySelectorAll('.sugar'));
+                                templateSugars.forEach(tnode => {
+                                    const oldId = tnode.getAttribute('id');
+                                    const pos = getTemplateSugarPosition(tnode);
+                                    const newX = pos.tx - ox + dx;
+                                    const newY = pos.ty - oy + dy;
+
+                                    // Build config from template attributes (best-effort)
+                                    const sugarConfig = {
+                                        shape: tnode.getAttribute('data-shape') || tnode.getAttribute('data-shape-type') || 'circle',
+                                        color: tnode.getAttribute('data-color') || tnode.getAttribute('fill') || null,
+                                        size: parseFloat(tnode.getAttribute('data-size')) || undefined,
+                                        type: 'preset',
+                                        preset: this.activePreset?.name || null
+                                    };
+
+                                    // Create sugar using canonical path so sugarCount increments correctly
+                                    const created = this.createSugar(newX, newY, sugarConfig);
+                                    if (created && created.getAttribute) {
+                                        sugarMap[oldId || `__anon_${Math.random().toString(36).slice(2,8)}`] = created;
+                                        addedNodeIds.push(created.getAttribute('id'));
+                                    }
+                                });
+                                console.debug('Preset sugars created', Object.keys(sugarMap).map(k => ({ from: k, id: sugarMap[k] && sugarMap[k].getAttribute ? sugarMap[k].getAttribute('id') : null })), addedNodeIds.slice());
+
+                                // 2) Recreate connections via createConnection(...) so ids and undo match
+                                const templateConnections = Array.from(cloned.querySelectorAll('.connection, line[data-start][data-end]'));
+                                templateConnections.forEach(conn => {
+                                    const sOld = conn.getAttribute('data-start');
+                                    const eOld = conn.getAttribute('data-end');
+                                    if (!sOld || !eOld) return;
+                                    const startEl = sugarMap[sOld];
+                                    const endEl = sugarMap[eOld];
+                                    if (!startEl || !endEl) return; // ignore connections to external nodes
+
+                                    const linkage = conn.getAttribute('data-linkage') || conn.getAttribute('data-linkage') || null;
+                                    // createConnection expects sugar elements
+                                        try {
+                                            const createdConn = this.createConnection(startEl, endEl, false, linkage);
+                                            if (createdConn && createdConn.getAttribute) addedNodeIds.push(createdConn.getAttribute('id'));
+                                        } catch (e) {
+                                            // ignore individual connection failures
+                                        }
+                                });
+                                console.debug('Preset connections created, total ids:', addedNodeIds.filter(id => id && id.startsWith('connection-')).slice());
+
+                                // 3) Append non-sugar, non-connection nodes (decorations, texts, defs)
+                                const clones = [];
+                                const defsClones = [];
+                                Array.from(cloned.children).forEach(child => {
+                                    const tag = (child.tagName || '').toLowerCase();
+                                    // defs go to defsClones
+                                    if (tag === 'defs') {
+                                        defsClones.push(child.cloneNode(true));
+                                        return;
+                                    }
+
+                                    // Skip sugar groups (they were created via createSugar)
+                                    if (child.classList && child.classList.contains('sugar')) {
+                                        return;
+                                    }
+
+                                    // Skip connection lines: they were recreated via createConnection
+                                    if ((tag === 'line' && child.hasAttribute && child.hasAttribute('data-start') && child.hasAttribute('data-end')) ||
+                                        (child.classList && child.classList.contains('connection'))) {
+                                        return;
+                                    }
+
+                                    // Otherwise clone decorations/texts/etc.
+                                    clones.push(child.cloneNode(true));
+                                });
+
+                                // Remap ids for these clones and defs to avoid collisions
+                                const allNodes = this.collectNodes(defsClones.concat(clones));
+                                const idMap = this.buildIdMapForNodes(allNodes);
+                                this.applyIdMapToNodes(allNodes, idMap);
+
+                                // Normalize coordinates and place cloned non-sugar nodes
+                                clones.forEach(childClone => {
+                                    // Remove any connection elements that might still be present inside decorations
+                                    Array.from(childClone.querySelectorAll('.connection, line[data-start][data-end]')).forEach(n => n.remove());
+
+                                    this.shiftElementCoordinates(childClone, ox, oy);
+                                    this.shiftElementCoordinates(childClone, -dx, -dy);
+
+                                    // Append into canvas
+                                    this.canvas.appendChild(childClone);
+
+                                    try {
+                                        if (childClone.getAttribute && childClone.getAttribute('id')) {
+                                            const od = this.createObjectData(childClone);
+                                            this.recordObjectAdded(od);
+                                            addedNodeIds.push(childClone.getAttribute('id'));
+                                        }
+                                        Array.from(childClone.querySelectorAll('*')).forEach(node => {
+                                            if (node.getAttribute && node.getAttribute('id')) {
+                                                const od = this.createObjectData(node);
+                                                this.recordObjectAdded(od);
+                                                addedNodeIds.push(node.getAttribute('id'));
+                                            }
+                                        });
+                                    } catch (e) {}
+                                });
+
+                                // Append defs to canvas root (after remapping ids)
+                                defsClones.forEach(defNode => {
+                                    try { this.canvas.appendChild(defNode); } catch (e) {}
+                                });
+
+                                console.debug('Preset decorations appended', clones.length, 'defs appended', defsClones.length);
+
+                                // Record a wrapper group for logical grouping in undo
+                                try {
+                                    const wrapperId = `preset-${Date.now()}`;
+                                    this.recordObjectAdded({ id: wrapperId, type: 'preset-group', children: addedNodeIds });
+                                } catch (e) {}
+
+                                this.finishStep();
+                                console.debug('Preset insertion finished, addedNodeIds:', addedNodeIds);
+                                // Exit preset mode after placing
+                                this.exitPresetMode();
+                                document.querySelectorAll('.preset-thumb').forEach(t => t.classList.remove('active'));
+                            } catch (err) {
+                                console.error('Failed to insert preset:', err);
+                                this.finishStep();
+                            }
+                        }).catch(err => {
+                            console.error('Could not load preset svg for insertion', err);
+                            this.finishStep();
+                        });
             }
         }
     }
@@ -1920,6 +3213,7 @@ class GlycanDrawer {
     }
     
     addConnectedSugar(parentSugar, clickX, clickY, config = null) {
+        
         const sugarConfig = config || this.currentSugarConfig;
         const parentX = parseFloat(parentSugar.getAttribute('data-x'));
         const parentY = parseFloat(parentSugar.getAttribute('data-y'));
@@ -1937,12 +3231,12 @@ class GlycanDrawer {
             // Try alternative directions
             const altPosition = this.findAlternativePosition(parentX, parentY, bestDirection);
             if (altPosition) {
-                const childSugar = this.createSugar(altPosition.x, altPosition.y, sugarConfig);
+                const childSugar = this.createSugar(altPosition.x, altPosition.y, sugarConfig, false); // Don't save state again
                 const linkage = this.currentLinkageConfig.linkage || document.getElementById('linkageInput')?.value || null;
                 this.createConnection(parentSugar, childSugar, false, linkage);
             }
         } else {
-            const childSugar = this.createSugar(newX, newY, sugarConfig);
+            const childSugar = this.createSugar(newX, newY, sugarConfig, false); // Don't save state again
             const linkage = this.currentLinkageConfig.linkage || document.getElementById('linkageInput')?.value || null;
             this.createConnection(parentSugar, childSugar, false, linkage);
         }
@@ -1989,12 +3283,7 @@ class GlycanDrawer {
         return null;
     }
     
-    createSugar(x, y, config, saveState = true) {
-        // Save state before creating sugar (unless explicitly disabled)
-        if (saveState) {
-            this.saveState();
-        }
-        
+    createSugar(x, y, config) {
         this.sugarCount++;
         
         // Create a group element for the sugar
@@ -2033,8 +3322,9 @@ class GlycanDrawer {
                 if (line) line.style.setProperty('stroke-width', config.borderWidth, 'important');
             }
             if (config.borderColor) {
-                if (polygon) polygon.style.setProperty('stroke', config.borderColor, 'important');
-                if (line) line.style.setProperty('stroke', config.borderColor, 'important');
+                const normalizedBorderColor = this.normalizeColorToHex(config.borderColor);
+                if (polygon) polygon.style.setProperty('stroke', normalizedBorderColor, 'important');
+                if (line) line.style.setProperty('stroke', normalizedBorderColor, 'important');
             }
             if (config.borderOpacity !== undefined) {
                 if (polygon) polygon.style.setProperty('stroke-opacity', config.borderOpacity, 'important');
@@ -2065,7 +3355,8 @@ class GlycanDrawer {
                 shape.style.setProperty('stroke-width', config.borderWidth, 'important');
             }
             if (config.borderColor) {
-                shape.style.setProperty('stroke', config.borderColor, 'important');
+                const normalizedBorderColor = this.normalizeColorToHex(config.borderColor);
+                shape.style.setProperty('stroke', normalizedBorderColor, 'important');
             }
             if (config.borderOpacity !== undefined) {
                 shape.style.setProperty('stroke-opacity', config.borderOpacity, 'important');
@@ -2090,6 +3381,12 @@ class GlycanDrawer {
         
         // Add to canvas
         this.canvas.appendChild(sugarGroup);
+        
+        // Record creation for undo/redo system
+        const objectData = this.createObjectData(sugarGroup);
+        if (objectData) {
+            this.recordObjectAdded(objectData);
+        }
         
         return sugarGroup;
     }
@@ -2312,7 +3609,7 @@ class GlycanDrawer {
                 break;
                 
             case 'diamond-divided-top':
-                // 分割菱形：下半部分白色，上半部分用户颜色
+                // 分割菱形：上半部分用户颜色，下半部分白色（GlcA标准）
                 const dividedTopGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
                 
                 // 主菱形
@@ -2373,7 +3670,7 @@ class GlycanDrawer {
                 break;
                 
             case 'diamond-divided-bottom':
-                // 分割菱形：上半部分用户颜色，下半部分白色（GlcA标准）
+                // 分割菱形：下半部分用户颜色，上半部分白色
                 const dividedBottomGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
                 
                 // 主菱形
@@ -2393,16 +3690,16 @@ class GlycanDrawer {
                 gradientBottom.setAttribute('x2', '0%');
                 gradientBottom.setAttribute('y2', '100%');
                 
-                // 上半部分：用户颜色
+                // 上半部分：白色
                 const stopBottom1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
                 stopBottom1.setAttribute('offset', '50%');
-                stopBottom1.setAttribute('stop-color', color || '#0072BC');
+                stopBottom1.setAttribute('stop-color', 'white');
                 stopBottom1.setAttribute('stop-opacity', '1');
                 
-                // 下半部分：白色
+                // 下半部分：用户颜色
                 const stopBottom2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
                 stopBottom2.setAttribute('offset', '50%');
-                stopBottom2.setAttribute('stop-color', 'white');
+                stopBottom2.setAttribute('stop-color', color || '#0072BC');
                 stopBottom2.setAttribute('stop-opacity', '1');
                 
                 gradientBottom.appendChild(stopBottom1);
@@ -2512,6 +3809,88 @@ class GlycanDrawer {
                 element.setAttribute('points', pentInvertedPoints);
                 break;
                 
+            case 'freeend-asterisk':
+                // Asterisk shape for free end - path-based line shape
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                element.setAttribute('d', this.createAsteriskPath(x, y, actualSize));
+                element.setAttribute('fill', 'none');
+                element.setAttribute('stroke-width', actualSize * 0.15);
+                element.setAttribute('stroke-linecap', 'round');
+                element.classList.add('freeend-asterisk');
+                element.setAttribute('data-exclude-export', 'true'); // Mark for exclusion from export
+                break;
+                
+            case 'freeend-wave':
+                // Wave line for peptide/protein - stored as data, rendered dynamically
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                element.setAttribute('data-x', x);
+                element.setAttribute('data-y', y);
+                element.setAttribute('data-size', actualSize);
+                this.updateWavePath(element, x, y, actualSize);
+                element.setAttribute('fill', 'none');
+                element.setAttribute('stroke-linecap', 'round');
+                element.classList.add('freeend-wave');
+                break;
+                
+            // Bracket shapes (path-based)
+            case 'bracket-left':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                element.setAttribute('d', this.createBracketPath('left', x, y, actualSize));
+                element.setAttribute('fill', 'none');
+                element.setAttribute('stroke-width', actualSize * 0.15);
+                element.setAttribute('stroke-linecap', 'round');
+                element.setAttribute('stroke-linejoin', 'round');
+                element.classList.add('bracket-shape');
+                break;
+                
+            case 'bracket-right':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                element.setAttribute('d', this.createBracketPath('right', x, y, actualSize));
+                element.setAttribute('fill', 'none');
+                element.setAttribute('stroke-width', actualSize * 0.15);
+                element.setAttribute('stroke-linecap', 'round');
+                element.setAttribute('stroke-linejoin', 'round');
+                element.classList.add('bracket-shape');
+                break;
+                
+            case 'paren-left':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                element.setAttribute('d', this.createParenPath('left', x, y, actualSize));
+                element.setAttribute('fill', 'none');
+                element.setAttribute('stroke-width', actualSize * 0.15);
+                element.setAttribute('stroke-linecap', 'round');
+                element.classList.add('bracket-shape');
+                break;
+                
+            case 'paren-right':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                element.setAttribute('d', this.createParenPath('right', x, y, actualSize));
+                element.setAttribute('fill', 'none');
+                element.setAttribute('stroke-width', actualSize * 0.15);
+                element.setAttribute('stroke-linecap', 'round');
+                element.classList.add('bracket-shape');
+                break;
+                
+            case 'brace-left':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                element.setAttribute('d', this.createBracePath('left', x, y, actualSize));
+                element.setAttribute('fill', 'none');
+                element.setAttribute('stroke-width', actualSize * 0.15);
+                element.setAttribute('stroke-linecap', 'round');
+                element.setAttribute('stroke-linejoin', 'round');
+                element.classList.add('bracket-shape');
+                break;
+                
+            case 'brace-right':
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                element.setAttribute('d', this.createBracePath('right', x, y, actualSize));
+                element.setAttribute('fill', 'none');
+                element.setAttribute('stroke-width', actualSize * 0.15);
+                element.setAttribute('stroke-linecap', 'round');
+                element.setAttribute('stroke-linejoin', 'round');
+                element.classList.add('bracket-shape');
+                break;
+                
             default:
                 return this.createSugarShape(x, y, 'circle', color);
         }
@@ -2520,6 +3899,21 @@ class GlycanDrawer {
         if (shape === 'triangle-divided' || shape === 'diamond-divided-top' || shape === 'diamond-divided-bottom') {
             // 分割形状的特殊处理已经在case中完成（渐变填充和分割线）
             // 组级别不需要额外的填充和描边设置
+        } else if (shape === 'freeend-asterisk') {
+            // Asterisk text - use color for fill
+            element.setAttribute('fill', color);
+        } else if (shape === 'freeend-wave') {
+            // Wave line - use color for stroke, preserve stroke-width from attributes
+            element.setAttribute('stroke', color);
+            if (!element.getAttribute('stroke-width')) {
+                element.setAttribute('stroke-width', '2');
+            }
+        } else if (shape === 'bracket-left' || shape === 'bracket-right' || 
+                   shape === 'paren-left' || shape === 'paren-right' ||
+                   shape === 'brace-left' || shape === 'brace-right' ||
+                   shape === 'freeend-asterisk') {
+            // Bracket and asterisk path shapes - use color for stroke
+            element.setAttribute('stroke', color);
         } else {
             element.setAttribute('fill', color);
             element.setAttribute('stroke', strokeColor);
@@ -2586,6 +3980,83 @@ class GlycanDrawer {
         ].join(' ');
         
         return {leftPoints, rightPoints};
+    }
+    
+    updateWavePath(element, x, y, size) {
+        // Update wave path based on position and size
+        const waveWidth = size * 2;
+        const waveHeight = size * 0.6;
+        const wavePath = `M ${x - waveWidth/2} ${y} Q ${x - waveWidth/4} ${y - waveHeight} ${x} ${y} T ${x + waveWidth/2} ${y}`;
+        element.setAttribute('d', wavePath);
+    }
+    
+    // Create square bracket path [ or ]
+    createBracketPath(side, x, y, size) {
+        const height = size * 2;
+        const width = size * 0.5;
+        
+        if (side === 'left') {
+            // Left bracket [
+            return `M ${x + width/2} ${y - height/2} L ${x - width/2} ${y - height/2} L ${x - width/2} ${y + height/2} L ${x + width/2} ${y + height/2}`;
+        } else {
+            // Right bracket ]
+            return `M ${x - width/2} ${y - height/2} L ${x + width/2} ${y - height/2} L ${x + width/2} ${y + height/2} L ${x - width/2} ${y + height/2}`;
+        }
+    }
+    
+    // Create parenthesis path ( or )
+    createParenPath(side, x, y, size) {
+        const height = size * 2;
+        const width = size * 0.3;  // Reduced from 0.6 to 0.3 (half width)
+        const curve = size * 0.4;  // Reduced from 0.8 to 0.4 (half curve)
+        
+        if (side === 'left') {
+            // Left parenthesis (
+            return `M ${x + width/2} ${y - height/2} Q ${x - curve} ${y - height/4} ${x - curve} ${y} Q ${x - curve} ${y + height/4} ${x + width/2} ${y + height/2}`;
+        } else {
+            // Right parenthesis )
+            return `M ${x - width/2} ${y - height/2} Q ${x + curve} ${y - height/4} ${x + curve} ${y} Q ${x + curve} ${y + height/4} ${x - width/2} ${y + height/2}`;
+        }
+    }
+    
+    // Create curly brace path { or }
+    createBracePath(side, x, y, size) {
+        const height = size * 2;
+        const width = size * 0.25;      // Reduced from 0.5 to 0.25 (half width)
+        const curveSize = size * 0.15;  // Reduced from 0.3 to 0.15 (half curve)
+        const midPoint = y;
+        
+        if (side === 'left') {
+            // Left brace {
+            return `M ${x + width/2} ${y - height/2} 
+                    Q ${x - width/2} ${y - height/2 + curveSize} ${x - width/2} ${y - height/4}
+                    Q ${x - width/2} ${midPoint - curveSize} ${x - width/2 - curveSize} ${midPoint}
+                    Q ${x - width/2} ${midPoint + curveSize} ${x - width/2} ${y + height/4}
+                    Q ${x - width/2} ${y + height/2 - curveSize} ${x + width/2} ${y + height/2}`;
+        } else {
+            // Right brace }
+            return `M ${x - width/2} ${y - height/2}
+                    Q ${x + width/2} ${y - height/2 + curveSize} ${x + width/2} ${y - height/4}
+                    Q ${x + width/2} ${midPoint - curveSize} ${x + width/2 + curveSize} ${midPoint}
+                    Q ${x + width/2} ${midPoint + curveSize} ${x + width/2} ${y + height/4}
+                    Q ${x + width/2} ${y + height/2 - curveSize} ${x - width/2} ${y + height/2}`;
+        }
+    }
+    
+    // Create asterisk path * (6-pointed star for free end)
+    createAsteriskPath(x, y, size) {
+        const length = size * 1.2; // Length of each ray
+        const paths = [];
+        
+        // Create 6 rays radiating from center at 60-degree intervals
+        for (let i = 0; i < 6; i++) {
+            const angle = (Math.PI * i / 3) - Math.PI / 2; // Start from top, 60° apart
+            const endX = x + length * Math.cos(angle);
+            const endY = y + length * Math.sin(angle);
+            paths.push(`M ${x} ${y} L ${endX} ${endY}`);
+        }
+        
+        return paths.join(' ');
     }
     
     parsePolygonPoints(pointsStr) {
@@ -2722,7 +4193,7 @@ class GlycanDrawer {
         highlight.setAttribute('y', bbox.y - 2);
         highlight.setAttribute('width', bbox.width + 8);
         highlight.setAttribute('height', bbox.height + 4);
-        highlight.setAttribute('fill', 'rgba(0, 114, 188, 0.2)');
+        highlight.setAttribute('fill', '#0072BC33');  // #0072BC with 20% opacity (0.2 * 255 = 51 = 0x33)
         highlight.setAttribute('stroke', '#0072BC');
         highlight.setAttribute('stroke-width', '2');
         highlight.setAttribute('stroke-dasharray', '5,5');
@@ -3013,9 +4484,207 @@ class GlycanDrawer {
                 const pentInvertedPoints = this.generatePolygonPoints(x, y, size, 5, Math.PI/2);
                 shape.setAttribute('points', pentInvertedPoints);
                 break;
+                
+            case 'freeend-asterisk':
+                // Update asterisk path position
+                shape.setAttribute('d', this.createAsteriskPath(x, y, size));
+                break;
+                
+            case 'freeend-wave':
+                // Update wave path
+                this.updateWavePath(shape, x, y, size);
+                break;
+                
+            case 'bracket-left':
+                shape.setAttribute('d', this.createBracketPath('left', x, y, size));
+                break;
+                
+            case 'bracket-right':
+                shape.setAttribute('d', this.createBracketPath('right', x, y, size));
+                break;
+                
+            case 'paren-left':
+                shape.setAttribute('d', this.createParenPath('left', x, y, size));
+                break;
+                
+            case 'paren-right':
+                shape.setAttribute('d', this.createParenPath('right', x, y, size));
+                break;
+                
+            case 'brace-left':
+                shape.setAttribute('d', this.createBracePath('left', x, y, size));
+                break;
+                
+            case 'brace-right':
+                shape.setAttribute('d', this.createBracePath('right', x, y, size));
+                break;
         }
     }
     
+    // Update existing shape element to a different shape type
+    updateShapeToType(shape, newShapeType, x, y, color, size) {
+        if (!shape) return;
+        
+        const currentType = shape.tagName.toLowerCase();
+        const targetType = this.getTargetElementType(newShapeType);
+        
+        // If the SVG element type needs to change (e.g., circle to rect), we need to replace it
+        if (currentType !== targetType) {
+            const parent = shape.parentElement;
+            const oldShape = shape;
+            
+            // Create new shape element
+            const newShape = this.createSugarShape(x, y, newShapeType, color, size);
+            newShape.classList.add('sugar-shape');
+            
+            // Replace the old shape with the new one
+            parent.replaceChild(newShape, oldShape);
+        } else {
+            // Same element type, just update attributes
+            this.updateShapeAttributes(shape, newShapeType, x, y, color, size);
+        }
+    }
+    
+    // Get the SVG element type needed for a shape
+    getTargetElementType(shapeType) {
+        switch (shapeType) {
+            case 'circle':
+            case 'circle-filled':
+                return 'circle';
+            case 'circle-flat':
+            case 'circle-narrow':
+                return 'ellipse';
+            case 'square':
+            case 'square-flat':
+            case 'square-narrow':
+                return 'rect';
+            case 'square-divided':
+            case 'triangle-divided':
+            case 'diamond-divided-top':
+            case 'diamond-divided-bottom':
+                return 'g'; // These are complex shapes with gradients and multiple elements
+            case 'triangle':
+            case 'triangle-filled':
+            case 'triangle-inverted':
+            case 'diamond':
+            case 'diamond-flat':
+            case 'diamond-narrow':
+            case 'star':
+            case 'star-5':
+            case 'star-5-inverted':
+            case 'star-4':
+            case 'star-4-tilted':
+            case 'star-6':
+            case 'star-6-tilted':
+            case 'hexagon':
+            case 'flat-hexagon':
+            case 'hexagon-compressed':
+            case 'flat-hexagon-compressed':
+            case 'flat-diamond':
+            case 'pentagon':
+            case 'pentagon-inverted':
+                return 'polygon';
+            default:
+                return 'polygon'; // Default for complex shapes
+        }
+    }
+    
+    // Update shape attributes for same element type
+    updateShapeAttributes(shape, shapeType, x, y, color, size) {
+        const actualSize = size || this.sugarRadius;
+        
+        // Update position and size attributes based on shape type
+        switch (shapeType) {
+            case 'circle':
+            case 'circle-filled':
+                shape.setAttribute('cx', x);
+                shape.setAttribute('cy', y);
+                shape.setAttribute('r', actualSize);
+                break;
+                
+            case 'circle-flat':
+                shape.setAttribute('cx', x);
+                shape.setAttribute('cy', y);
+                shape.setAttribute('rx', actualSize * 1.4);
+                shape.setAttribute('ry', actualSize * 0.7);
+                break;
+                
+            case 'circle-narrow':
+                shape.setAttribute('cx', x);
+                shape.setAttribute('cy', y);
+                shape.setAttribute('rx', actualSize * 0.7);
+                shape.setAttribute('ry', actualSize * 1.4);
+                break;
+                
+            case 'square':
+                shape.setAttribute('x', x - actualSize);
+                shape.setAttribute('y', y - actualSize);
+                shape.setAttribute('width', actualSize * 2);
+                shape.setAttribute('height', actualSize * 2);
+                break;
+                
+            case 'square-flat':
+                shape.setAttribute('x', x - actualSize);
+                shape.setAttribute('y', y - actualSize * 0.7);
+                shape.setAttribute('width', actualSize * 2);
+                shape.setAttribute('height', actualSize * 1.4);
+                break;
+                
+            case 'square-narrow':
+                shape.setAttribute('x', x - actualSize * 0.7);
+                shape.setAttribute('y', y - actualSize);
+                shape.setAttribute('width', actualSize * 1.4);
+                shape.setAttribute('height', actualSize * 2);
+                break;
+                
+            case 'triangle':
+            case 'triangle-filled':
+                const triPoints = `${x},${y-actualSize} ${x+actualSize*0.866},${y+actualSize*0.5} ${x-actualSize*0.866},${y+actualSize*0.5}`;
+                shape.setAttribute('points', triPoints);
+                break;
+                
+            case 'triangle-inverted':
+                const triInvPoints = `${x},${y+actualSize} ${x+actualSize*0.866},${y-actualSize*0.5} ${x-actualSize*0.866},${y-actualSize*0.5}`;
+                shape.setAttribute('points', triInvPoints);
+                break;
+                
+            case 'diamond':
+                const diamondPoints = `${x},${y-actualSize} ${x+actualSize},${y} ${x},${y+actualSize} ${x-actualSize},${y}`;
+                shape.setAttribute('points', diamondPoints);
+                break;
+                
+            case 'diamond-flat':
+                const diamondFlatPoints = `${x},${y-actualSize*0.7} ${x+actualSize*1.4},${y} ${x},${y+actualSize*0.7} ${x-actualSize*1.4},${y}`;
+                shape.setAttribute('points', diamondFlatPoints);
+                break;
+                
+            case 'diamond-narrow':
+                const diamondNarrowPoints = `${x},${y-actualSize*1.4} ${x+actualSize*0.7},${y} ${x},${y+actualSize*1.4} ${x-actualSize*0.7},${y}`;
+                shape.setAttribute('points', diamondNarrowPoints);
+                break;
+                
+            case 'star-5':
+                const star5Points = this.generateStarPoints(x, y, actualSize, 5, 0);
+                shape.setAttribute('points', star5Points);
+                break;
+                
+            case 'diamond-divided-top':
+                // For complex shapes like diamond-divided-top, we need to replace the entire element
+                // since it involves gradients and multiple elements
+                console.warn('Cannot update diamond-divided-top in place, need full replacement');
+                // This will be handled by the element replacement logic in updateShapeToType
+                break;
+                
+            // Add other shape types as needed...
+        }
+        
+        // Update color
+        const normalizedFillColor = this.normalizeColorToHex(color);
+        shape.style.setProperty('fill', normalizedFillColor, 'important');
+        shape.style.setProperty('stroke', '#000000', 'important');
+        shape.style.setProperty('stroke-width', '2', 'important');
+    }
+
     updateConnectedLines(sugar, oldX, oldY, newX, newY) {
         const sugarId = sugar.getAttribute('id');
         const connections = this.canvas.querySelectorAll('.connection');
@@ -3164,8 +4833,9 @@ class GlycanDrawer {
         }
         
         // 更新颜色按钮 - 只有在默认调色板中的颜色才显示选中
+        const normalizedSugarColor = this.normalizeColorToHex(sugarData.color);
         document.querySelectorAll('.color-btn').forEach(btn => {
-            if (btn.dataset.color === sugarData.color && defaultColors.includes(sugarData.color)) {
+            if (btn.dataset.color === normalizedSugarColor && defaultColors.includes(normalizedSugarColor)) {
                 btn.classList.add('active');
             }
         });
@@ -3174,7 +4844,7 @@ class GlycanDrawer {
         let matchingPreset = null;
         const presetMappedShape = this.mapLegacyShape(sugarData.shape);
         for (const [presetKey, presetConfig] of Object.entries(this.snfgPresets)) {
-            if (presetConfig.shape === presetMappedShape && presetConfig.color === sugarData.color) {
+            if (presetConfig.shape === presetMappedShape && presetConfig.color === normalizedSugarColor) {
                 matchingPreset = presetKey;
                 break;
             }
@@ -3219,7 +4889,7 @@ class GlycanDrawer {
         
         // 检查各属性一致性
         const shapes = [...new Set(sugarDataList.map(data => data.shape))];
-        const colors = [...new Set(sugarDataList.map(data => data.color))];
+        const colors = [...new Set(sugarDataList.map(data => this.normalizeColorToHex(data.color)))];
         const sizes = [...new Set(sugarDataList.map(data => data.size))];
         
         // 多选时，如果参数不一致，不显示具体内容（按照需求）
@@ -3362,12 +5032,7 @@ class GlycanDrawer {
         return null;
     }
     
-    createText(x, y, content = 'Text', saveState = true, autoEdit = true) {
-        // Save state before creating text (unless explicitly disabled)
-        if (saveState) {
-            this.saveState();
-        }
-        
+    createText(x, y, content = 'Text', autoEdit = true) {
         this.textCount++;
         
         // Create text element
@@ -3389,7 +5054,8 @@ class GlycanDrawer {
         // Set styles from configuration
         textElement.style.setProperty('font-family', textConfig.fontFamily, 'important');
         textElement.style.setProperty('font-size', `${textConfig.fontSize}px`, 'important');
-        textElement.style.setProperty('fill', textConfig.color, 'important');
+        const normalizedTextColor = this.normalizeColorToHex(textConfig.color);
+        textElement.style.setProperty('fill', normalizedTextColor, 'important');
         
         if (textConfig.opacity !== undefined) {
             textElement.style.setProperty('fill-opacity', textConfig.opacity, 'important');
@@ -3407,6 +5073,12 @@ class GlycanDrawer {
         
         // Add to canvas
         this.canvas.appendChild(textElement);
+        
+        // Record creation for undo/redo system
+        const objectData = this.createObjectData(textElement);
+        if (objectData) {
+            this.recordObjectAdded(objectData);
+        }
         
         // If content is default and autoEdit is enabled, immediately edit it
         if (content === 'Text' && autoEdit) {
@@ -3451,12 +5123,22 @@ class GlycanDrawer {
         // Handle input completion
         const finishEdit = () => {
             const newText = input.value.trim();
-            if (newText) {
+            const originalText = textElement.textContent;
+            
+            if (newText && newText !== originalText) {
+                // Record the text content change as an undo step
+                this.startStep('Edit text');
+                const beforeData = this.createObjectData(textElement);
                 textElement.textContent = newText;
-            } else {
-                // If empty, delete the text element
+                const afterData = this.createObjectData(textElement);
+                this.recordObjectModified(textElement.getAttribute('id'), beforeData, afterData);
+                this.finishStep();
+            } else if (!newText) {
+                // If empty, delete the text element (this already records undo in deleteText)
                 this.deleteText(textElement);
             }
+            // If newText === originalText, no change needed, no undo step required
+            
             document.body.removeChild(input);
             
             // Delay resetting isEditingText to prevent immediate new text creation
@@ -3509,6 +5191,10 @@ class GlycanDrawer {
     }
     
     deleteText(textElement) {
+        // Record removal for undo/redo system before actually deleting
+        const textId = textElement.getAttribute('id');
+        this.recordObjectRemoved(textId);
+        
         if (this.selectedText === textElement) {
             this.selectedText = null;
         }
@@ -3642,6 +5328,12 @@ class GlycanDrawer {
     }
     
     createConnection(parentSugar, childSugar, skipDefaultStyling = false, linkageInfo = null) {
+        // Handle reversed linkage direction if in add mode
+        if (this.currentTool === 'add' && this.currentLinkageConfig.reversed) {
+            // Swap parent and child to reverse the direction
+            [parentSugar, childSugar] = [childSugar, parentSugar];
+        }
+        
         // Check if already connected
         if (this.areConnected(parentSugar, childSugar)) {
             return; // Don't create duplicate connections
@@ -3669,8 +5361,8 @@ class GlycanDrawer {
             // In add mode, use showText from currentLinkageConfig
             line.setAttribute('data-linkage-visible', this.currentLinkageConfig.showText ? 'true' : 'false');
         } else {
-            // In other modes, default to true (can be controlled per-connection in linkage mode)
-            line.setAttribute('data-linkage-visible', 'true');
+            // In other modes, default to false to match the default behavior when adding sugars
+            line.setAttribute('data-linkage-visible', 'false');
         }
         
         // Apply styling based on current linkage settings or defaults
@@ -3705,15 +5397,18 @@ class GlycanDrawer {
                 mode: this.currentTool
             });
             
+            // Normalize color to hex format before applying
+            const normalizedColor = this.normalizeColorToHex(color);
+            
             // Apply the settings to the line using style properties to override CSS
-            line.style.setProperty('stroke', color, 'important');
+            line.style.setProperty('stroke', normalizedColor, 'important');
             line.style.setProperty('stroke-width', width, 'important');
             line.style.setProperty('stroke-opacity', opacity, 'important');
             
             console.log('Applied styles with !important:', {
-                stroke: line.style.stroke,
-                strokeWidth: line.style.strokeWidth,
-                strokeOpacity: line.style.strokeOpacity,
+                stroke: normalizedColor,  // Show the hex value we actually applied
+                strokeWidth: width,
+                strokeOpacity: opacity,
                 computedStrokeWidth: getComputedStyle(line).strokeWidth
             });
             
@@ -3732,20 +5427,49 @@ class GlycanDrawer {
             
             // Store text style preferences from currentLinkageConfig when in add mode
             if (this.currentTool === 'add') {
-                line.setAttribute('data-text-size', this.currentLinkageConfig.textSize || 12);
-                line.setAttribute('data-text-color', this.currentLinkageConfig.textColor || '#000000');
+                  line.setAttribute('data-text-size', this.currentLinkageConfig.textSize || 12);
+                  line.setAttribute('data-text-color', this.currentLinkageConfig.textColor || '#000000');
+                  line.setAttribute('data-text-font-family', this.currentLinkageConfig.textFontFamily || 'Arial');
+                  line.setAttribute('data-text-opacity', this.currentLinkageConfig.textOpacity != null ? this.currentLinkageConfig.textOpacity : 1);
+                  if (this.currentLinkageConfig.textStyle) {
+                     line.setAttribute('data-text-bold', this.currentLinkageConfig.textStyle.bold ? 'true' : 'false');
+                     line.setAttribute('data-text-italic', this.currentLinkageConfig.textStyle.italic ? 'true' : 'false');
+                     line.setAttribute('data-text-underline', this.currentLinkageConfig.textStyle.underline ? 'true' : 'false');
+                  }
             }
         }
         
         // Store sugar IDs for style management
         line.setAttribute('data-start', parentSugar.getAttribute('id'));
         line.setAttribute('data-end', childSugar.getAttribute('id'));
+        // Assign deterministic connection id based on sugar numbers (connection-<min>-<max>)
+        try {
+            const startId = parentSugar.getAttribute('id');
+            const endId = childSugar.getAttribute('id');
+            let connId = this.computeConnectionId(startId, endId);
+            // Avoid collision: if id already exists, append a suffix
+            if (document.getElementById(connId)) {
+                let suffix = 1;
+                while (document.getElementById(connId + `-${suffix}`)) suffix++;
+                connId = `${connId}-${suffix}`;
+            }
+            line.setAttribute('id', connId);
+        } catch (e) {
+            // fallback to generated id
+            if (!line.getAttribute('id')) line.setAttribute('id', this.generateUniqueId('connection'));
+        }
         
         // Insert line before sugars so it appears behind them
         this.canvas.insertBefore(line, this.canvas.firstChild);
         
         // Create linkage text label if checkbox is checked
         this.updateLinkageText(line);
+        
+        // Record creation for undo/redo system
+        const objectData = this.createObjectData(line);
+        if (objectData) {
+            this.recordObjectAdded(objectData);
+        }
         
         return line; // Return the created line for further styling if needed
     }
@@ -3775,79 +5499,240 @@ class GlycanDrawer {
         return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     }
     
+    // Parse linkage information into configuration and position (SNFG standard)
+    // Input: "α1-3" or "β1-4" format
+    // Output: { config: "α", position: "3" } (removes the '1-' part, keeps only the target position)
+    parseLinkageInfo(linkage) {
+        if (!linkage || linkage === '??-?' || linkage.trim() === '') {
+            return { config: '?', position: '?' };
+        }
+        
+        const trimmed = linkage.trim();
+        
+        // Match pattern: α/β followed by optional number-number format
+        // Examples: α1-3 → {config: α, position: 3}, β1-4 → {config: β, position: 4}
+        const match = trimmed.match(/^([αβ])(\d+-(\d+))?$/);
+        
+        if (match) {
+            const config = match[1]; // α or β
+            const position = match[3] || ''; // The second number after dash, or empty if just α/β
+            return { config, position };
+        }
+        
+        // If doesn't match expected format, return unknown
+        return { config: '?', position: '?' };
+    }
+    
     // Update or create linkage text label for a connection
-    updateLinkageText(connection) {
+    updateLinkageText(connection, textSize, textColor, textFontFamily, textBold, textItalic, textUnderline, textOpacity) {
         // Check both global visibility and connection-specific visibility
         const showAllLinkageText = document.getElementById('showAllLinkageText')?.checked ?? true; // Default to true if checkbox doesn't exist
         const connectionVisible = connection.getAttribute('data-linkage-visible') !== 'false';
         
-        // Find existing linkage text for this connection
+        // Find existing linkage text elements for this connection
         const connectionId = connection.getAttribute('id') || this.generateUniqueId('connection');
         if (!connection.getAttribute('id')) {
             connection.setAttribute('id', connectionId);
         }
         
-        let linkageText = this.canvas.querySelector(`text[data-connection-id="${connectionId}"]`);
+        // Look for both config and position text elements
+        let configText = this.canvas.querySelector(`text[data-connection-id="${connectionId}"][data-linkage-part="config"]`);
+        let positionText = this.canvas.querySelector(`text[data-connection-id="${connectionId}"][data-linkage-part="position"]`);
         
         if (!showAllLinkageText || !connectionVisible) {
             // Remove linkage text if global checkbox is unchecked or connection is set to hidden
-            if (linkageText) {
-                linkageText.remove();
-            }
+            if (configText) configText.remove();
+            if (positionText) positionText.remove();
             return;
         }
         
-        // Get linkage info, text size, and color
+        // Get linkage info and parse it
         const linkage = connection.getAttribute('data-linkage') || '??-?';
+        const { config, position } = this.parseLinkageInfo(linkage);
         
-        // Try to get text size and color from connection attributes (set during creation in add mode)
-        // If not found, fall back to UI controls
-        let textSize = connection.getAttribute('data-text-size');
-        let textColor = connection.getAttribute('data-text-color');
+        // Try to get text size and color from parameters (set during creation in add mode)
+        // If not provided, fall back to UI controls or defaults
+        let finalTextSize = textSize;
+        let finalTextColor = textColor;
+        let finalTextFontFamily = textFontFamily;
+        let finalTextBold = textBold;
+        let finalTextItalic = textItalic;
+        let finalTextUnderline = textUnderline;
+        let finalTextOpacity = textOpacity;
         
-        if (!textSize) {
-            textSize = document.getElementById('linkageTextSize')?.value || '12';
+        if (!finalTextSize) {
+            finalTextSize = connection.getAttribute('data-text-size') || document.getElementById('linkageTextSize')?.value || '12';
         }
-        if (!textColor) {
-            textColor = document.getElementById('linkageTextColor')?.value || '#000000';
+        if (!finalTextColor) {
+            finalTextColor = connection.getAttribute('data-text-color') || document.getElementById('linkageTextColor')?.value || '#000000';
+        }
+        if (!finalTextFontFamily) {
+            finalTextFontFamily = connection.getAttribute('data-text-font-family') || document.getElementById('linkageTextFontFamily')?.value || 'Arial';
+        }
+        if (finalTextBold === undefined) {
+            const attr = connection.getAttribute('data-text-bold');
+            if (attr !== null) {
+                finalTextBold = attr === 'true';
+            } else {
+                finalTextBold = document.getElementById('linkageTextBoldBtn')?.classList.contains('active') || false;
+            }
+        }
+        if (finalTextItalic === undefined) {
+            const attr = connection.getAttribute('data-text-italic');
+            if (attr !== null) {
+                finalTextItalic = attr === 'true';
+            } else {
+                finalTextItalic = document.getElementById('linkageTextItalicBtn')?.classList.contains('active') || false;
+            }
+        }
+        if (finalTextUnderline === undefined) {
+            const attr = connection.getAttribute('data-text-underline');
+            if (attr !== null) {
+                finalTextUnderline = attr === 'true';
+            } else {
+                finalTextUnderline = document.getElementById('linkageTextUnderlineBtn')?.classList.contains('active') || false;
+            }
+        }
+        if (!finalTextOpacity) {
+            finalTextOpacity = connection.getAttribute('data-text-opacity') || document.getElementById('linkageTextOpacity')?.value || '1';
         }
         
-        // Calculate position at middle of connection
+        // Get connection coordinates
+        // x1,y1 = start sugar (B in your description), x2,y2 = end sugar (A in your description)
         const x1 = parseFloat(connection.getAttribute('x1'));
         const y1 = parseFloat(connection.getAttribute('y1'));
         const x2 = parseFloat(connection.getAttribute('x2'));
         const y2 = parseFloat(connection.getAttribute('y2'));
         
-        const midX = (x1 + x2) / 2;
-        const midY = (y1 + y2) / 2;
+        // Calculate vector from start (B) to end (A)
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const length = Math.sqrt(dx * dx + dy * dy);
         
-        // Create or update the text element
-        if (!linkageText) {
-            linkageText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            linkageText.classList.add('linkage-label');
-            linkageText.setAttribute('data-connection-id', connectionId);
-            this.canvas.appendChild(linkageText);
+        if (length === 0) return; // Avoid division by zero
+        
+        // Normalized direction vector
+        const dirX = dx / length;
+        const dirY = dy / length;
+        
+        // Perpendicular vector (right side of the stroke, pointing from B to A)
+        const perpX = -dirY;
+        const perpY = dirX;
+        
+        // Offset distance from the line
+        const offset = 8;
+        
+        // Position for config (α/β) - closer to end sugar (A), on the right side
+        const configRatio = 0.65; // 65% along the line from start to end
+        const configX = x1 + dx * configRatio + perpX * offset;
+        const configY = y1 + dy * configRatio + perpY * offset;
+        
+        // Position for position number - closer to start sugar (B), on the right side
+        const positionRatio = 0.35; // 35% along the line from start to end
+        const positionX = x1 + dx * positionRatio + perpX * offset;
+        const positionY = y1 + dy * positionRatio + perpY * offset;
+        
+        // Create or update config text (α/β)
+        if (!configText) {
+            configText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            configText.classList.add('linkage-label');
+            configText.setAttribute('data-connection-id', connectionId);
+            configText.setAttribute('data-linkage-part', 'config');
+            configText.setAttribute('id', `${connectionId}-config-text`);
+            this.canvas.appendChild(configText);
         }
         
-        linkageText.textContent = linkage;
-        linkageText.setAttribute('x', midX);
-        linkageText.setAttribute('y', midY - 5); // Offset slightly above the line
-        linkageText.style.setProperty('font-size', textSize + 'px', 'important');
-        linkageText.style.setProperty('fill', textColor, 'important');
-        linkageText.setAttribute('text-anchor', 'middle');
-        linkageText.setAttribute('pointer-events', 'none'); // Don't interfere with selection
+        configText.textContent = config;
+        configText.setAttribute('x', configX);
+        configText.setAttribute('y', configY);
+        configText.style.setProperty('font-size', finalTextSize + 'px', 'important');
+        configText.style.setProperty('font-family', finalTextFontFamily, 'important');
+        const normalizedConfigTextColor = this.normalizeColorToHex(finalTextColor);
+        configText.style.setProperty('fill', normalizedConfigTextColor, 'important');
+        configText.style.setProperty('fill-opacity', finalTextOpacity, 'important');
+        
+        if (finalTextBold) {
+            configText.style.setProperty('font-weight', 'bold', 'important');
+        } else {
+            configText.style.removeProperty('font-weight');
+        }
+        
+        if (finalTextItalic) {
+            configText.style.setProperty('font-style', 'italic', 'important');
+        } else {
+            configText.style.removeProperty('font-style');
+        }
+        
+        if (finalTextUnderline) {
+            configText.style.setProperty('text-decoration', 'underline', 'important');
+        } else {
+            configText.style.removeProperty('text-decoration');
+        }
+        
+        configText.setAttribute('text-anchor', 'middle');
+        configText.setAttribute('dominant-baseline', 'middle');
+        configText.setAttribute('pointer-events', 'none'); // Don't interfere with selection
+        
+        // Create or update position text (the number)
+        if (!positionText) {
+            positionText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            positionText.classList.add('linkage-label');
+            positionText.setAttribute('data-connection-id', connectionId);
+            positionText.setAttribute('data-linkage-part', 'position');
+            positionText.setAttribute('id', `${connectionId}-position-text`);
+            this.canvas.appendChild(positionText);
+        }
+        
+        positionText.textContent = position;
+        positionText.setAttribute('x', positionX);
+        positionText.setAttribute('y', positionY);
+        positionText.style.setProperty('font-size', finalTextSize + 'px', 'important');
+        positionText.style.setProperty('font-family', finalTextFontFamily, 'important');
+        const normalizedPositionTextColor = this.normalizeColorToHex(finalTextColor);
+        positionText.style.setProperty('fill', normalizedPositionTextColor, 'important');
+        positionText.style.setProperty('fill-opacity', finalTextOpacity, 'important');
+        
+        if (finalTextBold) {
+            positionText.style.setProperty('font-weight', 'bold', 'important');
+        } else {
+            positionText.style.removeProperty('font-weight');
+        }
+        
+        if (finalTextItalic) {
+            positionText.style.setProperty('font-style', 'italic', 'important');
+        } else {
+            positionText.style.removeProperty('font-style');
+        }
+        
+        if (finalTextUnderline) {
+            positionText.style.setProperty('text-decoration', 'underline', 'important');
+        } else {
+            positionText.style.removeProperty('text-decoration');
+        }
+        
+        positionText.setAttribute('text-anchor', 'middle');
+        positionText.setAttribute('dominant-baseline', 'middle');
+        positionText.setAttribute('pointer-events', 'none'); // Don't interfere with selection
     }
     
     // Update linkage information for selected connection(s)
-    updateConnectionLinkage(linkage) {
+    updateConnectionLinkage(linkage, selectedConnections = null) {
         const normalizedLinkage = this.normalizeLinkage(linkage);
-        
-        this.selectedConnections.forEach(connection => {
+
+        // Use provided connections or fall back to legacy selection for backward compatibility
+        const connections = selectedConnections || Array.from(this.selectedConnections || []);
+
+        connections.forEach(connection => {
+            // Record before state if we're in an undo/redo step
+            const beforeData = this.createObjectData(connection);
+
             connection.setAttribute('data-linkage', normalizedLinkage);
             this.updateLinkageText(connection);
+
+            // Record after state if we're in an undo/redo step
+            const afterData = this.createObjectData(connection);
+            this.recordObjectModified(connection.getAttribute('id'), beforeData, afterData);
         });
-        
-        this.saveState();
     }
     
     // Refresh all linkage text displays (when checkbox changes)
@@ -3859,8 +5744,35 @@ class GlycanDrawer {
     }
     
     deleteSugar(sugar) {
-        // Save state before deleting sugar
-        this.saveState();
+        // Record removal for undo/redo system before actually deleting
+        const sugarId = sugar.getAttribute('id');
+        this.recordObjectRemoved(sugarId);
+        
+        // Collect connected connections for removal tracking
+        const sugarX = parseFloat(sugar.getAttribute('data-x'));
+        const sugarY = parseFloat(sugar.getAttribute('data-y'));
+        
+        const connections = this.canvas.querySelectorAll('.connection');
+        const connectionsToRemove = [];
+        
+        connections.forEach(connection => {
+            const x1 = parseFloat(connection.getAttribute('x1'));
+            const y1 = parseFloat(connection.getAttribute('y1'));
+            const x2 = parseFloat(connection.getAttribute('x2'));
+            const y2 = parseFloat(connection.getAttribute('y2'));
+            
+            if ((x1 === sugarX && y1 === sugarY) || (x2 === sugarX && y2 === sugarY)) {
+                connectionsToRemove.push(connection);
+            }
+        });
+        
+        // Record connected connection removals
+        connectionsToRemove.forEach(connection => {
+            const connectionId = connection.getAttribute('id');
+            if (connectionId) {
+                this.recordObjectRemoved(connectionId);
+            }
+        });
         
         // Remove from selection if selected
         if (this.selectedSugar === sugar) {
@@ -3869,27 +5781,21 @@ class GlycanDrawer {
         this.selectedSugars.delete(sugar);
         
         // Remove connections involving this sugar
-        const sugarX = parseFloat(sugar.getAttribute('data-x'));
-        const sugarY = parseFloat(sugar.getAttribute('data-y'));
-        
-        const connections = this.canvas.querySelectorAll('.connection');
-        connections.forEach(connection => {
-            const x1 = parseFloat(connection.getAttribute('x1'));
-            const y1 = parseFloat(connection.getAttribute('y1'));
-            const x2 = parseFloat(connection.getAttribute('x2'));
-            const y2 = parseFloat(connection.getAttribute('y2'));
-            
-            if ((x1 === sugarX && y1 === sugarY) || (x2 === sugarX && y2 === sugarY)) {
-                // Remove associated linkage text before removing connection
-                const connectionId = connection.getAttribute('id');
-                if (connectionId) {
-                    const linkageText = this.canvas.querySelector(`text[data-connection-id="${connectionId}"]`);
-                    if (linkageText) {
-                        linkageText.remove();
-                    }
-                }
-                connection.remove();
+        connectionsToRemove.forEach(connection => {
+            // Remove associated linkage text before removing connection
+            const connectionId = connection.getAttribute('id');
+            if (connectionId) {
+                // Remove both config and position text elements
+                const configText = this.canvas.querySelector(`text[data-connection-id="${connectionId}"][data-linkage-part="config"]`);
+                const positionText = this.canvas.querySelector(`text[data-connection-id="${connectionId}"][data-linkage-part="position"]`);
+                if (configText) configText.remove();
+                if (positionText) positionText.remove();
+                
+                // Also remove any old-style single linkage text (for backward compatibility)
+                const oldLinkageText = this.canvas.querySelector(`text[data-connection-id="${connectionId}"]:not([data-linkage-part])`);
+                if (oldLinkageText) oldLinkageText.remove();
             }
+            connection.remove();
         });
         
         // Remove selection highlight before deleting the sugar
@@ -3903,27 +5809,37 @@ class GlycanDrawer {
         // Get current export area dimensions
         const exportSize = this.exportSizes[this.currentExportSize];
         const { width, height } = exportSize;
-        
-        // Calculate export area bounds in canvas coordinates
-        // Export area is centered at canvas center (2000, 1400) from CSS
+        // Calculate export area bounds in canvas coordinates (default centered area)
         const canvasCenterX = 2000;
         const canvasCenterY = 1400;
-        const minX = canvasCenterX - width / 2;
-        const minY = canvasCenterY - height / 2;
-        const maxX = canvasCenterX + width / 2;
-        const maxY = canvasCenterY + height / 2;
-        
+        const defaultMinX = canvasCenterX - width / 2;
+        const defaultMinY = canvasCenterY - height / 2;
+        const defaultMaxX = canvasCenterX + width / 2;
+        const defaultMaxY = canvasCenterY + height / 2;
+
+        // Compute tight bbox of content inside the default export area
+        const tightBBox = this.computeExportBBox(defaultMinX, defaultMinY, defaultMaxX, defaultMaxY);
+
+        // If we have content, use tight bbox; otherwise fall back to default centered area
+        const useMinX = tightBBox ? tightBBox.minX : defaultMinX;
+        const useMinY = tightBBox ? tightBBox.minY : defaultMinY;
+        const useMaxX = tightBBox ? tightBBox.maxX : defaultMaxX;
+        const useMaxY = tightBBox ? tightBBox.maxY : defaultMaxY;
+
+        const exportW = Math.ceil(useMaxX - useMinX) || width;
+        const exportH = Math.ceil(useMaxY - useMinY) || height;
+
         // Create a clean SVG for export with only elements within bounds
         const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        exportSVG.setAttribute('width', width);
-        exportSVG.setAttribute('height', height);
-        exportSVG.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        exportSVG.setAttribute('width', exportW);
+        exportSVG.setAttribute('height', exportH);
+        exportSVG.setAttribute('viewBox', `0 0 ${exportW} ${exportH}`);
         exportSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
         exportSVG.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
-        
-        // Copy only elements within export bounds
-        this.copyElementsInBounds(exportSVG, minX, minY, maxX, maxY);
-        
+
+        // Copy only elements within computed bounds and translate them to origin
+        this.copyElementsInBounds(exportSVG, useMinX, useMinY, useMaxX, useMaxY);
+
         // Get the SVG string
         const svgString = new XMLSerializer().serializeToString(exportSVG);
         
@@ -3986,10 +5902,23 @@ class GlycanDrawer {
                     (x2 >= minX && x2 <= maxX && y2 >= minY && y2 <= maxY)) {
                     shouldInclude = true;
                 }
+            } else if (element.tagName && element.tagName.toLowerCase() === 'text' && element.classList.contains('linkage-label')) {
+                // Linkage label text elements (config/position) - include if within bounds
+                const x = parseFloat(element.getAttribute('x'));
+                const y = parseFloat(element.getAttribute('y'));
+                if (!isNaN(x) && !isNaN(y)) {
+                    if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                        shouldInclude = true;
+                    }
+                }
             }
             
             if (shouldInclude) {
                 const clonedElement = element.cloneNode(true);
+                
+                // Check for exclude-export attribute on child shapes (like freeend-asterisk)
+                const excludedShapes = clonedElement.querySelectorAll('[data-exclude-export="true"]');
+                excludedShapes.forEach(shape => shape.remove());
                 
                 // Translate coordinates relative to export area bounds
                 if (clonedElement.classList.contains('sugar')) {
@@ -4002,7 +5931,7 @@ class GlycanDrawer {
                     clonedElement.setAttribute('data-y', newY);
                     
                     // Update all child shape elements' coordinates
-                    const childShapes = clonedElement.querySelectorAll('circle, rect, polygon, ellipse, path');
+                    const childShapes = clonedElement.querySelectorAll('circle, rect, polygon, ellipse, path, text');
                     childShapes.forEach(shape => {
                         if (shape.hasAttribute('cx') && shape.hasAttribute('cy')) {
                             // Circle or ellipse
@@ -4012,7 +5941,7 @@ class GlycanDrawer {
                             shape.setAttribute('cy', cy - minY);
                         }
                         if (shape.hasAttribute('x') && shape.hasAttribute('y')) {
-                            // Rectangle
+                            // Rectangle or text element
                             const shapeX = parseFloat(shape.getAttribute('x'));
                             const shapeY = parseFloat(shape.getAttribute('y'));
                             shape.setAttribute('x', shapeX - minX);
@@ -4027,6 +5956,16 @@ class GlycanDrawer {
                             }).join(' ');
                             shape.setAttribute('points', newPoints);
                         }
+                        if (shape.hasAttribute('d')) {
+                            // Path element (like freeend-wave) - update path coordinates
+                            const d = shape.getAttribute('d');
+                            const updatedD = d.replace(/(-?\d+\.?\d*)\s+(-?\d+\.?\d*)/g, (match, xVal, yVal) => {
+                                const adjustedX = parseFloat(xVal) - minX;
+                                const adjustedY = parseFloat(yVal) - minY;
+                                return `${adjustedX} ${adjustedY}`;
+                            });
+                            shape.setAttribute('d', updatedD);
+                        }
                     });
                 } else if (clonedElement.classList.contains('text-element')) {
                     const x = parseFloat(clonedElement.getAttribute('data-x'));
@@ -4038,6 +5977,16 @@ class GlycanDrawer {
                     clonedElement.setAttribute('data-y', newY);
                     clonedElement.setAttribute('x', newX);
                     clonedElement.setAttribute('y', newY);
+                } else if (clonedElement.tagName && clonedElement.tagName.toLowerCase() === 'text' && clonedElement.classList.contains('linkage-label')) {
+                    // Translate linkage-label text elements (config and position labels)
+                    const x = parseFloat(clonedElement.getAttribute('x'));
+                    const y = parseFloat(clonedElement.getAttribute('y'));
+                    if (!isNaN(x) && !isNaN(y)) {
+                        const newX = x - minX;
+                        const newY = y - minY;
+                        clonedElement.setAttribute('x', newX);
+                        clonedElement.setAttribute('y', newY);
+                    }
                 } else if (clonedElement.classList.contains('connection')) {
                     const x1 = parseFloat(clonedElement.getAttribute('x1'));
                     const y1 = parseFloat(clonedElement.getAttribute('y1'));
@@ -4053,6 +6002,77 @@ class GlycanDrawer {
                 targetSVG.appendChild(clonedElement);
             }
         }
+    }
+
+    // Compute the union bounding box (in canvas coordinates) of all elements that would be included
+    // between the provided bounds. Returns { minX, minY, maxX, maxY } or null if nothing found.
+    computeExportBBox(minX, minY, maxX, maxY) {
+        const allElements = this.canvas.children;
+        let found = false;
+        let minUsedX = Infinity, minUsedY = Infinity, maxUsedX = -Infinity, maxUsedY = -Infinity;
+
+        for (let element of allElements) {
+            if (element.classList.contains('selection-highlight') ||
+                element.classList.contains('selection-box') ||
+                element.classList.contains('connection-preview')) {
+                continue;
+            }
+
+            if (element.classList.contains('sugar')) {
+                const x = parseFloat(element.getAttribute('data-x'));
+                const y = parseFloat(element.getAttribute('data-y'));
+                const size = parseFloat(element.getAttribute('data-size')) || this.sugarRadius;
+                if (x + size >= minX && x - size <= maxX && y + size >= minY && y - size <= maxY) {
+                    found = true;
+                    if (x - size < minUsedX) minUsedX = x - size;
+                    if (y - size < minUsedY) minUsedY = y - size;
+                    if (x + size > maxUsedX) maxUsedX = x + size;
+                    if (y + size > maxUsedY) maxUsedY = y + size;
+                }
+            } else if (element.classList.contains('text-element')) {
+                const x = parseFloat(element.getAttribute('data-x'));
+                const y = parseFloat(element.getAttribute('data-y'));
+                if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                    found = true;
+                    if (x < minUsedX) minUsedX = x;
+                    if (y < minUsedY) minUsedY = y;
+                    if (x > maxUsedX) maxUsedX = x;
+                    if (y > maxUsedY) maxUsedY = y;
+                }
+            } else if (element.classList.contains('connection')) {
+                const x1 = parseFloat(element.getAttribute('x1'));
+                const y1 = parseFloat(element.getAttribute('y1'));
+                const x2 = parseFloat(element.getAttribute('x2'));
+                const y2 = parseFloat(element.getAttribute('y2'));
+                if ((x1 >= minX && x1 <= maxX && y1 >= minY && y1 <= maxY) ||
+                    (x2 >= minX && x2 <= maxX && y2 >= minY && y2 <= maxY)) {
+                    found = true;
+                    const lineMinX = Math.min(x1, x2);
+                    const lineMinY = Math.min(y1, y2);
+                    const lineMaxX = Math.max(x1, x2);
+                    const lineMaxY = Math.max(y1, y2);
+                    if (lineMinX < minUsedX) minUsedX = lineMinX;
+                    if (lineMinY < minUsedY) minUsedY = lineMinY;
+                    if (lineMaxX > maxUsedX) maxUsedX = lineMaxX;
+                    if (lineMaxY > maxUsedY) maxUsedY = lineMaxY;
+                }
+            } else if (element.tagName && element.tagName.toLowerCase() === 'text' && element.classList.contains('linkage-label')) {
+                const x = parseFloat(element.getAttribute('x'));
+                const y = parseFloat(element.getAttribute('y'));
+                if (!isNaN(x) && !isNaN(y)) {
+                    if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                        found = true;
+                        if (x < minUsedX) minUsedX = x;
+                        if (y < minUsedY) minUsedY = y;
+                        if (x > maxUsedX) maxUsedX = x;
+                        if (y > maxUsedY) maxUsedY = y;
+                    }
+                }
+            }
+        }
+
+        if (!found) return null;
+        return { minX: minUsedX, minY: minUsedY, maxX: maxUsedX, maxY: maxUsedY };
     }
     
     addInlineStyles(svgString) {
@@ -4114,33 +6134,42 @@ class GlycanDrawer {
         const exportSize = this.exportSizes[this.currentExportSize];
         const { width, height } = exportSize;
         
-        // Calculate export area bounds in canvas coordinates
-        const canvasCenterX = 2000;
-        const canvasCenterY = 1400;
-        const minX = canvasCenterX - width / 2;
-        const minY = canvasCenterY - height / 2;
-        const maxX = canvasCenterX + width / 2;
-        const maxY = canvasCenterY + height / 2;
-        
-        const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        exportSVG.setAttribute('width', width);
-        exportSVG.setAttribute('height', height);
-        exportSVG.setAttribute('viewBox', `0 0 ${width} ${height}`);
-        exportSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-        
-        // Copy only elements within export bounds
-        this.copyElementsInBounds(exportSVG, minX, minY, maxX, maxY);
-        
-        const svgString = new XMLSerializer().serializeToString(exportSVG);
-        const styledSVG = this.addInlineStyles(svgString);
-        
-        // Create canvas element
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        // Use export area dimensions instead of main canvas dimensions
-        const svgWidth = width;
-        const svgHeight = height;
+    // Calculate export area bounds in canvas coordinates (default centered area)
+    const canvasCenterX = 2000;
+    const canvasCenterY = 1400;
+    const defaultMinX = canvasCenterX - width / 2;
+    const defaultMinY = canvasCenterY - height / 2;
+    const defaultMaxX = canvasCenterX + width / 2;
+    const defaultMaxY = canvasCenterY + height / 2;
+
+    const tightBBox = this.computeExportBBox(defaultMinX, defaultMinY, defaultMaxX, defaultMaxY);
+    const useMinX = tightBBox ? tightBBox.minX : defaultMinX;
+    const useMinY = tightBBox ? tightBBox.minY : defaultMinY;
+    const useMaxX = tightBBox ? tightBBox.maxX : defaultMaxX;
+    const useMaxY = tightBBox ? tightBBox.maxY : defaultMaxY;
+
+    const exportW = Math.ceil(useMaxX - useMinX) || width;
+    const exportH = Math.ceil(useMaxY - useMinY) || height;
+
+    const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    exportSVG.setAttribute('width', exportW);
+    exportSVG.setAttribute('height', exportH);
+    exportSVG.setAttribute('viewBox', `0 0 ${exportW} ${exportH}`);
+    exportSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+    // Copy only elements within computed bounds
+    this.copyElementsInBounds(exportSVG, useMinX, useMinY, useMaxX, useMaxY);
+
+    const svgString = new XMLSerializer().serializeToString(exportSVG);
+    const styledSVG = this.addInlineStyles(svgString);
+
+    // Create canvas element
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Use export area dimensions (tight bbox) instead of main canvas dimensions
+    const svgWidth = exportW;
+    const svgHeight = exportH;
         
         // Set canvas size with higher resolution for better quality
         const scale = 2;
@@ -4152,10 +6181,9 @@ class GlycanDrawer {
         
         const img = new Image();
         img.onload = () => {
-            // Clear canvas with white background
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, svgWidth, svgHeight);
-            
+            // Clear canvas (keep transparent background for PNG)
+            ctx.clearRect(0, 0, svgWidth, svgHeight);
+
             // Draw the SVG image at the correct size
             ctx.drawImage(img, 0, 0, svgWidth, svgHeight);
             
@@ -4182,48 +6210,57 @@ class GlycanDrawer {
         const exportSize = this.exportSizes[this.currentExportSize];
         const { width, height } = exportSize;
         
-        // Calculate export area bounds in canvas coordinates
+        // Calculate export area bounds in canvas coordinates (default centered area)
         const canvasCenterX = 2000;
         const canvasCenterY = 1400;
-        const minX = canvasCenterX - width / 2;
-        const minY = canvasCenterY - height / 2;
-        const maxX = canvasCenterX + width / 2;
-        const maxY = canvasCenterY + height / 2;
-        
+        const defaultMinX = canvasCenterX - width / 2;
+        const defaultMinY = canvasCenterY - height / 2;
+        const defaultMaxX = canvasCenterX + width / 2;
+        const defaultMaxY = canvasCenterY + height / 2;
+
+        const tightBBox = this.computeExportBBox(defaultMinX, defaultMinY, defaultMaxX, defaultMaxY);
+        const useMinX = tightBBox ? tightBBox.minX : defaultMinX;
+        const useMinY = tightBBox ? tightBBox.minY : defaultMinY;
+        const useMaxX = tightBBox ? tightBBox.maxX : defaultMaxX;
+        const useMaxY = tightBBox ? tightBBox.maxY : defaultMaxY;
+
+        const exportW = Math.ceil(useMaxX - useMinX) || width;
+        const exportH = Math.ceil(useMaxY - useMinY) || height;
+
         const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        exportSVG.setAttribute('width', width);
-        exportSVG.setAttribute('height', height);
-        exportSVG.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        exportSVG.setAttribute('width', exportW);
+        exportSVG.setAttribute('height', exportH);
+        exportSVG.setAttribute('viewBox', `0 0 ${exportW} ${exportH}`);
         exportSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-        
-        // Copy only elements within export bounds
-        this.copyElementsInBounds(exportSVG, minX, minY, maxX, maxY);
-        
+
+        // Copy only elements within computed bounds
+        this.copyElementsInBounds(exportSVG, useMinX, useMinY, useMaxX, useMaxY);
+
         const svgString = new XMLSerializer().serializeToString(exportSVG);
         const styledSVG = this.addInlineStyles(svgString);
-        
+
         // Create canvas element
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        
-        // Use export area dimensions
-        const svgWidth = width;
-        const svgHeight = height;
-        
+
+        // Use export area dimensions (tight bbox)
+        const svgWidth = exportW;
+        const svgHeight = exportH;
+
         // Set canvas size with higher resolution for better quality
         const scale = 2;
         canvas.width = svgWidth * scale;
         canvas.height = svgHeight * scale;
-        
+
         // Scale context for high resolution and set white background
         ctx.scale(scale, scale);
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, svgWidth, svgHeight);
-        
+
         const img = new Image();
         img.onload = () => {
             ctx.drawImage(img, 0, 0);
-            
+
             // Convert to JPG and download
             canvas.toBlob((blob) => {
                 const url = URL.createObjectURL(blob);
@@ -4236,15 +6273,23 @@ class GlycanDrawer {
                 URL.revokeObjectURL(url);
             }, 'image/jpeg', 0.9);
         };
-        
+
         const svgBlob = new Blob([styledSVG], { type: 'image/svg+xml;charset=utf-8' });
         const svgUrl = URL.createObjectURL(svgBlob);
         img.src = svgUrl;
     }
     
     clearCanvas() {
-        // Save state before clearing canvas
-        this.saveState();
+        // Start recording a step for clear operation
+        this.startStep('Clear canvas');
+        
+        // Record all existing objects for removal
+        this.canvas.querySelectorAll('.sugar, .text-element, .connection').forEach(element => {
+            const elementId = element.getAttribute('id');
+            if (elementId) {
+                this.recordObjectRemoved(elementId);
+            }
+        });
         
         // Deselect any selected elements
         this.deselectAll();
@@ -4273,6 +6318,9 @@ class GlycanDrawer {
         // Reset counters
         this.sugarCount = 0;
         this.textCount = 0;
+        
+        // Finish recording the step
+        this.finishStep();
     }
     
     // Helper method to convert SVG coordinates to screen coordinates
@@ -4447,53 +6495,51 @@ class GlycanDrawer {
         this.clearBoxSelectionPreviews();
         this.hoveredElements.clear();
         
-        if (this.currentTool === 'linkage') {
-            // In linkage mode, only check connections
-            const connections = this.canvas.querySelectorAll('.connection');
-            connections.forEach(line => {
-                // Get line endpoints
-                const x1 = parseFloat(line.getAttribute('x1'));
-                const y1 = parseFloat(line.getAttribute('y1'));
-                const x2 = parseFloat(line.getAttribute('x2'));
-                const y2 = parseFloat(line.getAttribute('y2'));
-                
-                // Check if line intersects with selection box
-                if (this.lineIntersectsBox(x1, y1, x2, y2, boxX, boxY, boxX + boxWidth, boxY + boxHeight)) {
-                    line.classList.add('box-selection-preview');
-                    this.hoveredElements.add(line);
-                }
-            });
-        } else {
-            // In select mode, check sugars and texts
-            const sugars = this.canvas.querySelectorAll('.sugar');
-            const texts = this.canvas.querySelectorAll('.text-element');
+        // In select mode, check sugars, texts, and connections
+        const sugars = this.canvas.querySelectorAll('.sugar');
+        const texts = this.canvas.querySelectorAll('.text-element');
+        const connections = this.canvas.querySelectorAll('.connection');
+        
+        // Check sugars
+        sugars.forEach(sugar => {
+            const sugarX = parseFloat(sugar.getAttribute('data-x'));
+            const sugarY = parseFloat(sugar.getAttribute('data-y'));
             
-            // Check sugars
-            sugars.forEach(sugar => {
-                const sugarX = parseFloat(sugar.getAttribute('data-x'));
-                const sugarY = parseFloat(sugar.getAttribute('data-y'));
-                
-                // Check if sugar center is within the selection box
-                if (sugarX >= boxX && sugarX <= boxX + boxWidth &&
-                    sugarY >= boxY && sugarY <= boxY + boxHeight) {
-                    sugar.classList.add('box-selection-preview');
-                    this.hoveredElements.add(sugar);
-                }
-            });
+            // Check if sugar center is within the selection box
+            if (sugarX >= boxX && sugarX <= boxX + boxWidth &&
+                sugarY >= boxY && sugarY <= boxY + boxHeight) {
+                sugar.classList.add('box-selection-preview');
+                this.hoveredElements.add(sugar);
+            }
+        });
+        
+        // Check texts
+        texts.forEach(text => {
+            const textX = parseFloat(text.getAttribute('data-x'));
+            const textY = parseFloat(text.getAttribute('data-y'));
             
-            // Check texts
-            texts.forEach(text => {
-                const textX = parseFloat(text.getAttribute('data-x'));
-                const textY = parseFloat(text.getAttribute('data-y'));
-                
-                // Check if text position is within the selection box
-                if (textX >= boxX && textX <= boxX + boxWidth &&
-                    textY >= boxY && textY <= boxY + boxHeight) {
-                    text.classList.add('box-selection-preview');
-                    this.hoveredElements.add(text);
-                }
-            });
-        }
+            // Check if text position is within the selection box
+            if (textX >= boxX && textX <= boxX + boxWidth &&
+                textY >= boxY && textY <= boxY + boxHeight) {
+                text.classList.add('box-selection-preview');
+                this.hoveredElements.add(text);
+            }
+        });
+        
+        // Check connections
+        connections.forEach(line => {
+            // Get line endpoints
+            const x1 = parseFloat(line.getAttribute('x1'));
+            const y1 = parseFloat(line.getAttribute('y1'));
+            const x2 = parseFloat(line.getAttribute('x2'));
+            const y2 = parseFloat(line.getAttribute('y2'));
+            
+            // Check if line intersects with selection box
+            if (this.lineIntersectsBox(x1, y1, x2, y2, boxX, boxY, boxX + boxWidth, boxY + boxHeight)) {
+                line.classList.add('box-selection-preview');
+                this.hoveredElements.add(line);
+            }
+        });
     }
     
     clearBoxSelectionPreviews() {
@@ -4523,12 +6569,6 @@ class GlycanDrawer {
     
     finishBoxSelection(isShiftKey = false) {
         if (!this.isBoxSelecting || !this.selectionBox) return;
-        
-        if (this.currentTool === 'linkage') {
-            // Linkage mode - select connections that intersect with the box
-            this.finishLinkageBoxSelection(isShiftKey);
-            return;
-        }
         
         // Get elements that were previewed during box selection
         const elementsInBox = Array.from(this.hoveredElements);
@@ -4591,64 +6631,6 @@ class GlycanDrawer {
         this.updateRightPanel();
     }
     
-    finishLinkageBoxSelection(isShiftKey = false) {
-        // Get connections that were previewed during box selection
-        const connectionsInBox = Array.from(this.hoveredElements);
-        
-        if (!isShiftKey) {
-            // Clear previous selections
-            this.clearConnectionSelections();
-        }
-        
-        // Handle Shift box selection logic for connections
-        if (isShiftKey && connectionsInBox.length > 0) {
-            // Check if ALL connections in box are already selected
-            const allConnectionsSelected = connectionsInBox.every(connection => 
-                this.selectedConnections.has(connection)
-            );
-            
-            if (allConnectionsSelected) {
-                // All connections are selected - remove them from selection
-                connectionsInBox.forEach(connection => {
-                    this.deselectConnection(connection);
-                });
-            } else {
-                // Some connections are not selected - add all unselected to selection
-                connectionsInBox.forEach(connection => {
-                    if (!this.selectedConnections.has(connection)) {
-                        this.selectConnection(connection, true);
-                    }
-                });
-            }
-        } else {
-            // Normal selection - select all connections in box
-            connectionsInBox.forEach(connection => {
-                this.selectConnection(connection, true);
-            });
-        }
-        
-        // Clean up box selection
-        this.clearBoxSelectionPreviews();
-        this.hoveredElements.clear();
-        if (this.selectionBox) {
-            document.getElementById('workspace').removeChild(this.selectionBox);
-            this.selectionBox = null;
-        }
-        this.currentSelectionBounds = null;
-        
-        // Remove global event listeners
-        if (this.globalBoxSelectionMouseMove) {
-            document.removeEventListener('mousemove', this.globalBoxSelectionMouseMove);
-            this.globalBoxSelectionMouseMove = null;
-        }
-        if (this.globalBoxSelectionMouseUp) {
-            document.removeEventListener('mouseup', this.globalBoxSelectionMouseUp);
-            this.globalBoxSelectionMouseUp = null;
-        }
-        
-        this.isBoxSelecting = false;
-    }
-    
     lineIntersectsBox(x1, y1, x2, y2, boxLeft, boxTop, boxRight, boxBottom) {
         // Check if a line segment intersects with a rectangle
         // First check if either endpoint is inside the box
@@ -4685,15 +6667,18 @@ class GlycanDrawer {
     updateRightPanel() {
         const sugarControlsSection = document.getElementById('sugarControlsSection');
         const textControlsSection = document.getElementById('textControlsSection');
+        const linkageControlsSection = document.getElementById('linkageControlsSection');
         const emptyControlsSection = document.getElementById('emptyControlsSection');
         
         // Determine what to show based on current tool and selections
         const showSugarControls = this.shouldShowSugarControls();
         const showTextControls = this.shouldShowTextControls();
+        const showLinkageControls = this.shouldShowLinkageControls();
         
         // Hide all sections first
         if (sugarControlsSection) sugarControlsSection.style.display = 'none';
         if (textControlsSection) textControlsSection.style.display = 'none';
+        if (linkageControlsSection) linkageControlsSection.style.display = 'none';
         if (emptyControlsSection) emptyControlsSection.style.display = 'none';
         
         // Show appropriate section(s)
@@ -4705,8 +6690,25 @@ class GlycanDrawer {
             textControlsSection.style.display = 'block';
             this.updateTextControlValues();
         }
-        if (!showSugarControls && !showTextControls && emptyControlsSection) {
+        if (showLinkageControls && linkageControlsSection) {
+            linkageControlsSection.style.display = 'block';
+            console.log('updateRightPanel: Calling updateLinkageControlValues');
+            this.updateLinkageControlValues();
+        }
+        // Only show the empty state when no other control sections should be visible
+        // and we are NOT in preset mode (preset has its own UI)
+        const isPresetMode = this.currentTool === 'preset';
+        if (!showSugarControls && !showTextControls && !showLinkageControls && !isPresetMode && emptyControlsSection) {
             emptyControlsSection.style.display = 'block';
+        }
+        // Preset glycan section: only visible in dedicated 'preset' mode
+        const presetGlycanSection = document.getElementById('presetGlycanSection');
+        if (presetGlycanSection) {
+            if (this.currentTool === 'preset') {
+                presetGlycanSection.style.display = 'block';
+            } else {
+                presetGlycanSection.style.display = 'none';
+            }
         }
         
         // Update connection status
@@ -4740,6 +6742,16 @@ class GlycanDrawer {
         if (this.currentTool === 'select') {
             // Check if any selected text elements
             return this.selectedText !== null || this.selectedTexts.size > 0;
+        }
+        
+        return false;
+    }
+    
+    shouldShowLinkageControls() {
+        // Show linkage controls when:
+        // In select mode and connections are selected
+        if (this.currentTool === 'select') {
+            return this.selectedConnections && this.selectedConnections.size > 0;
         }
         
         return false;
@@ -4797,6 +6809,219 @@ class GlycanDrawer {
             // In select mode, show selected text properties or mixed values
             this.updateTextControlsFromSelection();
         }
+    }
+    
+    updateLinkageControlValues() {
+        console.log('updateLinkageControlValues called, currentTool:', this.currentTool, 'selectedConnections size:', this.selectedConnections ? this.selectedConnections.size : 0);
+        // In select mode with connections selected, show linkage properties
+        if (this.currentTool === 'select' && this.selectedConnections && this.selectedConnections.size > 0) {
+            this.updateLinkageControlsFromSelection();
+        }
+    }
+    
+    updateLinkageControlsFromSelection() {
+        // Set flag to prevent style application during UI update
+        console.log('updateLinkageControlsFromSelection: Setting isUpdatingUI = true');
+        this.isUpdatingUI = true;
+        
+        const connections = Array.from(this.selectedConnections);
+        
+        if (connections.length === 0) {
+            this.isUpdatingUI = false;
+            return;
+        }
+        
+        // Get values from first connection
+        const firstConn = connections[0];
+        const firstLinkage = firstConn.getAttribute('data-linkage') || '';
+        const firstWidth = parseFloat(firstConn.style.strokeWidth || firstConn.getAttribute('stroke-width')) || 2;
+        const firstColorRaw = firstConn.style.stroke || firstConn.getAttribute('stroke') || '#000000';
+        const firstColor = this.normalizeColorToHex(firstColorRaw); // Convert to hex format
+        const firstOpacity = parseFloat(firstConn.style.strokeOpacity || firstConn.getAttribute('stroke-opacity')) || 1;
+        const firstDashArray = firstConn.style.strokeDasharray || firstConn.getAttribute('stroke-dasharray') || '';
+        const firstVisible = firstConn.getAttribute('data-linkage-visible') !== 'false';
+        const firstTextSize = firstConn.getAttribute('data-text-size') || '12';
+        const firstTextColorRaw = firstConn.getAttribute('data-text-color') || '#000000';
+        const firstTextColor = this.normalizeColorToHex(firstTextColorRaw); // Convert to hex format
+        const firstTextOpacity = parseFloat(firstConn.getAttribute('data-text-opacity')) || 1;
+        
+        // Determine style from dash array
+        let firstStyle = 'solid';
+        if (firstDashArray) {
+            const dashValues = firstDashArray.split(',').map(v => parseFloat(v.trim()));
+            if (dashValues.length >= 2) {
+                const ratio = dashValues[0] / dashValues[1];
+                if (ratio > 1.5) firstStyle = 'dashed';
+                else firstStyle = 'dotted';
+            }
+        }
+        
+        // Check if all connections have same values
+        let mixedLinkage = false, mixedWidth = false, mixedColor = false, mixedOpacity = false;
+        let mixedStyle = false, mixedVisible = false, mixedTextSize = false, mixedTextColor = false, mixedTextOpacity = false;
+        
+        for (let i = 1; i < connections.length; i++) {
+            const conn = connections[i];
+            if ((conn.getAttribute('data-linkage') || '') !== firstLinkage) mixedLinkage = true;
+            if ((parseFloat(conn.style.strokeWidth || conn.getAttribute('stroke-width')) || 2) !== firstWidth) mixedWidth = true;
+            
+            // Normalize color before comparison
+            const connColorRaw = conn.style.stroke || conn.getAttribute('stroke') || '#000000';
+            const connColor = this.normalizeColorToHex(connColorRaw);
+            if (connColor !== firstColor) mixedColor = true;
+            
+            if ((parseFloat(conn.style.strokeOpacity || conn.getAttribute('stroke-opacity')) || 1) !== firstOpacity) mixedOpacity = true;
+            if ((conn.getAttribute('data-linkage-visible') !== 'false') !== firstVisible) mixedVisible = true;
+            if ((conn.getAttribute('data-text-size') || '12') !== firstTextSize) mixedTextSize = true;
+            
+            // Normalize text color before comparison
+            const connTextColorRaw = conn.getAttribute('data-text-color') || '#000000';
+            const connTextColor = this.normalizeColorToHex(connTextColorRaw);
+            if (connTextColor !== firstTextColor) mixedTextColor = true;
+            
+            if ((parseFloat(conn.getAttribute('data-text-opacity')) || 1) !== firstTextOpacity) mixedTextOpacity = true;
+            
+            const dashArray = conn.style.strokeDasharray || conn.getAttribute('stroke-dasharray') || '';
+            let style = 'solid';
+            if (dashArray) {
+                const dashValues = dashArray.split(',').map(v => parseFloat(v.trim()));
+                if (dashValues.length >= 2) {
+                    const ratio = dashValues[0] / dashValues[1];
+                    if (ratio > 1.5) style = 'dashed';
+                    else style = 'dotted';
+                }
+            }
+            if (style !== firstStyle) mixedStyle = true;
+        }
+        
+        // Update controls
+        const linkageInput = document.getElementById('linkageInput');
+        const connectionStrokeWidth = document.getElementById('connectionStrokeWidth');
+        const connectionStrokeWidthValue = document.getElementById('connectionStrokeWidthValue');
+        const connectionColor = document.getElementById('connectionColor');
+        const connectionColorHex = document.getElementById('connectionColorHex');
+        const linkageOpacity = document.getElementById('linkageOpacity');
+        const linkageOpacityValue = document.getElementById('linkageOpacityValue');
+        const showLinkageText = document.getElementById('showLinkageText');
+        const linkageTextSize = document.getElementById('linkageTextSize');
+        const linkageTextSizeValue = document.getElementById('linkageTextSizeValue');
+        const linkageTextColor = document.getElementById('linkageTextColor');
+        const linkageTextColorHex = document.getElementById('linkageTextColorHex');
+        const linkageTextOpacity = document.getElementById('linkageTextOpacity');
+        const linkageTextOpacityValue = document.getElementById('linkageTextOpacityValue');
+        
+        if (linkageInput) {
+            linkageInput.value = mixedLinkage ? '' : firstLinkage;
+            if (mixedLinkage) {
+                linkageInput.placeholder = '混合';
+            } else {
+                linkageInput.placeholder = '输入键连信息 (如: α1-2, B14)';
+            }
+        }
+        
+        if (connectionStrokeWidth && connectionStrokeWidthValue) {
+            connectionStrokeWidth.value = mixedWidth ? '' : firstWidth;
+            connectionStrokeWidthValue.textContent = mixedWidth ? '混合' : firstWidth;
+        }
+        
+        if (connectionColor && connectionColorHex) {
+            connectionColor.value = mixedColor ? '#000000' : firstColor;
+            connectionColorHex.value = mixedColor ? '' : firstColor;
+            if (mixedColor) {
+                connectionColor.classList.add('mixed');
+                connectionColorHex.placeholder = '混合';
+            } else {
+                connectionColor.classList.remove('mixed');
+                connectionColorHex.placeholder = firstColor;
+            }
+        }
+        
+        if (linkageOpacity && linkageOpacityValue) {
+            linkageOpacity.value = mixedOpacity ? '1' : firstOpacity;
+            linkageOpacityValue.textContent = mixedOpacity ? '混合' : Math.round(firstOpacity * 100) + '%';
+        }
+        
+        if (showLinkageText) {
+            showLinkageText.checked = !mixedVisible && firstVisible;
+            showLinkageText.indeterminate = mixedVisible;
+        }
+        
+        if (linkageTextSize && linkageTextSizeValue) {
+            linkageTextSize.value = mixedTextSize ? '12' : firstTextSize;
+            linkageTextSizeValue.textContent = mixedTextSize ? '混合' : firstTextSize;
+        }
+        
+        if (linkageTextColor && linkageTextColorHex) {
+            linkageTextColor.value = mixedTextColor ? '#000000' : firstTextColor;
+            linkageTextColorHex.value = mixedTextColor ? '' : firstTextColor;
+            if (mixedTextColor) {
+                linkageTextColor.classList.add('mixed');
+                linkageTextColorHex.placeholder = '混合';
+            } else {
+                linkageTextColor.classList.remove('mixed');
+                linkageTextColorHex.placeholder = firstTextColor;
+            }
+        }
+        
+        if (linkageTextOpacity && linkageTextOpacityValue) {
+            linkageTextOpacity.value = mixedTextOpacity ? '1' : firstTextOpacity;
+            linkageTextOpacityValue.textContent = mixedTextOpacity ? '混合' : Math.round(firstTextOpacity * 100) + '%';
+        }
+        
+        // Update style buttons
+        document.querySelectorAll('.connection-style-btn').forEach(btn => {
+            btn.classList.toggle('active', !mixedStyle && btn.dataset.style === firstStyle);
+        });
+        
+        // Update color buttons
+        document.querySelectorAll('.color-btn-compact[data-target="connectionColor"]').forEach(btn => {
+            btn.classList.toggle('active', !mixedColor && btn.dataset.color.toLowerCase() === firstColor.toLowerCase());
+        });
+        
+        document.querySelectorAll('.color-btn-compact[data-target="linkageTextColor"]').forEach(btn => {
+            btn.classList.toggle('active', !mixedTextColor && btn.dataset.color.toLowerCase() === firstTextColor.toLowerCase());
+        });
+
+        // Sync bold/italic/underline buttons based on selected connections.
+        try {
+            const boldBtn = document.getElementById('linkageTextBoldBtn');
+            const italicBtn = document.getElementById('linkageTextItalicBtn');
+            const underlineBtn = document.getElementById('linkageTextUnderlineBtn');
+
+            if (connections.length > 0) {
+                let boldCount = 0, italicCount = 0, underlineCount = 0;
+                connections.forEach(conn => {
+                    const b = conn.getAttribute('data-text-bold');
+                    const i = conn.getAttribute('data-text-italic');
+                    const u = conn.getAttribute('data-text-underline');
+                    if (b === 'true') boldCount++;
+                    if (i === 'true') italicCount++;
+                    if (u === 'true') underlineCount++;
+                });
+
+                const total = connections.length;
+                if (boldBtn) {
+                    if (boldCount === total) { boldBtn.classList.add('active'); boldBtn.removeAttribute('data-mixed'); }
+                    else if (boldCount === 0) { boldBtn.classList.remove('active'); boldBtn.removeAttribute('data-mixed'); }
+                    else { boldBtn.classList.remove('active'); boldBtn.setAttribute('data-mixed', 'true'); }
+                }
+                if (italicBtn) {
+                    if (italicCount === total) { italicBtn.classList.add('active'); italicBtn.removeAttribute('data-mixed'); }
+                    else if (italicCount === 0) { italicBtn.classList.remove('active'); italicBtn.removeAttribute('data-mixed'); }
+                    else { italicBtn.classList.remove('active'); italicBtn.setAttribute('data-mixed', 'true'); }
+                }
+                if (underlineBtn) {
+                    if (underlineCount === total) { underlineBtn.classList.add('active'); underlineBtn.removeAttribute('data-mixed'); }
+                    else if (underlineCount === 0) { underlineBtn.classList.remove('active'); underlineBtn.removeAttribute('data-mixed'); }
+                    else { underlineBtn.classList.remove('active'); underlineBtn.setAttribute('data-mixed', 'true'); }
+                }
+            }
+        } catch (e) {
+            console.error('Error syncing linkage style buttons:', e);
+        }
+
+        console.log('updateLinkageControlsFromSelection: Setting isUpdatingUI = false');
+        this.isUpdatingUI = false;
     }
     
     updateSugarControlsToDefaults() {
@@ -5163,6 +7388,7 @@ class GlycanDrawer {
         const sugarControlsSection = document.getElementById('sugarControlsSection');
         const textControlsSection = document.getElementById('textControlsSection');
         const emptyControlsSection = document.getElementById('emptyControlsSection');
+        const linkagePreselectionSection = document.getElementById('linkagePreselectionSection');
         
         if (!sugarControlsSection || !textControlsSection || !emptyControlsSection) return;
         
@@ -5171,6 +7397,8 @@ class GlycanDrawer {
             sugarControlsSection.style.display = 'block';
             textControlsSection.style.display = 'none';
             emptyControlsSection.style.display = 'none';
+            // Show linkage preselection in add mode
+            if (linkagePreselectionSection) linkagePreselectionSection.style.display = 'block';
             
             // 总是显示 currentSugarConfig 的参数，不管是否有选中元素
             this.updateStyleControlValues();
@@ -5184,6 +7412,8 @@ class GlycanDrawer {
                 sugarControlsSection.style.display = 'block';
                 textControlsSection.style.display = 'none';
                 emptyControlsSection.style.display = 'none';
+                // HIDE linkage preselection in select mode (only for add mode)
+                if (linkagePreselectionSection) linkagePreselectionSection.style.display = 'none';
                 
                 // Update current values from selected sugar
                 this.updateStyleControlValues();
@@ -5545,6 +7775,34 @@ class GlycanDrawer {
         // Get selected sugars from the unified selectedElements system
         const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
         
+        if (selectedSugars.length === 0) return;
+        
+        // Start recording step for undo/redo
+        this.startStep();
+        
+        this.applySugarSizeToElements(selectedSugars, size, true);
+        
+        // Finish recording step
+        this.finishStep();
+    }
+    
+    // Apply sugar size without creating undo step (used during slider drag)
+    applySugarSizeWithoutStep() {
+        const size = parseFloat(document.getElementById('sugarSize').value);
+        
+        // Apply to selected sugar(s) in select mode
+        if (this.currentTool !== 'select') return;
+        
+        // Get selected sugars from the unified selectedElements system
+        const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
+        
+        if (selectedSugars.length === 0) return;
+        
+        this.applySugarSizeToElements(selectedSugars, size, false);
+    }
+    
+    // Helper method to apply size to elements with optional undo recording
+    applySugarSizeToElements(selectedSugars, size, recordModifications = true) {
         selectedSugars.forEach(sugar => {
             const shape = sugar.querySelector('.sugar-shape');
             const shapeType = sugar.getAttribute('data-shape');
@@ -5552,6 +7810,12 @@ class GlycanDrawer {
             const y = parseFloat(sugar.getAttribute('data-y'));
             
             if (shape) {
+                // Record before state only if we want to record modifications
+                let beforeData = null;
+                if (recordModifications) {
+                    beforeData = this.createObjectData(sugar);
+                }
+                
                 // Update the data-size attribute
                 sugar.setAttribute('data-size', size);
                 
@@ -5564,6 +7828,12 @@ class GlycanDrawer {
                     if (highlight) {
                         highlight.setAttribute('r', size + 5);
                     }
+                }
+                
+                // Record after state only if we want to record modifications
+                if (recordModifications && beforeData) {
+                    const afterData = this.createObjectData(sugar);
+                    this.recordObjectModified(sugar.getAttribute('id'), beforeData, afterData);
                 }
             }
         });
@@ -5640,6 +7910,60 @@ class GlycanDrawer {
                         shape.setAttribute('width', squareSize);
                         shape.setAttribute('height', squareSize);
                     }
+                }
+                break;
+                
+            case 'freeend-asterisk':
+                // For asterisk, update path and stroke width
+                const asteriskSugar = shape.closest('.sugar');
+                if (asteriskSugar) {
+                    const asteriskX = parseFloat(asteriskSugar.getAttribute('data-x'));
+                    const asteriskY = parseFloat(asteriskSugar.getAttribute('data-y'));
+                    shape.setAttribute('d', this.createAsteriskPath(asteriskX, asteriskY, size));
+                    shape.setAttribute('stroke-width', size * 0.15);
+                }
+                break;
+                
+            case 'freeend-wave':
+                // For wave, update the path using the helper function
+                const waveSugar = shape.closest('.sugar');
+                if (waveSugar) {
+                    const waveX = parseFloat(waveSugar.getAttribute('data-x'));
+                    const waveY = parseFloat(waveSugar.getAttribute('data-y'));
+                    this.updateWavePath(shape, waveX, waveY, size);
+                }
+                break;
+                
+            case 'bracket-left':
+            case 'bracket-right':
+            case 'paren-left':
+            case 'paren-right':
+            case 'brace-left':
+            case 'brace-right':
+                // For brackets, update path and stroke width
+                const bracketSugar = shape.closest('.sugar');
+                if (bracketSugar) {
+                    const bracketX = parseFloat(bracketSugar.getAttribute('data-x'));
+                    const bracketY = parseFloat(bracketSugar.getAttribute('data-y'));
+                    const shapeType = bracketSugar.getAttribute('data-shape');
+                    
+                    // Update path based on shape type
+                    if (shapeType === 'bracket-left') {
+                        shape.setAttribute('d', this.createBracketPath('left', bracketX, bracketY, size));
+                    } else if (shapeType === 'bracket-right') {
+                        shape.setAttribute('d', this.createBracketPath('right', bracketX, bracketY, size));
+                    } else if (shapeType === 'paren-left') {
+                        shape.setAttribute('d', this.createParenPath('left', bracketX, bracketY, size));
+                    } else if (shapeType === 'paren-right') {
+                        shape.setAttribute('d', this.createParenPath('right', bracketX, bracketY, size));
+                    } else if (shapeType === 'brace-left') {
+                        shape.setAttribute('d', this.createBracePath('left', bracketX, bracketY, size));
+                    } else if (shapeType === 'brace-right') {
+                        shape.setAttribute('d', this.createBracePath('right', bracketX, bracketY, size));
+                    }
+                    
+                    // Update stroke width
+                    shape.setAttribute('stroke-width', size * 0.15);
                 }
                 break;
                 
@@ -5744,17 +8068,19 @@ class GlycanDrawer {
         
         // Apply to selected sugar(s) in select mode
         if (this.currentTool !== 'select') return;
+
+        // Get selected sugars from the unified selectedElements system
+        const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
         
-        // Apply to selected sugar(s)
-        const sugarsToStyle = [];
-        if (this.selectedSugar) {
-            sugarsToStyle.push(this.selectedSugar);
-        }
-        if (this.selectedSugars.size > 0) {
-            sugarsToStyle.push(...Array.from(this.selectedSugars));
-        }
+        if (selectedSugars.length === 0) return;
+
+        // Start recording step for undo/redo
+        this.startStep('Change sugar border style');
         
-        sugarsToStyle.forEach(sugar => {
+        selectedSugars.forEach(sugar => {
+            // Record before state
+            const beforeData = this.createObjectData(sugar);
+            
             const shape = sugar.querySelector('.sugar-shape');
             if (shape) {
                 const shapeType = sugar.getAttribute('data-shape');
@@ -5770,7 +8096,8 @@ class GlycanDrawer {
                     
                     if (polygon) {
                         polygon.style.setProperty('stroke-width', width, 'important');
-                        polygon.style.setProperty('stroke', color, 'important');
+                        const normalizedStrokeColor = this.normalizeColorToHex(color);
+                        polygon.style.setProperty('stroke', normalizedStrokeColor, 'important');
                         
                         // Apply dash pattern based on style
                         switch (style) {
@@ -5787,7 +8114,8 @@ class GlycanDrawer {
                     
                     if (line) {
                         line.style.setProperty('stroke-width', width, 'important');
-                        line.style.setProperty('stroke', color, 'important');
+                        const normalizedLineStrokeColor = this.normalizeColorToHex(color);
+                        line.style.setProperty('stroke', normalizedLineStrokeColor, 'important');
                         
                         // Apply dash pattern based on style
                         switch (style) {
@@ -5804,7 +8132,8 @@ class GlycanDrawer {
                 } else {
                     // Handle regular shapes
                     shape.style.setProperty('stroke-width', width, 'important');
-                    shape.style.setProperty('stroke', color, 'important');
+                    const normalizedShapeStrokeColor = this.normalizeColorToHex(color);
+                    shape.style.setProperty('stroke', normalizedShapeStrokeColor, 'important');
                     
                     // Apply dash pattern based on style
                     switch (style) {
@@ -5819,7 +8148,14 @@ class GlycanDrawer {
                     }
                 }
             }
+            
+            // Record after state
+            const afterData = this.createObjectData(sugar);
+            this.recordObjectModified(sugar.getAttribute('id'), beforeData, afterData);
         });
+        
+        // Finish recording step
+        this.finishStep();
     }
 
     applySugarBorderWidth() {
@@ -5840,17 +8176,49 @@ class GlycanDrawer {
         // Apply to selected sugar(s) in select mode
         if (this.currentTool !== 'select') return;
         
-        const sugarsToStyle = [];
-        if (this.selectedSugar) {
-            sugarsToStyle.push(this.selectedSugar);
-        }
-        if (this.selectedSugars.size > 0) {
-            sugarsToStyle.push(...Array.from(this.selectedSugars));
-        }
+        // Get selected sugars from the unified selectedElements system
+        const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
         
-        sugarsToStyle.forEach(sugar => {
+        if (selectedSugars.length === 0) return;
+        
+        // Start recording step for undo/redo
+        this.startStep();
+        
+        this.applySugarBorderWidthToElements(selectedSugars, width, true);
+        
+        // Finish recording step
+        this.finishStep();
+    }
+    
+    // Apply sugar border width without creating undo step (used during slider drag)
+    applySugarBorderWidthWithoutStep() {
+        // Skip if we're updating UI controls
+        if (this.isUpdatingUI) return;
+        
+        const width = document.getElementById('sugarBorderWidth').value;
+        
+        // Apply to selected sugar(s) in select mode
+        if (this.currentTool !== 'select') return;
+        
+        // Get selected sugars from the unified selectedElements system
+        const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
+        
+        if (selectedSugars.length === 0) return;
+        
+        this.applySugarBorderWidthToElements(selectedSugars, width, false);
+    }
+    
+    // Helper method to apply border width to elements with optional undo recording
+    applySugarBorderWidthToElements(selectedSugars, width, recordModifications = true) {
+        selectedSugars.forEach(sugar => {
             const shape = sugar.querySelector('.sugar-shape');
             if (shape) {
+                // Record before state only if we want to record modifications
+                let beforeData = null;
+                if (recordModifications) {
+                    beforeData = this.createObjectData(sugar);
+                }
+                
                 const shapeType = sugar.getAttribute('data-shape');
                 
                 // Check if this is a divided shape that needs special handling
@@ -5872,6 +8240,12 @@ class GlycanDrawer {
                     // Handle regular shapes
                     shape.style.setProperty('stroke-width', width, 'important');
                 }
+                
+                // Record after state only if we want to record modifications
+                if (recordModifications && beforeData) {
+                    const afterData = this.createObjectData(sugar);
+                    this.recordObjectModified(sugar.getAttribute('id'), beforeData, afterData);
+                }
             }
         });
     }
@@ -5892,15 +8266,18 @@ class GlycanDrawer {
         // Apply to selected sugar(s) in select mode
         if (this.currentTool !== 'select') return;
         
-        const sugarsToStyle = [];
-        if (this.selectedSugar) {
-            sugarsToStyle.push(this.selectedSugar);
-        }
-        if (this.selectedSugars.size > 0) {
-            sugarsToStyle.push(...Array.from(this.selectedSugars));
-        }
+        // Get selected sugars from the unified selectedElements system
+        const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
         
-        sugarsToStyle.forEach(sugar => {
+        if (selectedSugars.length === 0) return;
+
+        // Start recording step for undo/redo
+        this.startStep('Change sugar border color');
+        
+        selectedSugars.forEach(sugar => {
+            // Record before state
+            const beforeData = this.createObjectData(sugar);
+            
             const shape = sugar.querySelector('.sugar-shape');
             if (shape) {
                 const shapeType = sugar.getAttribute('data-shape');
@@ -5915,17 +8292,27 @@ class GlycanDrawer {
                     const line = shape.querySelector('.dividing-line');
                     
                     if (polygon) {
-                        polygon.style.setProperty('stroke', color, 'important');
+                        const normalizedPolygonStrokeColor = this.normalizeColorToHex(color);
+                        polygon.style.setProperty('stroke', normalizedPolygonStrokeColor, 'important');
                     }
                     if (line) {
-                        line.style.setProperty('stroke', color, 'important');
+                        const normalizedLineStrokeColor = this.normalizeColorToHex(color);
+                        line.style.setProperty('stroke', normalizedLineStrokeColor, 'important');
                     }
                 } else {
                     // Handle regular shapes
-                    shape.style.setProperty('stroke', color, 'important');
+                    const normalizedRegularStrokeColor = this.normalizeColorToHex(color);
+                    shape.style.setProperty('stroke', normalizedRegularStrokeColor, 'important');
                 }
             }
+            
+            // Record after state
+            const afterData = this.createObjectData(sugar);
+            this.recordObjectModified(sugar.getAttribute('id'), beforeData, afterData);
         });
+        
+        // Finish recording step
+        this.finishStep();
     }
 
     applySugarBorderOpacity() {
@@ -5945,16 +8332,19 @@ class GlycanDrawer {
         
         // Apply to selected sugar(s) in select mode
         if (this.currentTool !== 'select') return;
+
+        // Get selected sugars from the unified selectedElements system
+        const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
         
-        const sugarsToStyle = [];
-        if (this.selectedSugar) {
-            sugarsToStyle.push(this.selectedSugar);
-        }
-        if (this.selectedSugars.size > 0) {
-            sugarsToStyle.push(...Array.from(this.selectedSugars));
-        }
+        if (selectedSugars.length === 0) return;
+
+        // Start recording step for undo/redo
+        this.startStep('Change sugar border opacity');
         
-        sugarsToStyle.forEach(sugar => {
+        selectedSugars.forEach(sugar => {
+            // Record before state
+            const beforeData = this.createObjectData(sugar);
+            
             const shape = sugar.querySelector('.sugar-shape');
             if (shape) {
                 const shapeType = sugar.getAttribute('data-shape');
@@ -5979,7 +8369,14 @@ class GlycanDrawer {
                     shape.style.setProperty('stroke-opacity', opacity, 'important');
                 }
             }
+            
+            // Record after state
+            const afterData = this.createObjectData(sugar);
+            this.recordObjectModified(sugar.getAttribute('id'), beforeData, afterData);
         });
+        
+        // Finish recording step
+        this.finishStep();
     }
     
     applySugarFillOpacity() {
@@ -6003,44 +8400,54 @@ class GlycanDrawer {
         // Get selected sugars from the unified selectedElements system
         const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
         
+        if (selectedSugars.length === 0) return;
+
+        // Start recording step for undo/redo
+        this.startStep('Change sugar fill opacity');
+        
         selectedSugars.forEach(sugar => {
+            // Record before state
+            const beforeData = this.createObjectData(sugar);
+            
             const shape = sugar.querySelector('.sugar-shape');
             if (shape) {
                 shape.style.setProperty('fill-opacity', opacity, 'important');
             }
+            
+            // Record after state
+            const afterData = this.createObjectData(sugar);
+            this.recordObjectModified(sugar.getAttribute('id'), beforeData, afterData);
         });
+        
+        // Finish recording step
+        this.finishStep();
     }
     
     applyConnectionStyle() {
         // Prevent applying style during UI updates
         if (this.isUpdatingUI) return;
         
-        // Allow both select and linkage modes
-        if (this.currentTool !== 'select' && this.currentTool !== 'linkage') return;
+        // Only work in select mode with selected connections
+        if (this.currentTool !== 'select') return;
         
-        let width, color;
-        
-        if (this.currentTool === 'linkage') {
-            // Use linkage mode controls
-            width = document.getElementById('connectionStrokeWidth')?.value || '2';
-            color = document.getElementById('connectionColor')?.value || '#000000';
-        } else {
-            // Use select mode controls
-            width = document.getElementById('connectionStrokeWidth')?.value || '2';
-            color = document.getElementById('connectionColor')?.value || '#000000';
-        }
+        const width = document.getElementById('connectionStrokeWidth')?.value || '2';
+        const color = document.getElementById('connectionColor')?.value || '#000000';
         
         const styleBtn = document.querySelector('.connection-style-btn.active');
         const style = styleBtn ? styleBtn.dataset.style : 'solid';
         
-        const connections = this.currentTool === 'linkage' ? 
-            Array.from(this.selectedConnections) : 
-            this.getConnectionsForSelection();
+        const connections = this.selectedConnections ? Array.from(this.selectedConnections) : [];
+        
+        if (connections.length === 0) return;
 
         connections.forEach(conn => {
+            // Record before state
+            const beforeData = this.createObjectData(conn);
+            
             // Use style property with important to override CSS
             conn.style.setProperty('stroke-width', width, 'important');
-            conn.style.setProperty('stroke', color, 'important');
+            const normalizedConnStrokeColor = this.normalizeColorToHex(color);
+            conn.style.setProperty('stroke', normalizedConnStrokeColor, 'important');
             
             // Apply dash pattern based on style
             switch (style) {
@@ -6054,18 +8461,9 @@ class GlycanDrawer {
                     conn.style.removeProperty('stroke-dasharray');
             }
             
-            // Apply linkage text styling in linkage mode
-            if (this.currentTool === 'linkage') {
-                const textSize = document.getElementById('linkageTextSize')?.value || '12';
-                const linkageId = conn.getAttribute('data-linkage-id');
-                if (linkageId) {
-                    const labelElement = document.querySelector(`[data-linkage-for="${linkageId}"]`);
-                    if (labelElement) {
-                        labelElement.style.setProperty('font-size', textSize + 'px', 'important');
-                        labelElement.style.setProperty('fill', color, 'important');
-                    }
-                }
-            }
+            // Record after state
+            const afterData = this.createObjectData(conn);
+            this.recordObjectModified(conn.getAttribute('id'), beforeData, afterData);
         });
     }
     
@@ -6073,13 +8471,43 @@ class GlycanDrawer {
         // Prevent applying opacity during UI updates
         if (this.isUpdatingUI) return;
         
-        // Allow both select and linkage modes
-        if (this.currentTool !== 'select' && this.currentTool !== 'linkage') return;
+        // Only work in select mode with selected connections
+        if (this.currentTool !== 'select') return;
         
         const opacity = document.getElementById('linkageOpacity')?.value || '1';
-        const connections = this.currentTool === 'linkage' ? 
-            Array.from(this.selectedConnections) : 
-            this.getConnectionsForSelection();
+        const connections = this.selectedConnections ? Array.from(this.selectedConnections) : [];
+        
+        if (connections.length === 0) return;
+
+        // Start recording step for undo/redo
+        this.startStep('Change connection opacity');
+
+        connections.forEach(conn => {
+            // Record before state
+            const beforeData = this.createObjectData(conn);
+            
+            conn.style.setProperty('stroke-opacity', opacity, 'important');
+            
+            // Record after state
+            const afterData = this.createObjectData(conn);
+            this.recordObjectModified(conn.getAttribute('id'), beforeData, afterData);
+        });
+        
+        // Finish recording step
+        this.finishStep();
+    }
+    
+    applyConnectionOpacityWithoutStep() {
+        // Prevent applying opacity during UI updates
+        if (this.isUpdatingUI) return;
+        
+        // Only work in select mode with selected connections
+        if (this.currentTool !== 'select') return;
+        
+        const opacity = document.getElementById('linkageOpacity')?.value || '1';
+        const connections = this.selectedConnections ? Array.from(this.selectedConnections) : [];
+        
+        if (connections.length === 0) return;
 
         connections.forEach(conn => {
             conn.style.setProperty('stroke-opacity', opacity, 'important');
@@ -6087,72 +8515,232 @@ class GlycanDrawer {
     }
     
     applyLinkageStyle() {
-        if (this.currentTool !== 'linkage') return;
+        // Prevent applying styles during UI updates (e.g., undo/redo operations)
+        if (this.isUpdatingUI) {
+            console.log('applyLinkageStyle: Skipping during UI update');
+            return;
+        }
         
-        const width = document.getElementById('connectionStrokeWidth')?.value || '2';
-        const color = document.getElementById('connectionColor')?.value || '#000000';
+        console.log('applyLinkageStyle: Applying linkage styles');
+        // Only work in select mode
+        if (this.currentTool !== 'select') return;
+        
         const textSize = document.getElementById('linkageTextSize')?.value || '12';
         const textColor = document.getElementById('linkageTextColor')?.value || '#000000';
-        const opacity = document.getElementById('linkageOpacity')?.value || '1';
+        const textFontFamily = document.getElementById('linkageTextFontFamily')?.value || 'Arial';
+        const textOpacity = document.getElementById('linkageTextOpacity')?.value || '1';
         
-        // Get active style button for dash pattern
-        const styleBtn = document.querySelector('.connection-style-btn.active');
-        const style = styleBtn ? styleBtn.dataset.style : 'solid';
+        console.log('applyLinkageStyle: textColor =', textColor);
         
-        // Apply styles to selected connections
+        // Get text style states
+        const textBold = document.getElementById('linkageTextBoldBtn')?.classList.contains('active') || false;
+        const textItalic = document.getElementById('linkageTextItalicBtn')?.classList.contains('active') || false;
+        const textUnderline = document.getElementById('linkageTextUnderlineBtn')?.classList.contains('active') || false;
+        
+        // Apply styles to selected connections (use unified selection system)
+        if (this.selectedConnections) {
+            const connections = Array.from(this.selectedConnections);
+            console.log('applyLinkageStyle: selectedConnections count =', connections.length);
+            
+            if (connections.length === 0) return;
+
+            connections.forEach(conn => {
+                console.log('applyLinkageStyle: updating connection', conn.id, 'old data-text-color:', conn.getAttribute('data-text-color'));
+                console.log('applyLinkageStyle: setting data-text-color to', textColor);
+                // Update linkage text display with new styles
+                this.updateLinkageText(conn, textSize, textColor, textFontFamily, textBold, textItalic, textUnderline, textOpacity);
+
+                // Store text style attributes on the connection
+                conn.setAttribute('data-text-size', textSize);
+                conn.setAttribute('data-text-color', textColor);
+                conn.setAttribute('data-text-font-family', textFontFamily);
+                conn.setAttribute('data-text-bold', textBold ? 'true' : 'false');
+                conn.setAttribute('data-text-italic', textItalic ? 'true' : 'false');
+                conn.setAttribute('data-text-underline', textUnderline ? 'true' : 'false');
+                conn.setAttribute('data-text-opacity', textOpacity);
+                console.log('applyLinkageStyle: updated connection', conn.id, 'new data-text-color:', conn.getAttribute('data-text-color'));
+
+                // If we have initialConnectionStatesForTextColor (started on mousedown), record modification now
+                try {
+                    // color
+                    if (this.initialConnectionStatesForTextColor && Array.isArray(this.initialConnectionStatesForTextColor)) {
+                        const state = this.initialConnectionStatesForTextColor.find(s => s.id === conn.id);
+                        if (state && !state._recorded) {
+                            const afterData = this.createObjectData(conn);
+                            console.log('applyLinkageStyle: immediate recordObjectModified for (color)', conn.id, 'after textColor:', afterData.textColor);
+                            this.recordObjectModified(conn.id, state.beforeData, afterData);
+                            state._recorded = true;
+                        }
+                    }
+                    // size
+                    if (this.initialConnectionStatesForTextSize && Array.isArray(this.initialConnectionStatesForTextSize)) {
+                        const state = this.initialConnectionStatesForTextSize.find(s => s.id === conn.id);
+                        if (state && !state._recorded) {
+                            const afterData = this.createObjectData(conn);
+                            console.log('applyLinkageStyle: immediate recordObjectModified for (size)', conn.id, 'after textSize:', afterData.textSize);
+                            this.recordObjectModified(conn.id, state.beforeData, afterData);
+                            state._recorded = true;
+                        }
+                    }
+                    // font family
+                    if (this.initialConnectionStatesForTextFontFamily && Array.isArray(this.initialConnectionStatesForTextFontFamily)) {
+                        const state = this.initialConnectionStatesForTextFontFamily.find(s => s.id === conn.id);
+                        if (state && !state._recorded) {
+                            const afterData = this.createObjectData(conn);
+                            console.log('applyLinkageStyle: immediate recordObjectModified for (fontFamily)', conn.id, 'after textFontFamily:', afterData.textFontFamily);
+                            this.recordObjectModified(conn.id, state.beforeData, afterData);
+                            state._recorded = true;
+                        }
+                    }
+                    // opacity
+                    if (this.initialConnectionStatesForTextOpacity && Array.isArray(this.initialConnectionStatesForTextOpacity)) {
+                        const state = this.initialConnectionStatesForTextOpacity.find(s => s.id === conn.id);
+                        if (state && !state._recorded) {
+                            const afterData = this.createObjectData(conn);
+                            console.log('applyLinkageStyle: immediate recordObjectModified for (opacity)', conn.id, 'after textOpacity:', afterData.textOpacity);
+                            this.recordObjectModified(conn.id, state.beforeData, afterData);
+                            state._recorded = true;
+                        }
+                    }
+                    // style (bold/italic/underline) - also handle linked text elements
+                    if (this.initialConnectionStatesForTextStyle && Array.isArray(this.initialConnectionStatesForTextStyle)) {
+                        const state = this.initialConnectionStatesForTextStyle.find(s => s.id === conn.id);
+                        if (state && !state._recorded) {
+                            // Create after snapshot then force authoritative style fields from current UI variables
+                            const afterData = this.createObjectData(conn);
+                            // Ensure we record the authoritative style values (avoid timing/race where attribute isn't yet visible)
+                            try {
+                                afterData.textBold = (textBold ? 'true' : 'false');
+                                afterData.textItalic = (textItalic ? 'true' : 'false');
+                                afterData.textUnderline = (textUnderline ? 'true' : 'false');
+                            } catch (e) {}
+                            console.log('applyLinkageStyle: immediate recordObjectModified for (style) connection', conn.id, 'after textItalic:', afterData.textItalic, 'textBold:', afterData.textBold, 'textUnderline:', afterData.textUnderline);
+                            this.recordObjectModified(conn.id, state.beforeData, afterData);
+                            // Also record any associated text elements if present
+                            try {
+                                if (state.configTextId) {
+                                    const configText = document.getElementById(state.configTextId);
+                                    if (configText && state.configTextBeforeData) {
+                                        const configAfterData = this.createObjectData(configText);
+                                        this.recordObjectModified(state.configTextId, state.configTextBeforeData, configAfterData);
+                                    }
+                                }
+                                if (state.positionTextId) {
+                                    const positionText = document.getElementById(state.positionTextId);
+                                    if (positionText && state.positionTextBeforeData) {
+                                        const positionAfterData = this.createObjectData(positionText);
+                                        this.recordObjectModified(state.positionTextId, state.positionTextBeforeData, positionAfterData);
+                                    }
+                                }
+                            } catch (e) {}
+                            state._recorded = true;
+                        }
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            });
+        }
+    }
+
+    applyLinkageStyleWithoutStep() {
+        // Prevent applying styles during UI updates
+        if (this.isUpdatingUI) return;
+        if (this.currentTool !== 'select') return;
+
+        const textSize = document.getElementById('linkageTextSize')?.value || '12';
+        const textColor = document.getElementById('linkageTextColor')?.value || '#000000';
+        const textFontFamily = document.getElementById('linkageTextFontFamily')?.value || 'Arial';
+        const textOpacity = document.getElementById('linkageTextOpacity')?.value || '1';
+        const textBold = document.getElementById('linkageTextBoldBtn')?.classList.contains('active') || false;
+        const textItalic = document.getElementById('linkageTextItalicBtn')?.classList.contains('active') || false;
+        const textUnderline = document.getElementById('linkageTextUnderlineBtn')?.classList.contains('active') || false;
+
+        if (!this.selectedConnections) return;
         this.selectedConnections.forEach(conn => {
-            // Apply connection line styles
-            conn.style.setProperty('stroke-width', width, 'important');
-            conn.style.setProperty('stroke', color, 'important');
-            conn.style.setProperty('stroke-opacity', opacity, 'important');
-            
-            // Apply dash pattern based on style
-            switch (style) {
-                case 'dashed':
-                    conn.style.setProperty('stroke-dasharray', `${width * 4},${width * 2}`, 'important');
-                    break;
-                case 'dotted':
-                    conn.style.setProperty('stroke-dasharray', `${width},${width}`, 'important');
-                    break;
-                default: // solid
-                    conn.style.removeProperty('stroke-dasharray');
-            }
-            
-            // Update linkage text display with new styles
-            this.updateLinkageText(conn);
+            this.updateLinkageText(conn, textSize, textColor, textFontFamily, textBold, textItalic, textUnderline, textOpacity);
+            conn.setAttribute('data-text-size', textSize);
+            conn.setAttribute('data-text-color', textColor);
+            conn.setAttribute('data-text-font-family', textFontFamily);
+            conn.setAttribute('data-text-bold', textBold ? 'true' : 'false');
+            conn.setAttribute('data-text-italic', textItalic ? 'true' : 'false');
+            conn.setAttribute('data-text-underline', textUnderline ? 'true' : 'false');
+            conn.setAttribute('data-text-opacity', textOpacity);
         });
     }
     
     // Apply linkage text visibility to selected connections
     applyLinkageVisibility() {
-        if (this.currentTool !== 'linkage') return;
+        if (this.currentTool !== 'select') return;
         
         const showLinkageText = document.getElementById('showLinkageText')?.checked;
         
         // Apply visibility setting to selected connections
-        this.selectedConnections.forEach(conn => {
-            // Set data attribute to control visibility
-            conn.setAttribute('data-linkage-visible', showLinkageText ? 'true' : 'false');
-            
-            // Update the linkage text display
-            this.updateLinkageText(conn);
-        });
+        if (this.selectedConnections) {
+            this.selectedConnections.forEach(conn => {
+                // Set data attribute to control visibility
+                conn.setAttribute('data-linkage-visible', showLinkageText ? 'true' : 'false');
+                
+                // Update the linkage text display
+                this.updateLinkageText(conn);
+            });
+        }
     }
     
     // Apply linkage information to selected connections
     applyLinkageToConnections(linkage) {
-        if (this.selectedConnections.size === 0) {
+        const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+
+        if (selectedConnections.length === 0) {
             return;
         }
-        
-        this.saveState();
-        this.updateConnectionLinkage(linkage);
-        
+
+        this.startStep('Apply linkage');
+        this.updateConnectionLinkage(linkage, selectedConnections);
+        this.finishStep();
+
         // Update UI to show the applied linkage
         const linkageInput = document.getElementById('linkageInput');
         if (linkageInput) {
             linkageInput.value = linkage;
         }
+    }
+    
+    reverseLinkageDirection() {
+        const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+
+        if (selectedConnections.length === 0) {
+            return;
+        }
+
+        this.startStep('Reverse linkage direction');
+
+        // Reverse each selected connection
+        selectedConnections.forEach(connection => {
+            // Record before state
+            const beforeData = this.createObjectData(connection);
+
+            // Get current coordinates
+            const x1 = parseFloat(connection.getAttribute('x1'));
+            const y1 = parseFloat(connection.getAttribute('y1'));
+            const x2 = parseFloat(connection.getAttribute('x2'));
+            const y2 = parseFloat(connection.getAttribute('y2'));
+
+            // Swap the coordinates
+            connection.setAttribute('x1', x2);
+            connection.setAttribute('y1', y2);
+            connection.setAttribute('x2', x1);
+            connection.setAttribute('y2', y1);
+
+            // Update linkage text positions if they exist
+            this.updateLinkageText(connection);
+
+            // Record after state
+            const afterData = this.createObjectData(connection);
+            this.recordObjectModified(connection.getAttribute('id'), beforeData, afterData);
+        });
+
+        this.finishStep();
     }
     
     // Initialize the new shape selector system
@@ -6221,13 +8809,15 @@ class GlycanDrawer {
                     { id: 'flat-hexagon-compressed', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><polygon points="14.4,11.2 9.0,13.3 3.6,11.2 3.6,6.8 9.0,4.7 14.4,6.8" fill="#888888" stroke="#000000" stroke-width="1"/></svg>', name: '扁的平躺六边形' }
                 ]
             },
-            check: {
-                name: '对勾形状',
+            bracket: {
+                name: '括号',
                 shapes: [
-                    { id: 'check', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><path d="M3 9l4 4 8-8" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round"/></svg>', name: '对勾' },
-                    { id: 'check-bold', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><path d="M3 9l4 4 8-8" fill="none" stroke="#888888" stroke-width="3" stroke-linecap="round"/></svg>', name: '粗对勾' },
-                    { id: 'check-box', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><rect x="2" y="2" width="14" height="14" fill="none" stroke="#888888" stroke-width="1"/><path d="M5 9l3 3 5-5" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round"/></svg>', name: '方框对勾' },
-                    { id: 'check-circle', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="none" stroke="#888888" stroke-width="1"/><path d="M5 9l3 3 5-5" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round"/></svg>', name: '圆圈对勾' }
+                    { id: 'bracket-left', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><text x="9" y="14" font-size="18" font-weight="bold" text-anchor="middle" fill="#888888">[</text></svg>', name: '左方括号' },
+                    { id: 'bracket-right', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><text x="9" y="14" font-size="18" font-weight="bold" text-anchor="middle" fill="#888888">]</text></svg>', name: '右方括号' },
+                    { id: 'paren-left', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><text x="9" y="14" font-size="18" font-weight="bold" text-anchor="middle" fill="#888888">(</text></svg>', name: '左圆括号' },
+                    { id: 'paren-right', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><text x="9" y="14" font-size="18" font-weight="bold" text-anchor="middle" fill="#888888">)</text></svg>', name: '右圆括号' },
+                    { id: 'brace-left', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><text x="9" y="14" font-size="18" font-weight="bold" text-anchor="middle" fill="#888888">{</text></svg>', name: '左花括号' },
+                    { id: 'brace-right', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><text x="9" y="14" font-size="18" font-weight="bold" text-anchor="middle" fill="#888888">}</text></svg>', name: '右花括号' }
                 ]
             },
             wave: {
@@ -6237,6 +8827,13 @@ class GlycanDrawer {
                     { id: 'wave-double', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 7 Q5 4 8 7 T14 7" fill="none" stroke="#888888" stroke-width="1.5" stroke-linecap="round"/><path d="M2 11 Q5 8 8 11 T14 11" fill="none" stroke="#888888" stroke-width="1.5" stroke-linecap="round"/></svg>', name: '双波浪线' },
                     { id: 'wave-sine', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><path d="M1 9 Q4.5 4 9 9 Q13.5 14 17 9" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round"/></svg>', name: '正弦波' },
                     { id: 'wave-zigzag', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 12 L6 6 L10 12 L14 6" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round"/></svg>', name: '锯齿波' }
+                ]
+            },
+            freeend: {
+                name: '自由端',
+                shapes: [
+                    { id: 'freeend-asterisk', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><text x="9" y="13" font-size="16" font-weight="bold" text-anchor="middle" fill="#888888">*</text></svg>', name: '星号自由端' },
+                    { id: 'freeend-wave', icon: '<svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 9 Q5 6 8 9 T14 9" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round"/></svg>', name: '波浪线（肽链）' }
                 ]
             }
         };
@@ -6460,25 +9057,46 @@ class GlycanDrawer {
     applySugarShape(shape) {
         if (this.currentTool !== 'select') return;
         
-        // Get all selected sugars
-        const sugarsToChange = [];
+        // Get all selected sugars (avoid duplicates)
+        const sugarsToChange = new Set();
         if (this.selectedSugar) {
-            sugarsToChange.push(this.selectedSugar);
+            sugarsToChange.add(this.selectedSugar);
         }
         if (this.selectedSugars.size > 0) {
-            sugarsToChange.push(...Array.from(this.selectedSugars));
+            this.selectedSugars.forEach(sugar => sugarsToChange.add(sugar));
         }
         
+        if (sugarsToChange.size === 0) return;
+        
+        // Start recording a step for shape change
+        this.startStep('Change sugar shape');
+        
         sugarsToChange.forEach(sugar => {
+            // Record before state
+            const beforeData = this.createObjectData(sugar);
+            
             const currentShape = sugar.querySelector('.sugar-shape');
             if (currentShape) {
                 const x = parseFloat(sugar.getAttribute('data-x'));
                 const y = parseFloat(sugar.getAttribute('data-y'));
                 const currentSize = this.getSugarSize(sugar);
-                const currentFill = currentShape.style.fill || currentShape.getAttribute('fill') || '#0072BC';
-                const currentStroke = currentShape.style.stroke || currentShape.getAttribute('stroke') || '#000000';
-                const currentStrokeWidth = currentShape.style.strokeWidth || currentShape.getAttribute('stroke-width') || '2';
-                const currentDashArray = currentShape.style.strokeDasharray || currentShape.getAttribute('stroke-dasharray') || '';
+                
+                // Properly read current styles (including inline styles with !important)
+                const currentFill = currentShape.style.getPropertyValue('fill') || 
+                                   currentShape.getAttribute('fill') || '#0072BC';
+                const currentStroke = currentShape.style.getPropertyValue('stroke') || 
+                                     currentShape.getAttribute('stroke') || '#000000';
+                const currentStrokeWidth = currentShape.style.getPropertyValue('stroke-width') || 
+                                          currentShape.getAttribute('stroke-width') || '2';
+                const currentDashArray = currentShape.style.getPropertyValue('stroke-dasharray') || 
+                                        currentShape.getAttribute('stroke-dasharray') || '';
+                const currentStrokeOpacity = currentShape.style.getPropertyValue('stroke-opacity') || 
+                                            currentShape.getAttribute('stroke-opacity') || '1';
+                const currentFillOpacity = currentShape.style.getPropertyValue('fill-opacity') || 
+                                          currentShape.getAttribute('fill-opacity') || '1';
+                
+                // Update data attribute
+                sugar.setAttribute('data-shape', shape);
                 
                 // Remove old shape
                 currentShape.remove();
@@ -6614,8 +9232,69 @@ class GlycanDrawer {
                         const pentInvertedPoints = this.generatePolygonPoints(x, y, currentSize, 5, Math.PI/2);
                         newShape.setAttribute('points', pentInvertedPoints);
                         break;
+                    case 'bracket-left':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                        newShape.setAttribute('d', this.createBracketPath('left', x, y, currentSize));
+                        newShape.classList.add('bracket-shape');
+                        break;
+                    case 'bracket-right':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                        newShape.setAttribute('d', this.createBracketPath('right', x, y, currentSize));
+                        newShape.classList.add('bracket-shape');
+                        break;
+                    case 'paren-left':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                        newShape.setAttribute('d', this.createParenPath('left', x, y, currentSize));
+                        newShape.classList.add('bracket-shape');
+                        break;
+                    case 'paren-right':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                        newShape.setAttribute('d', this.createParenPath('right', x, y, currentSize));
+                        newShape.classList.add('bracket-shape');
+                        break;
+                    case 'brace-left':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                        newShape.setAttribute('d', this.createBracePath('left', x, y, currentSize));
+                        newShape.classList.add('bracket-shape');
+                        break;
+                    case 'brace-right':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                        newShape.setAttribute('d', this.createBracePath('right', x, y, currentSize));
+                        newShape.classList.add('bracket-shape');
+                        break;
+                    case 'freeend-asterisk':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                        newShape.setAttribute('d', this.createAsteriskPath(x, y, currentSize));
+                        newShape.setAttribute('stroke-linecap', 'round');
+                        newShape.classList.add('freeend-asterisk');
+                        break;
+                    case 'freeend-wave':
+                        newShape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                        newShape.setAttribute('data-x', x);
+                        newShape.setAttribute('data-y', y);
+                        newShape.setAttribute('data-size', currentSize);
+                        this.updateWavePath(newShape, x, y, currentSize);
+                        newShape.setAttribute('stroke-linecap', 'round');
+                        newShape.classList.add('freeend-wave');
+                        break;
                     default:
-                        console.warn('Unknown shape type:', shape, '- using createSugarShape for complex shapes');
+                        // For certain known complex shapes (divided shapes, complex gradients, etc.)
+                        // we intentionally fall back to createSugarShape and this is expected.
+                        // Only log a warning for truly unknown shapes that are not in the
+                        // knownComplexShapes list to avoid noisy console messages.
+                        const knownComplexShapes = new Set([
+                            'triangle-divided',
+                            'square-divided',
+                            'diamond-divided-top',
+                            'diamond-divided-bottom',
+                            'square-divided',
+                            'triangle-divided'
+                        ]);
+
+                        if (!knownComplexShapes.has(shape)) {
+                            console.warn('Unknown shape type:', shape, '- using createSugarShape for complex shapes');
+                        }
+
                         // For complex shapes, use the full createSugarShape method
                         newShape = this.createSugarShape(x, y, shape, currentFill, currentSize);
                         // Remove duplicate sugar-shape class since createSugarShape already adds it
@@ -6626,21 +9305,52 @@ class GlycanDrawer {
                 
                 // Apply styles (preserve current border settings) - only if it's a simple element, not a complex group
                 if (newShape && newShape.setAttribute) {
-                    newShape.setAttribute('fill', currentFill);
-                    newShape.setAttribute('stroke', currentStroke);
-                    newShape.setAttribute('stroke-width', currentStrokeWidth);
-                    if (currentDashArray) {
-                        newShape.setAttribute('stroke-dasharray', currentDashArray);
+                    // Check if this is a line-based shape (no fill, stroke-based)
+                    const isLineShape = shape === 'bracket-left' || shape === 'bracket-right' || 
+                                       shape === 'paren-left' || shape === 'paren-right' ||
+                                       shape === 'brace-left' || shape === 'brace-right' ||
+                                       shape === 'freeend-wave' || shape === 'freeend-asterisk';
+                    
+                    if (isLineShape) {
+                        // Line-based shapes: no fill, inherit border color as stroke
+                        newShape.setAttribute('fill', 'none');
+                        newShape.setAttribute('stroke', currentStroke); // Inherit border color
+                        newShape.setAttribute('stroke-width', currentSize * 0.15);
+                        newShape.setAttribute('stroke-linecap', 'round');
+                        newShape.setAttribute('stroke-linejoin', 'round');
+                        newShape.setAttribute('stroke-opacity', currentStrokeOpacity);
+                        // Line shapes don't use dash arrays from borders
+                    } else {
+                        // Filled shapes (including freeend-asterisk): use fill for color, stroke for border
+                        newShape.setAttribute('fill', currentFill);
+                        newShape.setAttribute('stroke', currentStroke);
+                        newShape.setAttribute('stroke-width', currentStrokeWidth);
+                        newShape.setAttribute('fill-opacity', currentFillOpacity);
+                        newShape.setAttribute('stroke-opacity', currentStrokeOpacity);
+                        // Only apply dash array to filled shapes' borders
+                        if (currentDashArray) {
+                            newShape.setAttribute('stroke-dasharray', currentDashArray);
+                        }
                     }
                     newShape.classList.add('sugar-shape');
                     
                     // Update sugar data
                     sugar.setAttribute('data-shape', shape);
                     sugar.appendChild(newShape);
+                    
+                    // Special handling for freeend-wave: update path when shape changes
+                    if (shape === 'freeend-wave') {
+                        this.updateWavePath(newShape, x, y, currentSize);
+                    }
                 } else if (newShape) {
                     // For complex shapes (groups), the shape is already complete
                     sugar.setAttribute('data-shape', shape);
                     sugar.appendChild(newShape);
+                    
+                    // Special handling for freeend-wave: update path when shape changes
+                    if (shape === 'freeend-wave' && newShape.tagName === 'path') {
+                        this.updateWavePath(newShape, x, y, currentSize);
+                    }
                 }
                 
                 // Ensure drag functionality is preserved after shape update
@@ -6665,25 +9375,37 @@ class GlycanDrawer {
                         this.addSelectionHighlight(sugar);
                     }
                 }
+                
+                // Record after state for undo/redo
+                const afterData = this.createObjectData(sugar);
+                this.recordObjectModified(sugar.getAttribute('id'), beforeData, afterData);
             }
         });
-    }
+        
+        // Finish recording the step
+        this.finishStep();
+    };
     
     applySugarColor(color) {
         if (this.currentTool !== 'select') return;
         
-        // Get all selected sugars
-        const sugarsToChange = [];
-        if (this.selectedSugar) {
-            sugarsToChange.push(this.selectedSugar);
-        }
-        if (this.selectedSugars.size > 0) {
-            sugarsToChange.push(...Array.from(this.selectedSugars));
-        }
+        // Get selected sugars from the unified selectedElements system
+        const selectedSugars = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'sugar');
         
-        sugarsToChange.forEach(sugar => {
+        if (selectedSugars.length === 0) return;
+        
+        // Start recording a step for color change
+        this.startStep('Change sugar color');
+        
+        selectedSugars.forEach(sugar => {
+            // Record before state
+            const beforeData = this.createObjectData(sugar);
+            
             const shape = sugar.querySelector('.sugar-shape');
             const shapeType = sugar.getAttribute('data-shape');
+            
+            // Update data attribute
+            sugar.setAttribute('data-color', color);
             
             if (shape) {
                 if (shapeType === 'triangle-divided' && shape.classList.contains('triangle-divided-group')) {
@@ -6822,9 +9544,30 @@ class GlycanDrawer {
                     
                     // 更新data-color属性
                     sugar.setAttribute('data-color', color);
+                } else if (shapeType === 'freeend-asterisk') {
+                    // Asterisk free-end: change stroke color (line shape), preserve stroke-width
+                    const currentWidth = shape.getAttribute('stroke-width') || (sugar.getAttribute('data-size') || 20) * 0.15;
+                    shape.style.setProperty('stroke', color, 'important');
+                    shape.style.setProperty('stroke-width', currentWidth, 'important');
+                    sugar.setAttribute('data-color', color);
+                } else if (shapeType === 'freeend-wave') {
+                    // Wave free-end: change stroke color, preserve stroke-width
+                    const currentWidth = shape.getAttribute('stroke-width') || '2';
+                    shape.style.setProperty('stroke', color, 'important');
+                    shape.style.setProperty('stroke-width', currentWidth, 'important');
+                    sugar.setAttribute('data-color', color);
+                } else if (shapeType === 'bracket-left' || shapeType === 'bracket-right' || 
+                           shapeType === 'paren-left' || shapeType === 'paren-right' ||
+                           shapeType === 'brace-left' || shapeType === 'brace-right') {
+                    // Bracket shapes: change stroke color, preserve stroke-width
+                    const currentWidth = shape.getAttribute('stroke-width') || (sugar.getAttribute('data-size') || 20) * 0.15;
+                    shape.style.setProperty('stroke', color, 'important');
+                    shape.style.setProperty('stroke-width', currentWidth, 'important');
+                    sugar.setAttribute('data-color', color);
                 } else {
                     // 普通形状的颜色处理（包括所有圆形、方形、三角形、菱形、星形等）
-                    shape.style.setProperty('fill', color, 'important');
+                    const normalizedFillColor = this.normalizeColorToHex(color);
+                    shape.style.setProperty('fill', normalizedFillColor, 'important');
                     
                     // Keep black border (don't change stroke color)
                     shape.style.setProperty('stroke', '#000000', 'important');
@@ -6834,9 +9577,61 @@ class GlycanDrawer {
                 // 重要：更新sugar元素的data-color属性，确保重新选中时UI状态正确
                 sugar.setAttribute('data-color', color);
             }
+            
+            // Record after state for undo/redo
+            const afterData = this.createObjectData(sugar);
+            this.recordObjectModified(sugar.getAttribute('id'), beforeData, afterData);
         });
+        
+        // Finish recording the step
+        this.finishStep();
     }
     
+    // Apply both shape and color changes in a single undo step (for SNFG presets)
+    applySugarPreset(shape, color) {
+        if (this.currentTool !== 'select') return;
+        
+        // Get all selected sugars (avoid duplicates)
+        const sugarsToChange = new Set();
+        if (this.selectedSugar) {
+            sugarsToChange.add(this.selectedSugar);
+        }
+        if (this.selectedSugars.size > 0) {
+            this.selectedSugars.forEach(sugar => sugarsToChange.add(sugar));
+        }
+        
+        if (sugarsToChange.size === 0) return;
+        
+        // Start recording a step for preset change
+        this.startStep('Apply SNFG preset');
+        
+        sugarsToChange.forEach(sugar => {
+            // Record before state
+            const beforeData = this.createObjectData(sugar);
+            
+            // Update both shape and color attributes
+            sugar.setAttribute('data-shape', shape);
+            sugar.setAttribute('data-color', color);
+            
+            // Update the visual shape to match the new attributes
+            const shapeElement = sugar.querySelector('.sugar-shape');
+            if (shapeElement) {
+                const x = parseFloat(sugar.getAttribute('data-x'));
+                const y = parseFloat(sugar.getAttribute('data-y'));
+                const size = parseFloat(sugar.getAttribute('data-size')) || 20;
+                
+                this.updateShapeToType(shapeElement, shape, x, y, color, size);
+            }
+            
+            // Record after state for undo/redo
+            const afterData = this.createObjectData(sugar);
+            this.recordObjectModified(sugar.getAttribute('id'), beforeData, afterData);
+        });
+        
+        // Finish recording the step
+        this.finishStep();
+    }
+
     // Helper method to create darker shade of color
     darkenColor(color, factor) {
         // Convert hex to RGB
@@ -6869,6 +9664,9 @@ class GlycanDrawer {
         }
         
         if (selectedTextElements.length === 0) return;
+
+        // Start recording step for undo/redo
+        this.startStep('Change text style');
         
         const fontSize = document.getElementById('fontSize').value;
         const fontFamily = document.getElementById('fontFamily').value;
@@ -6878,6 +9676,85 @@ class GlycanDrawer {
         const underlineBtn = document.getElementById('underlineBtn');
         
         // Apply styles to all selected text elements
+        selectedTextElements.forEach(textElement => {
+            // Record before state
+            const beforeData = this.createObjectData(textElement);
+            
+            // Apply font size (only if not empty/mixed)
+            if (fontSize && fontSize !== '') {
+                textElement.style.setProperty('font-size', fontSize + 'px', 'important');
+            }
+            
+            // Apply font family (only if not empty/mixed)
+            if (fontFamily && fontFamily !== '') {
+                textElement.style.setProperty('font-family', fontFamily, 'important');
+            }
+            
+            // Apply color (only if not empty/mixed)
+            if (textColor && textColor !== '#ffffff') { // #ffffff indicates mixed state
+                const normalizedTextColor = this.normalizeColorToHex(textColor);
+                textElement.style.setProperty('fill', normalizedTextColor, 'important');
+            }
+            
+            // Apply font weight (bold) - mixed state now applies the current button state
+            if (boldBtn.classList.contains('active')) {
+                textElement.style.setProperty('font-weight', 'bold', 'important');
+            } else {
+                textElement.style.removeProperty('font-weight');
+            }
+            
+            // Apply font style (italic) - mixed state now applies the current button state
+            if (italicBtn.classList.contains('active')) {
+                textElement.style.setProperty('font-style', 'italic', 'important');
+            } else {
+                textElement.style.removeProperty('font-style');
+            }
+            
+            // Apply text decoration (underline) - mixed state now applies the current button state
+            if (underlineBtn.classList.contains('active')) {
+                textElement.style.setProperty('text-decoration', 'underline', 'important');
+            } else {
+                textElement.style.removeProperty('text-decoration');
+            }
+            
+            // Record after state
+            const afterData = this.createObjectData(textElement);
+            this.recordObjectModified(textElement.getAttribute('id'), beforeData, afterData);
+        });
+        
+        // Finish recording step
+        this.finishStep();
+        
+        // Update the control values to reflect the new state
+        this.updateTextControlsFromSelection();
+    }
+    
+    // Apply text style without creating undo step (used during slider drag)
+    applyTextStyleWithoutStep() {
+        if (this.currentTool !== 'select') return;
+        
+        // Get all selected text elements
+        const selectedTextElements = [];
+        if (this.selectedText) selectedTextElements.push(this.selectedText);
+        if (this.selectedTexts.size > 0) {
+            this.selectedTexts.forEach(text => {
+                if (!selectedTextElements.includes(text)) {
+                    selectedTextElements.push(text);
+                }
+            });
+        }
+        
+        if (selectedTextElements.length === 0) return;
+
+        // Get current control values without creating undo step
+        const fontSize = document.getElementById('fontSize').value;
+        const fontFamily = document.getElementById('fontFamily').value;
+        const textColor = document.getElementById('textColor').value;
+        const boldBtn = document.getElementById('boldBtn');
+        const italicBtn = document.getElementById('italicBtn');
+        const underlineBtn = document.getElementById('underlineBtn');
+        
+        // Apply styles to all selected text elements WITHOUT recording undo
         selectedTextElements.forEach(textElement => {
             // Apply font size (only if not empty/mixed)
             if (fontSize && fontSize !== '') {
@@ -6891,7 +9768,8 @@ class GlycanDrawer {
             
             // Apply color (only if not empty/mixed)
             if (textColor && textColor !== '#ffffff') { // #ffffff indicates mixed state
-                textElement.style.setProperty('fill', textColor, 'important');
+                const normalizedTextColor = this.normalizeColorToHex(textColor);
+                textElement.style.setProperty('fill', normalizedTextColor, 'important');
             }
             
             // Apply font weight (bold) - mixed state now applies the current button state
@@ -6916,54 +9794,7 @@ class GlycanDrawer {
             }
         });
         
-        // Update the control values to reflect the new state
-        this.updateTextControlsFromSelection();
-    }
-    
-    applySpecificTextStyle(styleId, isActive) {
-        if (this.currentTool !== 'select') return;
-        
-        // Get all selected text elements
-        const selectedTextElements = [];
-        if (this.selectedText) selectedTextElements.push(this.selectedText);
-        if (this.selectedTexts.size > 0) {
-            this.selectedTexts.forEach(text => {
-                if (!selectedTextElements.includes(text)) {
-                    selectedTextElements.push(text);
-                }
-            });
-        }
-        
-        if (selectedTextElements.length === 0) return;
-        
-        // Apply only the specific style that was clicked
-        selectedTextElements.forEach(textElement => {
-            switch (styleId) {
-                case 'boldBtn':
-                    if (isActive) {
-                        textElement.style.setProperty('font-weight', 'bold', 'important');
-                    } else {
-                        textElement.style.removeProperty('font-weight');
-                    }
-                    break;
-                case 'italicBtn':
-                    if (isActive) {
-                        textElement.style.setProperty('font-style', 'italic', 'important');
-                    } else {
-                        textElement.style.removeProperty('font-style');
-                    }
-                    break;
-                case 'underlineBtn':
-                    if (isActive) {
-                        textElement.style.setProperty('text-decoration', 'underline', 'important');
-                    } else {
-                        textElement.style.removeProperty('text-decoration');
-                    }
-                    break;
-            }
-        });
-        
-        // Update the control values to reflect the new state
+        // Update the control values to reflect the new state (no undo recording)
         this.updateTextControlsFromSelection();
     }
     
@@ -7038,7 +9869,8 @@ class GlycanDrawer {
         }
         
         selectedTextElements.forEach(textElement => {
-            textElement.style.setProperty('fill', color, 'important');
+            const normalizedColor = this.normalizeColorToHex(color);
+            textElement.style.setProperty('fill', normalizedColor, 'important');
         });
     }
     
@@ -7264,7 +10096,7 @@ class GlycanDrawer {
         
         // Center the viewport and hide loading cover
         const startTime = Date.now();
-        const minLoadingTime = 500; // Minimum 500ms loading time
+        const minLoadingTime = 1000; // Minimum 1000ms loading time to show Dolly.gif animation
         
         setTimeout(() => {
             console.log('Before centering - scroll position:', this.workspace.scrollLeft, this.workspace.scrollTop);
@@ -7538,18 +10370,18 @@ class GlycanDrawer {
     
     selectConnection(connection, multiSelect = false) {
         if (!multiSelect) {
-            this.clearConnectionSelections();
+            // Clear all selections (sugars, texts, AND connections) when doing single selection
+            // This ensures text selection highlights are cleared when clicking a linkage
+            this.clearAllSelectionsQuiet();
         }
         
-        // Add to selection
+        // Add to both unified and legacy selection sets
+        this.selectedElements.add(connection);
         this.selectedConnections.add(connection);
         connection.classList.add('selected');
         
-        // Show linkage controls
-        this.showLinkageControls();
-        
-        // Update linkage input field
-        this.updateLinkageInput();
+        // Update right panel to show linkage controls
+        this.updateRightPanel();
     }
     
     updateLinkageInput() {
@@ -7924,17 +10756,16 @@ class GlycanDrawer {
     }
 
     deselectConnection(connection) {
-        // Remove from selection
+        // Remove from both unified and legacy selection sets
+        this.selectedElements.delete(connection);
         this.selectedConnections.delete(connection);
         connection.classList.remove('selected');
         
         // Update linkage input field and controls
         this.updateLinkageInput();
         
-        // Hide linkage controls if no connections selected
-        if (this.selectedConnections.size === 0) {
-            this.hideLinkageControls();
-        }
+        // Update right panel to show/hide linkage controls
+        this.updateRightPanel();
     }
     
     toggleConnectionSelection(connection, multiSelect = false) {
@@ -7946,143 +10777,30 @@ class GlycanDrawer {
     }
 
     clearConnectionSelections() {
-        // Clear any selected connections
+        // Clear from legacy set
         this.selectedConnections.clear();
         
-        // Remove visual selection highlighting from connections
+        // Remove from unified selection set and visual highlighting
         document.querySelectorAll('.connection.selected').forEach(conn => {
+            this.selectedElements.delete(conn);
             conn.classList.remove('selected');
         });
         
-        // Hide linkage controls if no connections selected
-        if (this.selectedConnections.size === 0) {
-            this.hideLinkageControls();
-        }
-    }
-    
-    hideLinkageControls() {
-        const linkageControls = document.getElementById('linkageControlsSection');
-        if (linkageControls) {
-            linkageControls.style.display = 'none';
-        }
-    }
-    
-    showLinkageControls() {
-        const linkageControls = document.getElementById('linkageControlsSection');
-        if (linkageControls) {
-            linkageControls.style.display = 'block';
-        }
+        // Update right panel to hide linkage controls
+        this.updateRightPanel();
     }
 
-    saveState() {
-        // Save current canvas state for undo
-        const state = {
-            canvasContent: this.canvas.innerHTML,
-            timestamp: Date.now()
-        };
-        
-        this.undoStack.push(state);
-        
-        // Clear redo stack when a new action is performed
-        this.redoStack = [];
-        
-        // Limit undo stack size
-        if (this.undoStack.length > this.maxUndoSteps) {
-            this.undoStack.shift();
-        }
-        
-        this.updateUndoRedoButtons();
-    }
-    
-    undo() {
-        if (this.undoStack.length === 0) {
-            console.log('Nothing to undo');
-            return;
-        }
-        
-        // Save current state to redo stack before undoing
-        const currentState = {
-            canvasContent: this.canvas.innerHTML,
-            timestamp: Date.now()
-        };
-        this.redoStack.push(currentState);
-        
-        // Limit redo stack size
-        if (this.redoStack.length > this.maxUndoSteps) {
-            this.redoStack.shift();
-        }
-        
-        // Get the last saved state
-        const lastState = this.undoStack.pop();
-        
-        // Restore canvas content
-        this.canvas.innerHTML = lastState.canvasContent;
-        
-        // Clear current selections since elements may have changed
-        this.deselectAll();
-        
-        // Update UI
-        this.updateRightPanel();
-        this.updateLeftPanel();
-        this.updateUndoRedoButtons();
-        
-        console.log('Undo completed');
-    }
-    
-    redo() {
-        if (this.redoStack.length === 0) {
-            console.log('Nothing to redo');
-            return;
-        }
-        
-        // Save current state to undo stack before redoing
-        const currentState = {
-            canvasContent: this.canvas.innerHTML,
-            timestamp: Date.now()
-        };
-        this.undoStack.push(currentState);
-        
-        // Get the last redo state
-        const nextState = this.redoStack.pop();
-        
-        // Restore canvas content
-        this.canvas.innerHTML = nextState.canvasContent;
-        
-        // Clear current selections since elements may have changed
-        this.deselectAll();
-        
-        // Update UI
-        this.updateRightPanel();
-        this.updateLeftPanel();
-        this.updateUndoRedoButtons();
-        
-        console.log('Redo completed');
-    }
-    
-    updateUndoRedoButtons() {
-        if (this.undoBtn) {
-            this.undoBtn.disabled = this.undoStack.length === 0;
-        }
-        if (this.redoBtn) {
-            this.redoBtn.disabled = this.redoStack.length === 0;
-        }
-    }
-    
-    // Keep old method for compatibility
-    updateUndoButton() {
-        this.updateUndoRedoButtons();
-    }
-    
     // Keyboard event handlers
     handleKeyDown(e) {
-        // Track modifier keys
-        this.isCtrlPressed = e.ctrlKey;
+        // Track modifier keys (primary modifier: Ctrl on Windows/Linux, Command(meta) on macOS)
+        this.isCtrlPressed = e.ctrlKey; // backward-compatible
+        this.isPrimaryModifierPressed = e.ctrlKey || e.metaKey;
         this.isShiftPressed = e.shiftKey;
         
         // Don't handle shortcuts when editing text
         if (this.isEditingText) {
             // Allow text formatting shortcuts even when editing
-            if (e.ctrlKey) {
+            if (e.ctrlKey || e.metaKey) {
                 switch (e.key.toLowerCase()) {
                     case 'b':
                         e.preventDefault();
@@ -8109,8 +10827,8 @@ class GlycanDrawer {
             return;
         }
         
-        // Handle keyboard shortcuts
-        if (e.ctrlKey) {
+    // Handle keyboard shortcuts (use primary modifier)
+    if (e.ctrlKey || e.metaKey) {
             switch (e.key.toLowerCase()) {
                 case 'c':
                     e.preventDefault();
@@ -8128,7 +10846,7 @@ class GlycanDrawer {
                     e.preventDefault();
                     this.undo();
                     break;
-                case 'y':
+                    case 'y':
                     e.preventDefault();
                     this.redo();
                     break;
@@ -8138,15 +10856,54 @@ class GlycanDrawer {
                     break;
                 case 'b':
                     e.preventDefault();
-                    this.toggleTextStyle('boldBtn');
+                    // If a connection is selected, apply to its linkage text instead
+                    const selConnsB = this.getSelectedElementsByType('connection') || [];
+                    if (selConnsB.length > 0) {
+                        // Dispatch a real click so the existing linkage button handlers run
+                        const lbtn = document.getElementById('linkageTextBoldBtn');
+                        if (lbtn) {
+                            // simulate full user interaction so mousedown/mouseup handlers run
+                            lbtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                            lbtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                            lbtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                        }
+                    } else {
+                        this.toggleTextStyle('boldBtn');
+                    }
                     break;
                 case 'i':
                     e.preventDefault();
-                    this.toggleTextStyle('italicBtn');
+                    // If a connection is selected, apply to its linkage text instead
+                    const selConnsI = this.getSelectedElementsByType('connection') || [];
+                    if (selConnsI.length > 0) {
+                        // Dispatch a real click so the existing linkage button handlers run
+                        const lbtn = document.getElementById('linkageTextItalicBtn');
+                        if (lbtn) {
+                            // simulate full user interaction so mousedown/mouseup handlers run
+                            lbtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                            lbtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                            lbtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                        }
+                    } else {
+                        this.toggleTextStyle('italicBtn');
+                    }
                     break;
                 case 'u':
                     e.preventDefault();
-                    this.toggleTextStyle('underlineBtn');
+                    // If a connection is selected, apply to its linkage text instead
+                    const selConnsU = this.getSelectedElementsByType('connection') || [];
+                    if (selConnsU.length > 0) {
+                        // Dispatch a real click so the existing linkage button handlers run
+                        const lbtn = document.getElementById('linkageTextUnderlineBtn');
+                        if (lbtn) {
+                            // simulate full user interaction so mousedown/mouseup handlers run
+                            lbtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                            lbtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                            lbtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                        }
+                    } else {
+                        this.toggleTextStyle('underlineBtn');
+                    }
                     break;
                 case '=':
                     e.preventDefault();
@@ -8172,8 +10929,9 @@ class GlycanDrawer {
     }
     
     handleKeyUp(e) {
-        // Update modifier key states
+        // Update modifier key states (primary modifier included)
         this.isCtrlPressed = e.ctrlKey;
+        this.isPrimaryModifierPressed = e.ctrlKey || e.metaKey;
         this.isShiftPressed = e.shiftKey;
     }
     
@@ -8198,6 +10956,18 @@ class GlycanDrawer {
     selectElement(element, multiSelect = false) {
         if (!this.isSelectableElement(element)) return;
         
+        // Only force complete operations if we're switching between different elements during styling
+        // Don't force complete for simple selection changes or when selecting newly created elements
+        if (this.pendingOperation && this.operationContext === 'styling') {
+            const elementIds = new Set([element.id || element.getAttribute('id')]);
+            const currentIds = new Set(Array.from(this.operationTargetElements).map(el => el.id || el.getAttribute('id')));
+            
+            // Only force complete if we're switching to a different element during styling
+            if (!this.setsEqual(elementIds, currentIds)) {
+                console.log('🔄 Switching elements during styling - completing operation');
+            }
+        }
+        
         if (!multiSelect) {
             this.clearAllSelectionsQuiet(); // 使用不触发循环的版本
         }
@@ -8208,6 +10978,9 @@ class GlycanDrawer {
         
         // Update legacy selection states for backward compatibility
         this.updateLegacySelectionStates();
+        
+        // Update right panel to show appropriate controls (including linkage)
+        this.updateRightPanel();
     }
     
     // Unified element deselection
@@ -8220,6 +10993,9 @@ class GlycanDrawer {
         
         // Update legacy selection states
         this.updateLegacySelectionStates();
+        
+        // Update right panel to hide controls if needed
+        this.updateRightPanel();
     }
     
     // Toggle element selection
@@ -8229,6 +11005,9 @@ class GlycanDrawer {
         } else {
             this.selectElement(element, multiSelect);
         }
+        
+        // Update right panel (redundant but ensures it's called)
+        this.updateRightPanel();
     }
     
     // Show hover preview
@@ -8296,6 +11075,25 @@ class GlycanDrawer {
     
     // Clear all selections
     clearAllSelections() {
+        // Only force complete operations if there's actually a meaningful styling operation pending
+        // AND the operation has made actual changes to the canvas
+        if (this.pendingOperation && this.operationContext === 'styling' && 
+            this.operationStartState && 
+            this.operationStartState.canvasContent !== this.canvas.innerHTML) {
+            console.log('🔄 Clearing selection during styling with changes - completing operation');
+        } else if (this.pendingOperation) {
+            // Clear any pending operation without saving if no meaningful changes were made
+            console.log('🔄 Clearing pending operation without saving (no meaningful changes)');
+            this.pendingOperation = false;
+            this.operationStartState = null;
+            this.operationTargetElements.clear();
+            this.operationContext = null;
+            if (this.operationTimer) {
+                clearTimeout(this.operationTimer);
+                this.operationTimer = null;
+            }
+        }
+        
         this.selectedElements.forEach(element => {
             element.classList.remove('selected');
             this.hideSelectionHighlight(element);
@@ -8391,6 +11189,17 @@ class GlycanDrawer {
     
     // Start dragging selected elements
     startDragging(x, y, multipleElements = false) {
+        // Start recording a step for drag operation
+        this.startStep('Move objects');
+        
+        // Store before state for all selected elements
+        this.selectedElements.forEach(element => {
+            const beforeData = this.createObjectData(element);
+            if (beforeData) {
+                element.setAttribute('data-before-move', JSON.stringify(beforeData));
+            }
+        });
+        
         this.isDragging = true;
         this.dragStartX = x;
         this.dragStartY = y;
@@ -8455,14 +11264,18 @@ class GlycanDrawer {
     }
     
     deleteSelection() {
-        this.saveState(); // Save state before deletion
-        
+        // Start recording a step for multiple deletions
+        this.startStep('Delete selection');
+
         // Collect elements to delete using unified system
         const sugarsToDelete = this.getSelectedElementsByType('sugar');
         const textsToDelete = this.getSelectedElementsByType('text');
         const connectionsToDelete = this.getSelectedElementsByType('connection');
         
-        // Delete connections that are connected to sugars being deleted
+        // Collect all connections to delete (including those connected to deleted sugars)
+        const allConnectionsToDelete = new Set(connectionsToDelete);
+        
+        // Find connections that are connected to sugars being deleted
         document.querySelectorAll('.connection').forEach(connection => {
             const startId = connection.getAttribute('data-start');
             const endId = connection.getAttribute('data-end');
@@ -8470,33 +11283,64 @@ class GlycanDrawer {
             const startSugar = document.getElementById(startId);
             const endSugar = document.getElementById(endId);
             
-            // Delete connection if either end is being deleted (and not already in connectionsToDelete)
+            // Delete connection if either end is being deleted
             if ((startSugar && sugarsToDelete.includes(startSugar)) || 
                 (endSugar && sugarsToDelete.includes(endSugar))) {
-                if (!connectionsToDelete.includes(connection)) {
-                    // Remove associated linkage text
-                    const connectionId = connection.getAttribute('id');
-                    if (connectionId) {
-                        const linkageText = this.canvas.querySelector(`text[data-connection-id="${connectionId}"]`);
-                        if (linkageText) {
-                            linkageText.remove();
-                        }
-                    }
-                    connection.remove();
-                }
+                allConnectionsToDelete.add(connection);
             }
         });
         
-        // Delete selected elements
-        this.selectedElements.forEach(element => {
-            this.hideSelectionHighlight(element);
-            element.remove();
+        // Record deletions for undo/redo
+        allConnectionsToDelete.forEach(connection => {
+            const connectionId = connection.getAttribute('id');
+            if (connectionId) {
+                this.recordObjectRemoved(connectionId);
+            }
         });
         
+        sugarsToDelete.forEach(sugar => {
+            const sugarId = sugar.getAttribute('id');
+            this.recordObjectRemoved(sugarId);
+        });
+        
+        textsToDelete.forEach(text => {
+            const textId = text.getAttribute('id');
+            this.recordObjectRemoved(textId);
+        });
+        
+        // Delete all connections and their linkage texts
+        allConnectionsToDelete.forEach(connection => {
+            const connectionId = connection.getAttribute('id');
+            if (connectionId) {
+                // Remove both config and position text elements
+                const configText = this.canvas.querySelector(`text[data-connection-id="${connectionId}"][data-linkage-part="config"]`);
+                const positionText = this.canvas.querySelector(`text[data-connection-id="${connectionId}"][data-linkage-part="position"]`);
+                if (configText) configText.remove();
+                if (positionText) positionText.remove();
+                
+                // Also remove any old-style single linkage text (for backward compatibility)
+                const oldLinkageText = this.canvas.querySelector(`text[data-connection-id="${connectionId}"]:not([data-linkage-part])`);
+                if (oldLinkageText) oldLinkageText.remove();
+            }
+            connection.remove();
+        });
+        
+        // Delete selected sugars and texts
+        sugarsToDelete.forEach(sugar => {
+            this.hideSelectionHighlight(sugar);
+            sugar.remove();
+        });
+        
+        textsToDelete.forEach(text => {
+            this.hideSelectionHighlight(text);
+            text.remove();
+        });
+
         this.clearAllSelections();
-    }
-    
-    copySelection() {
+        
+        // Finish recording the step
+        this.finishStep();
+    }    copySelection() {
         this.clipboard = {
             sugars: [],
             texts: [],
@@ -8555,12 +11399,22 @@ class GlycanDrawer {
                     className: connection.className.baseVal || connection.className, // Handle SVG className properly
                     // Preserve inline style properties, fallback to computed styles for defaults
                     strokeWidth: connection.style.strokeWidth || connection.getAttribute('stroke-width') || getComputedStyle(connection).strokeWidth,
-                    stroke: connection.style.stroke || connection.getAttribute('stroke') || getComputedStyle(connection).stroke,
+                    stroke: connection.style.stroke || connection.getAttribute('stroke') || this.normalizeColorToHex(getComputedStyle(connection).stroke),
                     strokeOpacity: connection.style.strokeOpacity || connection.getAttribute('stroke-opacity') || getComputedStyle(connection).strokeOpacity,
                     strokeDasharray: connection.style.strokeDasharray || connection.getAttribute('stroke-dasharray') || getComputedStyle(connection).strokeDasharray,
                     // Preserve linkage-specific attributes
                     linkageId: connection.getAttribute('data-linkage-id'),
-                    linkageType: connection.getAttribute('data-linkage')
+                    linkageType: connection.getAttribute('data-linkage'),
+                    // Preserve linkage text appearance and visibility
+                    textSize: connection.getAttribute('data-text-size'),
+                    textColor: connection.getAttribute('data-text-color'),
+                    textFontFamily: connection.getAttribute('data-text-font-family'),
+                    textBold: connection.getAttribute('data-text-bold'),
+                    textItalic: connection.getAttribute('data-text-italic'),
+                    textUnderline: connection.getAttribute('data-text-underline'),
+                    textOpacity: connection.getAttribute('data-text-opacity'),
+                    linkageVisible: connection.getAttribute('data-linkage-visible'),
+                    reversed: connection.getAttribute('data-reversed')
                 };
                 
                 connectionsToCopy.push(connectionCopy);
@@ -8577,7 +11431,7 @@ class GlycanDrawer {
                             content: labelElement.textContent,
                             style: labelElement.getAttribute('style'),
                             className: labelElement.className,
-                            fill: labelElement.style.fill || labelElement.getAttribute('fill'),
+                            fill: this.normalizeColorToHex(labelElement.style.fill || labelElement.getAttribute('fill')),
                             fontSize: labelElement.style.fontSize || labelElement.getAttribute('font-size')
                         });
                     }
@@ -8612,7 +11466,8 @@ class GlycanDrawer {
             return; // Nothing to paste
         }
         
-        this.saveState(); // Save state before pasting
+        // Start recording a step for paste operation
+        this.startStep('Paste');
         
         // Clear current selection first (use unified system)
         this.clearAllSelections();
@@ -8625,6 +11480,7 @@ class GlycanDrawer {
         
         const pastedSugars = [];
         const pastedTexts = [];
+    const pastedConnections = [];
         
         // Paste sugars
         this.clipboard.sugars.forEach(sugarData => {
@@ -8726,6 +11582,22 @@ class GlycanDrawer {
                         if (connectionData.linkageType) {
                             newConnection.setAttribute('data-linkage', connectionData.linkageType);
                         }
+
+                        // Restore linkage text appearance and visibility attributes so updateLinkageText can use them
+                        if (connectionData.textSize) newConnection.setAttribute('data-text-size', connectionData.textSize);
+                        if (connectionData.textColor) newConnection.setAttribute('data-text-color', connectionData.textColor);
+                        if (connectionData.textFontFamily) newConnection.setAttribute('data-text-font-family', connectionData.textFontFamily);
+                        if (connectionData.textBold !== undefined && connectionData.textBold !== null) newConnection.setAttribute('data-text-bold', connectionData.textBold);
+                        if (connectionData.textItalic !== undefined && connectionData.textItalic !== null) newConnection.setAttribute('data-text-italic', connectionData.textItalic);
+                        if (connectionData.textUnderline !== undefined && connectionData.textUnderline !== null) newConnection.setAttribute('data-text-underline', connectionData.textUnderline);
+                        if (connectionData.textOpacity) newConnection.setAttribute('data-text-opacity', connectionData.textOpacity);
+                        if (connectionData.linkageVisible !== undefined && connectionData.linkageVisible !== null) newConnection.setAttribute('data-linkage-visible', connectionData.linkageVisible);
+                        if (connectionData.reversed !== undefined && connectionData.reversed !== null) newConnection.setAttribute('data-reversed', connectionData.reversed);
+
+                        // NOTE: Do not auto-create linkage text here; linkage labels are
+                        // recreated below from clipboard.linkageLabels. We restore the
+                        // connection's data-text-* attributes so the pasted labels can
+                        // pick them up when created.
                         
                         // Apply className (SVG elements require className.baseVal)
                         if (connectionData.className) {
@@ -8750,6 +11622,8 @@ class GlycanDrawer {
                         if (!connectionData.strokeOpacity || connectionData.strokeOpacity === '' || connectionData.strokeOpacity === 'none') {
                             newConnection.style.setProperty('stroke-opacity', '1', 'important');
                         }
+                        // Track pasted connection so we can ensure linkage text is updated
+                        pastedConnections.push(newConnection);
                     }
                 }
             }
@@ -8760,33 +11634,88 @@ class GlycanDrawer {
             // Find the new connection that corresponds to this label
             const newConnection = document.querySelector(`[data-linkage-id="${labelData.linkageId}"]`);
             if (newConnection) {
-                // Create new linkage label
+                // If the newer linkage text (config/position) already exists for the
+                // connection, skip creating a legacy single label to avoid duplicates.
+                const connId = newConnection.getAttribute('id');
+                if (connId && this.canvas.querySelector(`text[data-connection-id="${connId}"]`)) {
+                    // There are already linkage label(s) for this connection; skip
+                    return;
+                }
+
+                // Create new legacy-style linkage label and apply restored styles.
                 const newLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                newLabel.setAttribute('x', labelData.x + offsetX);
-                newLabel.setAttribute('y', labelData.y + offsetY);
-                newLabel.setAttribute('data-x', labelData.x + offsetX);
-                newLabel.setAttribute('data-y', labelData.y + offsetY);
+                const finalX = (labelData.x || 0) + offsetX;
+                const finalY = (labelData.y || 0) + offsetY;
+                newLabel.setAttribute('x', finalX);
+                newLabel.setAttribute('y', finalY);
+                newLabel.setAttribute('data-x', finalX);
+                newLabel.setAttribute('data-y', finalY);
                 newLabel.setAttribute('data-linkage-for', labelData.linkageId);
                 newLabel.textContent = labelData.content;
-                
-                // Apply saved styling
+
+                // Apply saved styling from labelData first
                 if (labelData.style) {
                     newLabel.setAttribute('style', labelData.style);
                 }
                 if (labelData.className) {
                     newLabel.className = labelData.className;
                 }
-                if (labelData.fill) {
-                    newLabel.style.setProperty('fill', labelData.fill, 'important');
+
+                // Prefer connection-level saved attributes for final appearance if present
+                const connTextSize = newConnection.getAttribute('data-text-size') || labelData.fontSize;
+                const connTextColor = newConnection.getAttribute('data-text-color') || labelData.fill || labelData.style && (labelData.style.match(/fill:\s*([^;]+);?/) || [])[1];
+                const connFontFamily = newConnection.getAttribute('data-text-font-family') || labelData.style && (labelData.style.match(/font-family:\s*([^;]+);?/) || [])[1];
+                const connTextOpacity = newConnection.getAttribute('data-text-opacity') || null;
+                const connBold = newConnection.getAttribute('data-text-bold');
+                const connItalic = newConnection.getAttribute('data-text-italic');
+                const connUnderline = newConnection.getAttribute('data-text-underline');
+
+                if (connTextColor) {
+                    const normalizedFill = this.normalizeColorToHex(connTextColor);
+                    newLabel.style.setProperty('fill', normalizedFill, 'important');
+                } else if (labelData.fill) {
+                    newLabel.style.setProperty('fill', this.normalizeColorToHex(labelData.fill), 'important');
                 }
-                if (labelData.fontSize) {
+
+                if (connTextSize) {
+                    // Ensure value ends with px if numeric
+                    const sizeStr = String(connTextSize).match(/\d+/) ? `${connTextSize}px` : connTextSize;
+                    newLabel.style.setProperty('font-size', sizeStr, 'important');
+                } else if (labelData.fontSize) {
                     newLabel.style.setProperty('font-size', labelData.fontSize, 'important');
                 }
-                
+
+                if (connFontFamily) {
+                    newLabel.style.setProperty('font-family', connFontFamily, 'important');
+                }
+
+                if (connTextOpacity) {
+                    newLabel.style.setProperty('fill-opacity', connTextOpacity, 'important');
+                }
+
+                if (connBold === 'true') {
+                    newLabel.style.setProperty('font-weight', 'bold', 'important');
+                }
+                if (connItalic === 'true') {
+                    newLabel.style.setProperty('font-style', 'italic', 'important');
+                }
+                if (connUnderline === 'true') {
+                    newLabel.style.setProperty('text-decoration', 'underline', 'important');
+                }
+
                 // Add to canvas
                 this.canvas.appendChild(newLabel);
             }
         });
+
+        // Ensure linkage text (config/position) is created for pasted connections
+        // Some pasted connections may rely on connection-level data-* attributes
+        // to render linkage text; call updateLinkageText to force creation.
+        try {
+            pastedConnections.forEach(conn => {
+                try { this.updateLinkageText(conn); } catch (e) { /* ignore */ }
+            });
+        } catch (e) {}
         
         // Update the style panel to reflect new selection
         this.updateStylePanel();
@@ -8796,6 +11725,9 @@ class GlycanDrawer {
         if (totalPasted > 0) {
             this.showTemporaryNotification(`已粘贴 ${totalPasted} 个元素 (已选中新元素)`);
         }
+        
+        // Finish recording the step
+        this.finishStep();
     }
     
     // Reset paste counter when user performs other actions
@@ -8843,7 +11775,13 @@ class GlycanDrawer {
         
         // Apply to selected texts or current text being edited
         if (this.isEditingText && this.selectedText) {
+            // Start undo step for editing text
+            this.startStep('Change text style');
+            const beforeData = this.createObjectData(this.selectedText);
             this.applyTextStyleToElement(this.selectedText, styleId, btn.classList.contains('active'));
+            const afterData = this.createObjectData(this.selectedText);
+            this.recordObjectModified(this.selectedText.getAttribute('id'), beforeData, afterData);
+            this.finishStep();
         } else if (this.selectedText || this.selectedTexts.size > 0) {
             this.applySpecificTextStyle(styleId, btn.classList.contains('active'));
         }
@@ -8874,7 +11812,8 @@ class GlycanDrawer {
                 break;
         }
     }
-    
+
+    // Remove the duplicate applySpecificTextStyle method and replace with proper undo recording
     applySpecificTextStyle(styleId, isActive) {
         // Get all selected text elements
         const selectedTextElements = [];
@@ -8889,22 +11828,37 @@ class GlycanDrawer {
         
         if (selectedTextElements.length === 0) return;
         
+        // Start undo recording
+        this.startStep('Change text style');
+        
         // Apply the specific style to all selected texts
         selectedTextElements.forEach(textElement => {
+            const beforeData = this.createObjectData(textElement);
             this.applyTextStyleToElement(textElement, styleId, isActive);
+            const afterData = this.createObjectData(textElement);
+            this.recordObjectModified(textElement.getAttribute('id'), beforeData, afterData);
         });
+        
+        // Finish undo recording
+        this.finishStep();
     }
     
     toggleSuperscript() {
-        if (this.selectedText || this.selectedTexts.size > 0) {
-            this.applyTextTransform('superscript');
-        }
+        // Temporarily disabled: superscript toggling causes inconsistent
+        // text transformations and interferes with undo/redo in some cases.
+        // The original implementation is kept in version history. To
+        // re-enable, restore the original body (call applyTextTransform)
+        // or remove this early return.
+        return;
     }
     
     toggleSubscript() {
-        if (this.selectedText || this.selectedTexts.size > 0) {
-            this.applyTextTransform('subscript');
-        }
+        // Temporarily disabled: subscript toggling causes inconsistent
+        // text transformations and interferes with undo/redo in some cases.
+        // The original implementation is kept in version history. To
+        // re-enable, restore the original body (call applyTextTransform)
+        // or remove this early return.
+        return;
     }
     
     applyTextTransform(type) {
@@ -9007,7 +11961,7 @@ class GlycanDrawer {
             position: fixed;
             top: 20px;
             right: 20px;
-            background: rgba(0, 0, 0, 0.8);
+            background: #000000CC;
             color: white;
             padding: 10px 20px;
             border-radius: 4px;
@@ -9027,6 +11981,996 @@ class GlycanDrawer {
                 }
             }, 300);
         }, duration);
+    }
+    
+    // ===== UNDO/REDO SYSTEM =====
+    
+    // Start recording a new step
+    startStep(description = '') {
+        if (this.isRecordingStep) {
+            console.warn('Already recording a step, finishing current step first');
+            this.finishStep();
+        }
+        
+        this.currentStep = {
+            description: description,
+            added: [],      // Objects added in this step
+            removed: [],    // Objects removed in this step  
+            modified: []    // Array of {before, after} for modified objects
+        };
+        this.isRecordingStep = true;
+        // Debug: log when a step begins
+        try {
+            console.log(`startStep: "${description}" | undoStack=${this.undoStack ? this.undoStack.length : 0} redoStack=${this.redoStack ? this.redoStack.length : 0}`);
+        } catch (e) {
+            // ignore
+        }
+    }
+    
+    // Record an object addition
+    recordObjectAdded(objectData) {
+        if (!this.isRecordingStep) {
+            this.startStep('Auto-created step');
+        }
+        // Deep-clone objectData to freeze snapshot
+        let cloned = null;
+        try {
+            cloned = JSON.parse(JSON.stringify(objectData));
+        } catch (e) {
+            cloned = objectData;
+        }
+
+        // Add to objectList
+        this.objectList.set(cloned.id, cloned);
+
+        // Record in current step (clone)
+        this.currentStep.added.push(cloned);
+    }
+    
+    // Record an object removal
+    recordObjectRemoved(objectId) {
+        if (!this.isRecordingStep) {
+            this.startStep('Auto-created step');
+        }
+        // Get object data before removal
+        const objectData = this.objectList.get(objectId);
+        if (objectData) {
+            // Deep clone to freeze snapshot
+            let cloned = null;
+            try {
+                cloned = JSON.parse(JSON.stringify(objectData));
+            } catch (e) {
+                cloned = objectData;
+            }
+            // Record in current step
+            this.currentStep.removed.push(cloned);
+            
+            // Remove from objectList
+            this.objectList.delete(objectId);
+        }
+    }
+    
+    // Record an object modification
+    recordObjectModified(objectId, beforeData, afterData) {
+        if (!this.isRecordingStep) {
+            this.startStep('Auto-created step');
+        }
+        // Debug: log key before/after fields for connections (helps trace color/style steps)
+        try {
+            const beforeSummary = beforeData && beforeData.type === 'connection' ?
+                `conn(before) id=${objectId} textColor=${beforeData.textColor} textBold=${beforeData.textBold} textItalic=${beforeData.textItalic} textUnderline=${beforeData.textUnderline} textSize=${beforeData.textSize}` :
+                (beforeData ? `obj(before) id=${objectId} type=${beforeData.type}` : `obj(before) id=${objectId} <null>`);
+            const afterSummary = afterData && afterData.type === 'connection' ?
+                `conn(after) id=${objectId} textColor=${afterData.textColor} textBold=${afterData.textBold} textItalic=${afterData.textItalic} textUnderline=${afterData.textUnderline} textSize=${afterData.textSize}` :
+                (afterData ? `obj(after) id=${objectId} type=${afterData.type}` : `obj(after) id=${objectId} <null>`);
+            console.log('recordObjectModified:', this.currentStep ? `step="${this.currentStep.description}"` : '', beforeSummary, '->', afterSummary);
+            // Additional tracing for puzzling cases where before/after look identical
+            if (beforeData && afterData && beforeData.type === 'connection') {
+                // Log current objectList state for this id before update
+                try {
+                    const existing = this.objectList.get(objectId);
+                    console.log('recordObjectModified: objectList currently has for', objectId, existing && existing.textColor);
+                } catch (e) {}
+                // Log if currentStep already contains a modification for this id
+                try {
+                    if (this.currentStep && Array.isArray(this.currentStep.modified)) {
+                        const prior = this.currentStep.modified.find(m => m.id === objectId);
+                        if (prior) {
+                            console.log('recordObjectModified: WARNING - prior modification recorded in this step for', objectId, prior.before && prior.before.textColor, '->', prior.after && prior.after.textColor);
+                        }
+                    }
+                } catch (e) {}
+                // Print a short stack trace to see caller
+                try {
+                    const stack = (new Error()).stack.split('\n').slice(1,6).join('\n');
+                    console.log('recordObjectModified: call stack (top 5):\n', stack);
+                } catch (e) {}
+            }
+        } catch (e) {
+            // ignore logging errors
+        }
+
+        // Deep-clone before/after to freeze snapshots
+        let beforeClone = null;
+        let afterClone = null;
+        try {
+            beforeClone = beforeData ? JSON.parse(JSON.stringify(beforeData)) : beforeData;
+        } catch (e) {
+            beforeClone = beforeData;
+        }
+        try {
+            afterClone = afterData ? JSON.parse(JSON.stringify(afterData)) : afterData;
+        } catch (e) {
+            afterClone = afterData;
+        }
+
+        // Update objectList with cloned data
+        this.objectList.set(objectId, afterClone);
+
+        // If this object was already modified earlier in this step, merge by keeping the original 'before'
+        // and updating the 'after' to the latest snapshot. This prevents duplicate modification entries.
+        try {
+            if (this.currentStep && Array.isArray(this.currentStep.modified)) {
+                const existingIndex = this.currentStep.modified.findIndex(m => m.id === objectId);
+                if (existingIndex !== -1) {
+                    // Preserve original 'before', update 'after'
+                    this.currentStep.modified[existingIndex].after = afterClone;
+                } else {
+                    this.currentStep.modified.push({
+                        id: objectId,
+                        before: beforeClone,
+                        after: afterClone
+                    });
+                }
+            } else {
+                // Fallback: push normally
+                this.currentStep.modified.push({
+                    id: objectId,
+                    before: beforeClone,
+                    after: afterClone
+                });
+            }
+        } catch (e) {
+            // On any error, fall back to pushing the record
+            try { this.currentStep.modified.push({ id: objectId, before: beforeClone, after: afterClone }); } catch (e) {}
+        }
+    }
+    
+    // Finish recording current step and add to undo stack
+    finishStep() {
+        if (!this.isRecordingStep || !this.currentStep) {
+            return;
+        }
+        
+        // Only save step if it has actual changes
+        if (this.currentStep.added.length > 0 || 
+            this.currentStep.removed.length > 0 || 
+            this.currentStep.modified.length > 0) {
+            
+            // Debug: log modified entries summary before saving
+            try {
+                const modSummary = this.currentStep.modified.map(m => ({ id: m.id, beforeTextColor: m.before && m.before.textColor, afterTextColor: m.after && m.after.textColor }));
+                console.log('finishStep: modified summary ->', modSummary);
+            } catch (e) {}
+
+            // Debug: log modified entries summary before saving
+            try {
+                const modSummary = this.currentStep.modified.map(m => ({ id: m.id, beforeTextColor: m.before && m.before.textColor, afterTextColor: m.after && m.after.textColor }));
+                console.log('finishStep: modified summary ->', modSummary);
+            } catch (e) {}
+
+            // Add to undo stack (deep clone step to prevent later mutation)
+            try {
+                this.undoStack.push(JSON.parse(JSON.stringify(this.currentStep)));
+            } catch (e) {
+                this.undoStack.push(this.currentStep);
+            }
+
+            // Clear redo stack when new action is performed
+            this.redoStack = [];
+            
+            // Limit stack size
+            if (this.undoStack.length > this.maxHistorySize) {
+                this.undoStack.shift();
+            }
+            
+            console.log('Step recorded:', this.currentStep.description, this.currentStep);
+        }
+        
+        this.currentStep = null;
+        this.isRecordingStep = false;
+        // Update undo/redo buttons state
+        try { this.updateUndoRedoButtons(); } catch (e) {}
+    }
+
+    // Update the disabled state of undo/redo buttons
+    updateUndoRedoButtons() {
+        if (this.undoBtn) this.undoBtn.disabled = this.undoStack.length === 0;
+        if (this.redoBtn) this.redoBtn.disabled = this.redoStack.length === 0;
+    }
+    
+    // Create object data from DOM element
+    createObjectData(element) {
+        const type = this.getElementType(element);
+        const id = element.getAttribute('id');
+        
+        if (type === 'sugar') {
+            const shape = element.querySelector('.sugar-shape');
+            const polygon = element.querySelector('polygon');
+            const line = element.querySelector('line');
+            
+            return {
+                id: id,
+                type: 'sugar',
+                x: parseFloat(element.getAttribute('data-x')),
+                y: parseFloat(element.getAttribute('data-y')),
+                shape: element.getAttribute('data-shape'),
+                color: element.getAttribute('data-color'),
+                size: parseFloat(element.getAttribute('data-size')) || 20,
+                preset: element.getAttribute('data-preset'),
+                // Store CSS style properties from the shape element (used with !important)
+                shapeStyleStroke: shape ? shape.style.stroke : null,
+                shapeStyleStrokeWidth: shape ? shape.style.strokeWidth : null,
+                shapeStyleStrokeOpacity: shape ? shape.style.strokeOpacity : null,
+                shapeStyleStrokeDasharray: shape ? shape.style.strokeDasharray : null,
+                shapeStyleFillOpacity: shape ? shape.style.fillOpacity : null,
+                // Store CSS style properties for divided shapes (polygon and line)
+                polygonStyleStroke: polygon ? polygon.style.stroke : null,
+                polygonStyleStrokeWidth: polygon ? polygon.style.strokeWidth : null,
+                polygonStyleStrokeOpacity: polygon ? polygon.style.strokeOpacity : null,
+                polygonStyleStrokeDasharray: polygon ? polygon.style.strokeDasharray : null,
+                lineStyleStroke: line ? line.style.stroke : null,
+                lineStyleStrokeWidth: line ? line.style.strokeWidth : null,
+                lineStyleStrokeOpacity: line ? line.style.strokeOpacity : null,
+                lineStyleStrokeDasharray: line ? line.style.strokeDasharray : null,
+                // Store the complete SVG structure
+                svg: element.outerHTML
+            };
+        } else if (type === 'text') {
+            return {
+                id: id,
+                type: 'text',
+                x: parseFloat(element.getAttribute('x')),
+                y: parseFloat(element.getAttribute('y')),
+                content: element.textContent,
+                fontSize: element.getAttribute('font-size'),
+                fontFamily: element.getAttribute('font-family'),
+                fill: element.getAttribute('fill'),
+                opacity: element.getAttribute('opacity'),
+                fontWeight: element.getAttribute('font-weight'),
+                fontStyle: element.getAttribute('font-style'),
+                textDecoration: element.getAttribute('text-decoration'),
+                // Also store CSS style properties (used with !important)
+                styleFontSize: element.style.fontSize,
+                styleFontFamily: element.style.fontFamily,
+                styleFill: element.style.fill,
+                styleFontWeight: element.style.fontWeight,
+                styleFontStyle: element.style.fontStyle,
+                styleTextDecoration: element.style.textDecoration,
+                // Store the complete SVG structure
+                svg: element.outerHTML
+            };
+        } else if (type === 'connection') {
+            return {
+                id: id,
+                type: 'connection',
+                x1: parseFloat(element.getAttribute('x1')),
+                y1: parseFloat(element.getAttribute('y1')),
+                x2: parseFloat(element.getAttribute('x2')),
+                y2: parseFloat(element.getAttribute('y2')),
+                parentId: element.getAttribute('data-start'),
+                childId: element.getAttribute('data-end'),
+                strokeWidth: element.getAttribute('stroke-width'),
+                stroke: element.getAttribute('stroke'),
+                strokeOpacity: element.getAttribute('stroke-opacity'),
+                strokeDasharray: element.getAttribute('stroke-dasharray'),
+                // Also store CSS style properties (used with !important)
+                styleStroke: element.style.stroke,
+                styleStrokeWidth: element.style.strokeWidth,
+                styleStrokeOpacity: element.style.strokeOpacity,
+                styleStrokeDasharray: element.style.strokeDasharray,
+                linkage: element.getAttribute('data-linkage'),
+                reversed: element.getAttribute('data-reversed') === 'true',
+                linkageVisible: element.getAttribute('data-linkage-visible'),
+                // Linkage text style properties
+                textSize: element.getAttribute('data-text-size'),
+                textColor: element.getAttribute('data-text-color'),
+                textFontFamily: element.getAttribute('data-text-font-family'),
+                // Normalize boolean-style linkage text attributes to explicit 'true'/'false' strings
+                textBold: element.getAttribute('data-text-bold') !== null ? element.getAttribute('data-text-bold') : 'false',
+                textItalic: element.getAttribute('data-text-italic') !== null ? element.getAttribute('data-text-italic') : 'false',
+                textUnderline: element.getAttribute('data-text-underline') !== null ? element.getAttribute('data-text-underline') : 'false',
+                textOpacity: element.getAttribute('data-text-opacity'),
+                // Store the complete SVG structure
+                svg: element.outerHTML
+            };
+        }
+        
+        return null;
+    }
+    
+    // Restore object from data to DOM
+    restoreObjectFromData(objectData) {
+        console.log('restoreObjectFromData called with:', objectData);
+        
+        // Check if element already exists (for modifications)
+        const existingElement = document.getElementById(objectData.id);
+        console.log('Existing element found:', existingElement);
+        
+        if (existingElement) {
+            // Update existing element in place
+            this.updateElementFromData(existingElement, objectData);
+            this.objectList.set(objectData.id, objectData);
+            return existingElement;
+        } else {
+            // Create new element using the normal creation methods
+            console.log('Creating new element using creation methods');
+            
+            let newElement;
+            
+            if (objectData.type === 'sugar') {
+                // Use the normal createSugar method to ensure proper setup
+                const config = {
+                    shape: objectData.shape,
+                    color: objectData.color,
+                    size: objectData.size,
+                    type: objectData.preset ? 'preset' : 'custom',
+                    preset: objectData.preset
+                };
+                
+                // Temporarily store the current count to restore the correct ID
+                const originalCount = this.sugarCount;
+                const targetNum = parseInt(objectData.id.replace('sugar-', ''));
+                this.sugarCount = targetNum - 1; // Will be incremented in createSugar
+                
+                // Temporarily disable step recording during restoration
+                const wasRecording = this.isRecordingStep;
+                this.isRecordingStep = false;
+                
+                newElement = this.createSugar(objectData.x, objectData.y, config);
+                
+                // Restore recording state
+                this.isRecordingStep = wasRecording;
+                
+                // Restore the count if it was higher
+                if (originalCount > this.sugarCount) {
+                    this.sugarCount = originalCount;
+                }
+                
+                // CRITICAL: Restore CSS style properties for the newly created sugar
+                if (newElement) {
+                    const shape = newElement.querySelector('.sugar-shape');
+                    if (shape) {
+                        if (objectData.shapeStyleStroke) shape.style.setProperty('stroke', objectData.shapeStyleStroke, 'important');
+                        if (objectData.shapeStyleStrokeWidth) shape.style.setProperty('stroke-width', objectData.shapeStyleStrokeWidth, 'important');
+                        if (objectData.shapeStyleStrokeOpacity) shape.style.setProperty('stroke-opacity', objectData.shapeStyleStrokeOpacity, 'important');
+                        if (objectData.shapeStyleStrokeDasharray) shape.style.setProperty('stroke-dasharray', objectData.shapeStyleStrokeDasharray, 'important');
+                        if (objectData.shapeStyleFillOpacity) shape.style.setProperty('fill-opacity', objectData.shapeStyleFillOpacity, 'important');
+                    }
+                    
+                    // Restore CSS style properties for divided shapes (polygon and line)
+                    const polygon = newElement.querySelector('polygon');
+                    if (polygon) {
+                        if (objectData.polygonStyleStroke) polygon.style.setProperty('stroke', objectData.polygonStyleStroke, 'important');
+                        if (objectData.polygonStyleStrokeWidth) polygon.style.setProperty('stroke-width', objectData.polygonStyleStrokeWidth, 'important');
+                        if (objectData.polygonStyleStrokeOpacity) polygon.style.setProperty('stroke-opacity', objectData.polygonStyleStrokeOpacity, 'important');
+                        if (objectData.polygonStyleStrokeDasharray) polygon.style.setProperty('stroke-dasharray', objectData.polygonStyleStrokeDasharray, 'important');
+                    }
+                    
+                    const line = newElement.querySelector('line');
+                    if (line) {
+                        if (objectData.lineStyleStroke) line.style.setProperty('stroke', objectData.lineStyleStroke, 'important');
+                        if (objectData.lineStyleStrokeWidth) line.style.setProperty('stroke-width', objectData.lineStyleStrokeWidth, 'important');
+                        if (objectData.lineStyleStrokeOpacity) line.style.setProperty('stroke-opacity', objectData.lineStyleStrokeOpacity, 'important');
+                        if (objectData.lineStyleStrokeDasharray) line.style.setProperty('stroke-dasharray', objectData.lineStyleStrokeDasharray, 'important');
+                    }
+                }
+                
+            } else if (objectData.type === 'text') {
+                // Temporarily store the current count to restore the correct ID
+                const originalCount = this.textCount;
+                const targetNum = parseInt(objectData.id.replace('text-', ''));
+                this.textCount = targetNum - 1; // Will be incremented in createText
+                
+                // Temporarily disable step recording during restoration
+                const wasRecording = this.isRecordingStep;
+                this.isRecordingStep = false;
+                
+                // Use the normal createText method with autoEdit=false to prevent editing mode during undo/redo
+                newElement = this.createText(objectData.x, objectData.y, objectData.content, false);
+                
+                // Restore recording state
+                this.isRecordingStep = wasRecording;
+                
+                // Restore the count if it was higher
+                if (originalCount > this.textCount) {
+                    this.textCount = originalCount;
+                }
+                
+                // CRITICAL: Set the correct ID to match the stored data (should already be correct now)
+                if (newElement && objectData.id) {
+                    newElement.setAttribute('id', objectData.id);
+                }
+                
+                // Update text attributes
+                if (objectData.fontSize) newElement.setAttribute('font-size', objectData.fontSize);
+                if (objectData.fontFamily) newElement.setAttribute('font-family', objectData.fontFamily);
+                if (objectData.fill) newElement.setAttribute('fill', objectData.fill);
+                if (objectData.opacity) newElement.setAttribute('opacity', objectData.opacity);
+                if (objectData.fontWeight) newElement.setAttribute('font-weight', objectData.fontWeight);
+                if (objectData.fontStyle) newElement.setAttribute('font-style', objectData.fontStyle);
+                if (objectData.textDecoration) newElement.setAttribute('text-decoration', objectData.textDecoration);
+                
+                // CRITICAL: Restore CSS style properties with proper empty handling
+                if (objectData.styleFontSize) {
+                    newElement.style.setProperty('font-size', objectData.styleFontSize, 'important');
+                } else if (objectData.hasOwnProperty('styleFontSize')) {
+                    newElement.style.removeProperty('font-size');
+                }
+                
+                if (objectData.styleFontFamily) {
+                    newElement.style.setProperty('font-family', objectData.styleFontFamily, 'important');
+                } else if (objectData.hasOwnProperty('styleFontFamily')) {
+                    newElement.style.removeProperty('font-family');
+                }
+                
+                if (objectData.styleFill) {
+                    const normalizedFill = this.normalizeColorToHex(objectData.styleFill);
+                    newElement.style.setProperty('fill', normalizedFill, 'important');
+                } else if (objectData.hasOwnProperty('styleFill')) {
+                    newElement.style.removeProperty('fill');
+                }
+                
+                if (objectData.styleFontWeight) {
+                    newElement.style.setProperty('font-weight', objectData.styleFontWeight, 'important');
+                } else if (objectData.hasOwnProperty('styleFontWeight')) {
+                    newElement.style.removeProperty('font-weight');
+                }
+                
+                if (objectData.styleFontStyle) {
+                    newElement.style.setProperty('font-style', objectData.styleFontStyle, 'important');
+                } else if (objectData.hasOwnProperty('styleFontStyle')) {
+                    newElement.style.removeProperty('font-style');
+                }
+                
+                if (objectData.styleTextDecoration) {
+                    newElement.style.setProperty('text-decoration', objectData.styleTextDecoration, 'important');
+                } else if (objectData.hasOwnProperty('styleTextDecoration')) {
+                    newElement.style.removeProperty('text-decoration');
+                }
+                
+            } else if (objectData.type === 'connection') {
+                // For connections, we need to find the actual sugar elements
+                const parentSugar = document.getElementById(objectData.parentId);
+                const childSugar = document.getElementById(objectData.childId);
+                
+                if (parentSugar && childSugar) {
+                    // Temporarily disable step recording during restoration
+                    const wasRecording = this.isRecordingStep;
+                    this.isRecordingStep = false;
+                    
+                    // Use the normal createConnection method
+                    newElement = this.createConnection(parentSugar, childSugar, true); // Skip default styling
+                    
+                    // IMPORTANT: Set the correct ID to match the stored data
+                    if (newElement && objectData.id) {
+                        newElement.setAttribute('id', objectData.id);
+                    }
+                    
+                    // Restore recording state
+                    this.isRecordingStep = wasRecording;
+                    
+                    // Update connection properties if they exist
+                    if (newElement) {
+                        if (objectData.strokeWidth) newElement.setAttribute('stroke-width', objectData.strokeWidth);
+                        if (objectData.stroke) newElement.setAttribute('stroke', objectData.stroke);
+                        if (objectData.strokeOpacity) newElement.setAttribute('stroke-opacity', objectData.strokeOpacity);
+                        if (objectData.strokeDasharray) newElement.setAttribute('stroke-dasharray', objectData.strokeDasharray);
+                        
+                        // Restore CSS style properties (used with !important)
+                        if (objectData.styleStroke) newElement.style.setProperty('stroke', objectData.styleStroke, 'important');
+                        if (objectData.styleStrokeWidth) newElement.style.setProperty('stroke-width', objectData.styleStrokeWidth, 'important');
+                        if (objectData.styleStrokeOpacity) newElement.style.setProperty('stroke-opacity', objectData.styleStrokeOpacity, 'important');
+                        if (objectData.styleStrokeDasharray) newElement.style.setProperty('stroke-dasharray', objectData.styleStrokeDasharray, 'important');
+                        
+                        if (objectData.linkage) newElement.setAttribute('data-linkage', objectData.linkage);
+                        if (objectData.reversed !== undefined) newElement.setAttribute('data-reversed', objectData.reversed.toString());
+                        // IMPORTANT: Set linkage visibility BEFORE updating linkage text
+                        if (objectData.linkageVisible !== null && objectData.linkageVisible !== undefined) {
+                            newElement.setAttribute('data-linkage-visible', objectData.linkageVisible);
+                        }
+                        
+                        // Update linkage text display based on the restored visibility setting
+                        this.updateLinkageText(newElement);
+                    }
+                } else {
+                    console.error('Cannot restore connection: parent or child sugar not found', objectData.parentId, objectData.childId);
+                    return null;
+                }
+            }
+            
+            console.log('New element created:', newElement);
+            
+            // Update objectList
+            this.objectList.set(objectData.id, objectData);
+            
+            // Handle post-restoration updates based on type
+            if (objectData.type === 'sugar') {
+                // Update counters if needed
+                const sugarNum = parseInt(objectData.id.replace('sugar-', ''));
+                if (sugarNum >= this.sugarCount) {
+                    this.sugarCount = sugarNum;
+                }
+            } else if (objectData.type === 'text') {
+                // Update counters if needed  
+                const textNum = parseInt(objectData.id.replace('text-', ''));
+                if (textNum >= this.textCount) {
+                    this.textCount = textNum;
+                }
+            }
+            
+            return newElement;
+            
+            // Handle post-restoration updates based on type
+            if (objectData.type === 'sugar') {
+                // Update counters if needed
+                const sugarNum = parseInt(objectData.id.replace('sugar-', ''));
+                if (sugarNum >= this.sugarCount) {
+                    this.sugarCount = sugarNum;
+                }
+            } else if (objectData.type === 'text') {
+                // Update counters if needed  
+                const textNum = parseInt(objectData.id.replace('text-', ''));
+                if (textNum >= this.textCount) {
+                    this.textCount = textNum;
+                }
+            }
+            
+            return importedElement;
+        }
+    }
+    
+    // Update existing element from object data
+    updateElementFromData(element, objectData) {
+        if (objectData.type === 'sugar') {
+            // Get current position before updating
+            const oldX = parseFloat(element.getAttribute('data-x'));
+            const oldY = parseFloat(element.getAttribute('data-y'));
+            
+            // Update sugar position and attributes
+            element.setAttribute('data-x', objectData.x);
+            element.setAttribute('data-y', objectData.y);
+            element.setAttribute('data-shape', objectData.shape);
+            element.setAttribute('data-color', objectData.color);
+            element.setAttribute('data-size', objectData.size);
+            if (objectData.preset) {
+                element.setAttribute('data-preset', objectData.preset);
+            } else {
+                element.removeAttribute('data-preset');
+            }
+            
+            // Update the visual shape to match the new attributes
+            const shape = element.querySelector('.sugar-shape');
+            if (shape) {
+                this.updateShapeToType(shape, objectData.shape, objectData.x, objectData.y, objectData.color, objectData.size);
+            }
+            
+            // CRITICAL: Restore CSS style properties for the shape (used with !important)
+            if (shape) {
+                if (objectData.shapeStyleStroke) shape.style.setProperty('stroke', objectData.shapeStyleStroke, 'important');
+                if (objectData.shapeStyleStrokeWidth) shape.style.setProperty('stroke-width', objectData.shapeStyleStrokeWidth, 'important');
+                if (objectData.shapeStyleStrokeOpacity) shape.style.setProperty('stroke-opacity', objectData.shapeStyleStrokeOpacity, 'important');
+                if (objectData.shapeStyleStrokeDasharray) shape.style.setProperty('stroke-dasharray', objectData.shapeStyleStrokeDasharray, 'important');
+                if (objectData.shapeStyleFillOpacity) shape.style.setProperty('fill-opacity', objectData.shapeStyleFillOpacity, 'important');
+            }
+            
+            // CRITICAL: Restore CSS style properties for divided shapes (polygon and line)
+            const polygon = element.querySelector('polygon');
+            if (polygon) {
+                if (objectData.polygonStyleStroke) polygon.style.setProperty('stroke', objectData.polygonStyleStroke, 'important');
+                if (objectData.polygonStyleStrokeWidth) polygon.style.setProperty('stroke-width', objectData.polygonStyleStrokeWidth, 'important');
+                if (objectData.polygonStyleStrokeOpacity) polygon.style.setProperty('stroke-opacity', objectData.polygonStyleStrokeOpacity, 'important');
+                if (objectData.polygonStyleStrokeDasharray) polygon.style.setProperty('stroke-dasharray', objectData.polygonStyleStrokeDasharray, 'important');
+            }
+            
+            const line = element.querySelector('line');
+            if (line) {
+                if (objectData.lineStyleStroke) line.style.setProperty('stroke', objectData.lineStyleStroke, 'important');
+                if (objectData.lineStyleStrokeWidth) line.style.setProperty('stroke-width', objectData.lineStyleStrokeWidth, 'important');
+                if (objectData.lineStyleStrokeOpacity) line.style.setProperty('stroke-opacity', objectData.lineStyleStrokeOpacity, 'important');
+                if (objectData.lineStyleStrokeDasharray) line.style.setProperty('stroke-dasharray', objectData.lineStyleStrokeDasharray, 'important');
+            }
+            
+            // Update connected lines with correct old and new positions
+            this.updateConnectedLines(element, oldX, oldY, objectData.x, objectData.y);
+            
+        } else if (objectData.type === 'text') {
+            // Update text position and content
+            element.setAttribute('x', objectData.x);
+            element.setAttribute('y', objectData.y);
+            element.setAttribute('data-x', objectData.x);
+            element.setAttribute('data-y', objectData.y);
+            element.textContent = objectData.content;
+            
+            // Update text styles (attributes)
+            if (objectData.fontSize) element.setAttribute('font-size', objectData.fontSize);
+            if (objectData.fontFamily) element.setAttribute('font-family', objectData.fontFamily);
+            if (objectData.fill) element.setAttribute('fill', objectData.fill);
+            if (objectData.opacity) element.setAttribute('opacity', objectData.opacity);
+            if (objectData.fontWeight) element.setAttribute('font-weight', objectData.fontWeight);
+            if (objectData.fontStyle) element.setAttribute('font-style', objectData.fontStyle);
+            if (objectData.textDecoration) element.setAttribute('text-decoration', objectData.textDecoration);
+            
+            // CRITICAL: Also restore CSS style properties (used with !important)
+            if (objectData.styleFontSize) {
+                element.style.setProperty('font-size', objectData.styleFontSize, 'important');
+            } else if (objectData.hasOwnProperty('styleFontSize')) {
+                element.style.removeProperty('font-size');
+            }
+            
+            if (objectData.styleFontFamily) {
+                element.style.setProperty('font-family', objectData.styleFontFamily, 'important');
+            } else if (objectData.hasOwnProperty('styleFontFamily')) {
+                element.style.removeProperty('font-family');
+            }
+            
+            if (objectData.styleFill) {
+                const normalizedFill = this.normalizeColorToHex(objectData.styleFill);
+                element.style.setProperty('fill', normalizedFill, 'important');
+            } else if (objectData.hasOwnProperty('styleFill')) {
+                element.style.removeProperty('fill');
+            }
+            
+            if (objectData.styleFontWeight) {
+                element.style.setProperty('font-weight', objectData.styleFontWeight, 'important');
+            } else if (objectData.hasOwnProperty('styleFontWeight')) {
+                element.style.removeProperty('font-weight');
+            }
+            
+            if (objectData.styleFontStyle) {
+                element.style.setProperty('font-style', objectData.styleFontStyle, 'important');
+            } else if (objectData.hasOwnProperty('styleFontStyle')) {
+                element.style.removeProperty('font-style');
+            }
+            
+            if (objectData.styleTextDecoration) {
+                element.style.setProperty('text-decoration', objectData.styleTextDecoration, 'important');
+            } else if (objectData.hasOwnProperty('styleTextDecoration')) {
+                element.style.removeProperty('text-decoration');
+            }
+            
+        } else if (objectData.type === 'connection') {
+            // Update connection position and attributes
+            element.setAttribute('x1', objectData.x1);
+            element.setAttribute('y1', objectData.y1);
+            element.setAttribute('x2', objectData.x2);
+            element.setAttribute('y2', objectData.y2);
+            element.setAttribute('data-parent', objectData.parentId);
+            element.setAttribute('data-child', objectData.childId);
+            
+            // Update connection styles (attributes)
+            if (objectData.strokeWidth) element.setAttribute('stroke-width', objectData.strokeWidth);
+            if (objectData.stroke) element.setAttribute('stroke', objectData.stroke);
+            if (objectData.strokeOpacity) element.setAttribute('stroke-opacity', objectData.strokeOpacity);
+            if (objectData.strokeDasharray) element.setAttribute('stroke-dasharray', objectData.strokeDasharray);
+            
+            // CRITICAL: Also restore CSS style properties (used with !important)
+            if (objectData.styleStroke) element.style.setProperty('stroke', objectData.styleStroke, 'important');
+            if (objectData.styleStrokeWidth) element.style.setProperty('stroke-width', objectData.styleStrokeWidth, 'important');
+            if (objectData.styleStrokeOpacity) element.style.setProperty('stroke-opacity', objectData.styleStrokeOpacity, 'important');
+            if (objectData.styleStrokeDasharray) {
+                element.style.setProperty('stroke-dasharray', objectData.styleStrokeDasharray, 'important');
+            } else if (objectData.hasOwnProperty('styleStrokeDasharray')) {
+                element.style.removeProperty('stroke-dasharray');
+            }
+            
+            if (objectData.linkage) element.setAttribute('data-linkage', objectData.linkage);
+            element.setAttribute('data-reversed', objectData.reversed ? 'true' : 'false');
+            if (objectData.linkageVisible !== null && objectData.linkageVisible !== undefined) {
+                element.setAttribute('data-linkage-visible', objectData.linkageVisible);
+            }
+            
+            // Restore linkage text style attributes (handle explicit false/null and removal)
+            if (objectData.textSize !== null && objectData.textSize !== undefined) {
+                element.setAttribute('data-text-size', objectData.textSize);
+            } else {
+                element.removeAttribute('data-text-size');
+            }
+            if (objectData.textColor !== null && objectData.textColor !== undefined) {
+                element.setAttribute('data-text-color', objectData.textColor);
+            } else {
+                element.removeAttribute('data-text-color');
+            }
+            if (objectData.textFontFamily !== null && objectData.textFontFamily !== undefined) {
+                element.setAttribute('data-text-font-family', objectData.textFontFamily);
+            } else {
+                element.removeAttribute('data-text-font-family');
+            }
+            if (objectData.textBold !== null && objectData.textBold !== undefined) {
+                element.setAttribute('data-text-bold', objectData.textBold);
+            } else {
+                element.removeAttribute('data-text-bold');
+            }
+            if (objectData.textItalic !== null && objectData.textItalic !== undefined) {
+                element.setAttribute('data-text-italic', objectData.textItalic);
+            } else {
+                element.removeAttribute('data-text-italic');
+            }
+            if (objectData.textUnderline !== null && objectData.textUnderline !== undefined) {
+                element.setAttribute('data-text-underline', objectData.textUnderline);
+            } else {
+                element.removeAttribute('data-text-underline');
+            }
+            if (objectData.textOpacity !== null && objectData.textOpacity !== undefined) {
+                element.setAttribute('data-text-opacity', objectData.textOpacity);
+            } else {
+                element.removeAttribute('data-text-opacity');
+            }
+
+            // Update linkage text display after restoring attributes so visual <text> elements reflect restored values
+            this.updateLinkageText(element);
+
+            // If this connection is currently selected, ensure the linkage controls/buttons sync to the restored data
+            try {
+                if (this.selectedConnections && this.selectedConnections.has(element)) {
+                    this.updateLinkageControlsFromSelection();
+                }
+            } catch (e) {
+                // ignore UI sync errors
+            }
+        }
+    }
+    
+    // Remove object from DOM
+    removeObjectFromDOM(objectId) {
+        const element = document.getElementById(objectId);
+        if (element) {
+        // If removing a connection, also remove its linkage text elements
+        if (element.tagName.toLowerCase() === 'line' && 
+            ((element.getAttribute('data-parent') && element.getAttribute('data-child')) ||
+             (element.getAttribute('data-start') && element.getAttribute('data-end')))) {
+            // Remove linkage text for this specific connection
+            const linkageTexts = this.canvas.querySelectorAll(`text[data-connection-id="${objectId}"]`);
+            linkageTexts.forEach(text => text.remove());
+            
+            // Also clean up any orphaned linkage text (text elements with linkage-label class that reference non-existent connections)
+            const allLinkageTexts = this.canvas.querySelectorAll('text.linkage-label');
+            allLinkageTexts.forEach(text => {
+                const connId = text.getAttribute('data-connection-id');
+                if (connId && !document.getElementById(connId)) {
+                    text.remove();
+                }
+            });
+        }            element.remove();
+        }
+        
+        // Also remove any related elements (highlights, etc.)
+        const highlights = this.canvas.querySelectorAll(`[id*="${objectId}"]`);
+        highlights.forEach(highlight => {
+            if (highlight.id !== objectId) {
+                highlight.remove();
+            }
+        });
+        
+        this.objectList.delete(objectId);
+    }
+    
+    // Undo last step
+    undo() {
+        if (this.undoStack.length === 0) {
+            console.log('Nothing to undo');
+            return;
+        }
+        
+        // Finish any current step first
+        if (this.isRecordingStep) {
+            this.finishStep();
+        }
+        
+        const step = this.undoStack.pop();
+        console.log('Undoing step:', step.description, step);
+        console.log('Step details - added:', step.added.length, 'removed:', step.removed.length, 'modified:', step.modified.length);
+        try {
+            const modSummary = step.modified.map(m => ({ id: m.id, beforeTextColor: m.before && m.before.textColor, afterTextColor: m.after && m.after.textColor }));
+            console.log('Undo step modified summary ->', modSummary);
+        } catch (e) {}
+        
+    // Preserve current selection so we can restore it after undo
+    const previouslySelectedIds = Array.from(this.selectedElements || []).map(el => el.getAttribute ? el.getAttribute('id') : null).filter(id => id);
+    // Clear all selections to avoid issues while restoring
+    this.clearAllSelections();
+        
+        // Process removals (re-add removed objects) - sort by dependency order
+        // Sugars must be restored before connections that depend on them
+        const sortedRemoved = step.removed.sort((a, b) => {
+            // Sugars first (type === 'sugar')
+            if (a.type === 'sugar' && b.type !== 'sugar') return -1;
+            if (a.type !== 'sugar' && b.type === 'sugar') return 1;
+            // Then connections (type === 'connection') 
+            if (a.type === 'connection' && b.type !== 'connection') return -1;
+            if (a.type !== 'connection' && b.type === 'connection') return 1;
+            // Text elements last
+            return 0;
+        });
+        
+        sortedRemoved.forEach(objectData => {
+            this.restoreObjectFromData(objectData);
+        });
+        
+        // Process modifications (revert to before state)
+        step.modified.forEach(modification => {
+            // For modifications, just update the existing element in place
+            this.restoreObjectFromData(modification.before);
+        });
+        
+        // Process additions (remove added objects)
+        step.added.forEach(objectData => {
+            this.removeObjectFromDOM(objectData.id);
+        });
+        
+        // Add step to redo stack
+        this.redoStack.push(step);
+        
+    // Update UI
+        this.updateStylePanel();
+        console.log('undo: Setting isUpdatingUI = true before updateRightPanel');
+        this.isUpdatingUI = true;
+        this.updateRightPanel();
+        this.isUpdatingUI = false;
+        console.log('undo: Setting isUpdatingUI = false after updateRightPanel');
+
+        // Restore previous selection (if those elements still exist) so UI controls reflect restored object states
+        if (previouslySelectedIds && previouslySelectedIds.length > 0) {
+            previouslySelectedIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    try {
+                        // Re-select element without clearing others
+                        this.selectElement(el, true);
+                    } catch (e) {
+                        // Fallback: directly add to selectedElements if selectElement fails
+                        if (!this.selectedElements) this.selectedElements = new Set();
+                        this.selectedElements.add(el);
+                    }
+                }
+            });
+
+            // Ensure legacy selection sets are in sync (so selectedConnections is populated)
+            try {
+                if (typeof this.updateLegacySelectionStates === 'function') {
+                    this.updateLegacySelectionStates();
+                }
+            } catch (e) {
+                // ignore
+            }
+
+            // If any selected connections exist, refresh linkage controls so buttons/checkboxes match restored attributes
+            if (this.selectedConnections && this.selectedConnections.size > 0) {
+                try {
+                    this.updateLinkageControlsFromSelection();
+                } catch (e) {
+                    // Fallback to general right panel update
+                    this.updateRightPanel();
+                }
+            } else {
+                // Ensure right panel syncs if selection contains other element types
+                this.updateRightPanel();
+            }
+        }
+        
+        // Update undo/redo button states
+        try { this.updateUndoRedoButtons(); } catch (e) {}
+
+        console.log('Undo completed');
+    }
+    
+    // Redo last undone step
+    redo() {
+        if (this.redoStack.length === 0) {
+            console.log('Nothing to redo');
+            return;
+        }
+        
+        // Finish any current step first
+        if (this.isRecordingStep) {
+            this.finishStep();
+        }
+        
+        const step = this.redoStack.pop();
+        if (!step) {
+            console.error('Invalid step in redo stack:', step);
+            return;
+        }
+        
+        console.log('Redoing step:', step.description, step);
+        console.log('Step details - added:', step.added.length, 'removed:', step.removed.length, 'modified:', step.modified.length);
+        try {
+            const modSummary = step.modified.map(m => ({ id: m.id, beforeTextColor: m.before && m.before.textColor, afterTextColor: m.after && m.after.textColor }));
+            console.log('Redo step modified summary ->', modSummary);
+        } catch (e) {}
+        
+        // Clear all selections to avoid issues
+        this.clearAllSelections();
+        
+        // Process additions (re-add added objects) - sort by dependency order
+        // Sugars must be restored before connections that depend on them
+        const sortedAdded = step.added.sort((a, b) => {
+            // Sugars first (type === 'sugar')
+            if (a.type === 'sugar' && b.type !== 'sugar') return -1;
+            if (a.type !== 'sugar' && b.type === 'sugar') return 1;
+            // Then connections (type === 'connection') 
+            if (a.type === 'connection' && b.type !== 'connection') return -1;
+            if (a.type !== 'connection' && b.type === 'connection') return 1;
+            // Text elements last
+            return 0;
+        });
+        
+        sortedAdded.forEach(objectData => {
+            console.log('Redoing addition of:', objectData);
+            const restored = this.restoreObjectFromData(objectData);
+            console.log('Restored element:', restored);
+        });
+        
+        // Process modifications (revert to after state)
+        step.modified.forEach(modification => {
+            // For modifications, just update the existing element in place
+            this.restoreObjectFromData(modification.after);
+        });
+        
+        // Process removals (remove objects again)
+        step.removed.forEach(objectData => {
+            this.removeObjectFromDOM(objectData.id);
+        });
+        
+        // Add step back to undo stack
+        this.undoStack.push(step);
+        
+        // Update UI
+        this.updateStylePanel();
+        console.log('redo: Setting isUpdatingUI = true before updateRightPanel');
+        this.isUpdatingUI = true;
+        this.updateRightPanel();
+        this.isUpdatingUI = false;
+        console.log('redo: Setting isUpdatingUI = false after updateRightPanel');
+        
+        // Update undo/redo button states
+        try { this.updateUndoRedoButtons(); } catch (e) {}
+
+        console.log('Redo completed');
+    }
+    
+    // Initialize objectList with existing canvas objects
+    initializeObjectList() {
+        this.objectList.clear();
+        
+        // Add all existing sugars
+        const sugars = this.canvas.querySelectorAll('.sugar');
+        sugars.forEach(sugar => {
+            const objectData = this.createObjectData(sugar);
+            if (objectData) {
+                this.objectList.set(objectData.id, objectData);
+            }
+        });
+        
+        // Add all existing texts
+        const texts = this.canvas.querySelectorAll('.text-element');
+        texts.forEach(text => {
+            const objectData = this.createObjectData(text);
+            if (objectData) {
+                this.objectList.set(objectData.id, objectData);
+            }
+        });
+        
+        // Add all existing connections
+        const connections = this.canvas.querySelectorAll('.connection');
+        connections.forEach(connection => {
+            const objectData = this.createObjectData(connection);
+            if (objectData) {
+                this.objectList.set(objectData.id, objectData);
+            }
+        });
+        
+        console.log('Object list initialized with', this.objectList.size, 'objects');
     }
     
 
