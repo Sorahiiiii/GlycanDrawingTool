@@ -132,11 +132,8 @@ h1 {
     margin-left: 8px;
 }
 
-/* External links above Feedback text */
+/* External links above Feedback text (flowed within left-panel) */
 .help-links {
-    position: absolute;
-    bottom: 240px;
-    left: 10px;
     width: 180px;
     padding: 5px 10px;
     font-size: 16px;
@@ -144,7 +141,8 @@ h1 {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
+    margin: 6px auto 2px; /* tighten spacing under the top panel-section */
 }
 
 .help-link {
@@ -161,13 +159,6 @@ h1 {
 .help-link:hover {
     color: #1f6ea8;
     border-bottom-color: rgba(31, 110, 168, 0.6);
-}
-
-.feedback-text {
-    text-align: center;
-    margin-top: 8px;
-    font-size: 15px;
-    color: #2c3e50;
 }
 
 /* Top Panel */
@@ -412,6 +403,9 @@ h1 {
     left: 0;
     bottom: 0;
     z-index: 10;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start; /* stack sections in DOM order; logo will be pushed down with margin-top:auto */
 }
 
 .panel-section {
@@ -470,26 +464,34 @@ h1 {
     font-size: 16px;
 }
 
-/* Feedback text above AYFL logo */
+/* Feedback text (flowed under help-links) */
 .feedback-text {
-    position: absolute;
-    bottom: 180px;
-    left: 10px;
     width: 180px;
     padding: 5px 10px;
-    font-size: 16px;
+    font-size: 13px;
+    line-height: 1.2;
     color: #2c3e50;
     font-weight: 500;
     text-align: center;
+    margin: 0 auto 0; /* no gap when grouped in footer */
 }
 
-/* AYFL Logo at bottom of left panel */
 .ayfl-logo {
-    position: absolute;
-    bottom: 10px;
-    left: 10px;
-    width: 180px;
-    padding: 10px;
+    width: 140px; /* half of previous 180px */
+    padding: 0;
+    margin: 0 auto 0;
+    /* anchor to bottom via footer-group */
+}
+
+/* Footer group: anchor to bottom of left-panel and stack children with no gap */
+.footer-group {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0; /* no gap between feedback and logo */
+    margin-top: auto; /* push the entire group to the bottom of left-panel */
+    padding-bottom: 8px; /* small breathing room from absolute bottom */
 }
 
 .ayfl-logo img {

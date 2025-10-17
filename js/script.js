@@ -6598,6 +6598,21 @@ class GlycanDrawer {
         // Reset counters
         this.sugarCount = 0;
         this.textCount = 0;
+
+        // Recreate addPreviewDot so add-mode still shows a preview after clearing
+        try {
+            // If a preview dot already exists as a reference, discard and recreate to ensure it's attached to the canvas
+            this.addPreviewDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            this.addPreviewDot.setAttribute('r', '10');
+            // Keep same styling used during init; color may be overridden elsewhere if purple is desired
+            this.addPreviewDot.setAttribute('fill', 'blue');
+            this.addPreviewDot.setAttribute('opacity', '0.3');
+            this.addPreviewDot.style.display = 'none';
+            if (this.canvas) this.canvas.appendChild(this.addPreviewDot);
+        } catch (err) {
+            // If something goes wrong, log but don't block clearing
+            console.error('Failed to recreate addPreviewDot after clearCanvas:', err);
+        }
         
         // Finish recording the step
         this.finishStep();
