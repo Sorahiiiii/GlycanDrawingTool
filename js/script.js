@@ -712,9 +712,6 @@ class GlycanDrawer {
                         // 选择模式：只应用到选中元素，不更新配置
                         this.applySugarColor(normalizedColor);
                     }
-                } else {
-                    // Reset to current color if invalid
-                    customSugarColorHex.value = this.currentSugarConfig.color;
                 }
             });
         }
@@ -2410,7 +2407,7 @@ class GlycanDrawer {
     }
     
     isValidHexColor(color) {
-        return /^#[0-9A-F]{6}$/i.test(color);
+        return /^#?[0-9A-F]{6}$/i.test(color);
     }
     
     // Convert any color format to hex format for consistency
@@ -2419,7 +2416,7 @@ class GlycanDrawer {
         
         // If already hex format, return as is
         if (this.isValidHexColor(color)) {
-            return color;
+            return color.startsWith('#') ? color : '#' + color;
         }
         
         // Handle rgb(r, g, b) format
@@ -5011,13 +5008,22 @@ class GlycanDrawer {
         this.clearUISelections();
         
         // 更新选中糖分子的显示颜色（不影响添加模式参数）
+        const selectedSugar = Array.from(this.selectedElements).find(el => el.classList.contains('sugar'));
+        let effectiveFillColor = sugarData.color;
+        if (selectedSugar) {
+            const shape = selectedSugar.querySelector('.sugar-shape');
+            if (shape) {
+                effectiveFillColor = this.getEffectiveFillColor(shape);
+            }
+        }
+        
         const customSugarColor = document.getElementById('customSugarColor');
         const customSugarColorHex = document.getElementById('customSugarColorHex');
-        if (customSugarColor && sugarData.color) {
-            customSugarColor.value = sugarData.color;
+        if (customSugarColor && effectiveFillColor) {
+            customSugarColor.value = effectiveFillColor;
         }
-        if (customSugarColorHex && sugarData.color) {
-            customSugarColorHex.value = sugarData.color;
+        if (customSugarColorHex && effectiveFillColor) {
+            customSugarColorHex.value = effectiveFillColor;
         }
         
         // 更新形状按钮 - 显示实际形状 (主按钮和下拉项目)
@@ -5052,6 +5058,23 @@ class GlycanDrawer {
                 btn.classList.add('active');
             }
         });
+        
+        // 更新边框颜色预设按钮 - 获取选中糖的边框颜色并激活匹配的预设按钮
+        const selectedSugarForBorder = Array.from(this.selectedElements).find(el => el.classList.contains('sugar'));
+        if (selectedSugarForBorder) {
+            const shape = selectedSugarForBorder.querySelector('.sugar-shape');
+            if (shape) {
+                const borderColor = shape.style.stroke || shape.getAttribute('stroke') || '#000000';
+                const normalizedBorderColor = this.normalizeColorToHex(borderColor);
+                
+                // 激活匹配的边框颜色预设按钮
+                document.querySelectorAll('.color-btn-compact[data-target="sugarBorderColor"]').forEach(btn => {
+                    if (btn.dataset.color === normalizedBorderColor) {
+                        btn.classList.add('active');
+                    }
+                });
+            }
+        }
         
         // 查找匹配的SNFG预设
         let matchingPreset = null;
@@ -5143,6 +5166,28 @@ class GlycanDrawer {
             });
         }
         
+        // 更新边框颜色预设按钮 - 检查所有选中糖的边框颜色是否相同
+        const selectedSugars = Array.from(this.selectedElements).filter(el => el.classList.contains('sugar'));
+        if (selectedSugars.length > 0) {
+            const borderColors = [...new Set(selectedSugars.map(sugar => {
+                const shape = sugar.querySelector('.sugar-shape');
+                if (shape) {
+                    const borderColor = shape.style.stroke || shape.getAttribute('stroke') || '#000000';
+                    return this.normalizeColorToHex(borderColor);
+                }
+                return null;
+            }).filter(color => color !== null))];
+            
+            // 如果所有选中糖的边框颜色相同，激活对应的预设按钮
+            if (borderColors.length === 1) {
+                document.querySelectorAll('.color-btn-compact[data-target="sugarBorderColor"]').forEach(btn => {
+                    if (btn.dataset.color === borderColors[0]) {
+                        btn.classList.add('active');
+                    }
+                });
+            }
+        }
+        
         // 检查SNFG预设匹配 - 只有当所有选中元素都匹配同一个预设时才显示选中
         let commonPreset = null;
         if (shapes.length === 1 && colors.length === 1) {
@@ -5181,7 +5226,7 @@ class GlycanDrawer {
                 customSugarColor.classList.add('mixed');
             }
             if (customSugarColorHex) {
-                customSugarColorHex.value = window.languageManager.getTranslation('mixed') || '混合';
+                customSugarColorHex.value = window.languageManager.getTranslation('mixed') || 'Mixed';
                 customSugarColorHex.classList.add('mixed');
             }
         }
@@ -5197,7 +5242,7 @@ class GlycanDrawer {
                 sizeSlider.classList.remove('mixed');
             }
         } else {
-            if (sizeDisplay) sizeDisplay.textContent = window.languageManager.getTranslation('mixed') || '混合';
+            if (sizeDisplay) sizeDisplay.textContent = window.languageManager.getTranslation('mixed') || 'Mixed';
             if (sizeSlider) {
                 sizeSlider.classList.add('mixed');
             }
@@ -5212,6 +5257,7 @@ class GlycanDrawer {
         document.querySelectorAll('.shape-main-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.shape-dropdown-item').forEach(item => item.classList.remove('active'));
         document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.color-btn-compact').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.snfg-btn, .preset-item').forEach(btn => btn.classList.remove('active'));
         
         // 清除新形状选择器的选择状态
@@ -6144,6 +6190,94 @@ class GlycanDrawer {
     copyElementsInBounds(targetSVG, minX, minY, maxX, maxY) {
         const allElements = this.canvas.children;
         
+        // Collect gradient IDs referenced by divided shapes that will be copied
+        const gradientIdsToCopy = new Set();
+        
+        // First pass: identify which gradients need to be copied
+        for (let element of allElements) {
+            // Skip temporary UI elements
+            if (element.classList.contains('selection-highlight') || 
+                element.classList.contains('selection-box') ||
+                element.classList.contains('connection-preview')) {
+                continue;
+            }
+            
+            let shouldInclude = false;
+            
+            if (element.classList.contains('sugar')) {
+                const x = parseFloat(element.getAttribute('data-x'));
+                const y = parseFloat(element.getAttribute('data-y'));
+                const size = parseFloat(element.getAttribute('data-size')) || this.sugarRadius;
+                
+                // Include if sugar is at least partially within bounds
+                if (x + size >= minX && x - size <= maxX && y + size >= minY && y - size <= maxY) {
+                    shouldInclude = true;
+                }
+            } else if (element.classList.contains('text-element')) {
+                const x = parseFloat(element.getAttribute('data-x'));
+                const y = parseFloat(element.getAttribute('data-y'));
+                
+                // Include if text position is within bounds
+                if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                    shouldInclude = true;
+                }
+            } else if (element.classList.contains('connection')) {
+                // Include connections if either endpoint is within bounds
+                const x1 = parseFloat(element.getAttribute('x1'));
+                const y1 = parseFloat(element.getAttribute('y1'));
+                const x2 = parseFloat(element.getAttribute('x2'));
+                const y2 = parseFloat(element.getAttribute('y2'));
+                
+                if ((x1 >= minX && x1 <= maxX && y1 >= minY && y1 <= maxY) ||
+                    (x2 >= minX && x2 <= maxX && y2 >= minY && y2 <= maxY)) {
+                    shouldInclude = true;
+                }
+            } else if (element.tagName && element.tagName.toLowerCase() === 'text' && element.classList.contains('linkage-label')) {
+                // Linkage label text elements (config/position) - include if within bounds
+                const x = parseFloat(element.getAttribute('x'));
+                const y = parseFloat(element.getAttribute('y'));
+                if (!isNaN(x) && !isNaN(y)) {
+                    if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                        shouldInclude = true;
+                    }
+                }
+            }
+            
+            // If this sugar will be included, check if it references gradients
+            if (shouldInclude && element.classList.contains('sugar')) {
+                const shape = element.querySelector('.sugar-shape');
+                if (shape) {
+                    const gradientId = shape.getAttribute('data-gradient-id');
+                    if (gradientId) {
+                        gradientIdsToCopy.add(gradientId);
+                    }
+                }
+            }
+        }
+        
+        // Copy referenced gradients to target SVG
+        if (gradientIdsToCopy.size > 0) {
+            // Ensure target SVG has a defs element
+            let targetDefs = targetSVG.querySelector('defs');
+            if (!targetDefs) {
+                targetDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+                targetSVG.insertBefore(targetDefs, targetSVG.firstChild);
+            }
+            
+            // Copy each gradient
+            const sourceDefs = this.canvas.querySelector('defs');
+            if (sourceDefs) {
+                gradientIdsToCopy.forEach(gradientId => {
+                    const gradient = sourceDefs.querySelector('#' + gradientId);
+                    if (gradient && !targetDefs.querySelector('#' + gradientId)) {
+                        const clonedGradient = gradient.cloneNode(true);
+                        targetDefs.appendChild(clonedGradient);
+                    }
+                });
+            }
+        }
+        
+        // Second pass: copy the actual elements
         for (let element of allElements) {
             // Skip temporary UI elements
             if (element.classList.contains('selection-highlight') || 
@@ -6211,7 +6345,7 @@ class GlycanDrawer {
                     clonedElement.setAttribute('data-y', newY);
                     
                     // Update all child shape elements' coordinates
-                    const childShapes = clonedElement.querySelectorAll('circle, rect, polygon, ellipse, path, text');
+                    const childShapes = clonedElement.querySelectorAll('circle, rect, polygon, ellipse, path, text, line');
                     childShapes.forEach(shape => {
                         if (shape.hasAttribute('cx') && shape.hasAttribute('cy')) {
                             // Circle or ellipse
@@ -6245,6 +6379,17 @@ class GlycanDrawer {
                                 return `${adjustedX} ${adjustedY}`;
                             });
                             shape.setAttribute('d', updatedD);
+                        }
+                        if (shape.hasAttribute('x1') && shape.hasAttribute('y1') && shape.hasAttribute('x2') && shape.hasAttribute('y2')) {
+                            // Line element (like dividing lines in divided shapes)
+                            const x1 = parseFloat(shape.getAttribute('x1'));
+                            const y1 = parseFloat(shape.getAttribute('y1'));
+                            const x2 = parseFloat(shape.getAttribute('x2'));
+                            const y2 = parseFloat(shape.getAttribute('y2'));
+                            shape.setAttribute('x1', x1 - minX);
+                            shape.setAttribute('y1', y1 - minY);
+                            shape.setAttribute('x2', x2 - minX);
+                            shape.setAttribute('y2', y2 - minY);
                         }
                     });
                 } else if (clonedElement.classList.contains('text-element')) {
@@ -7162,6 +7307,7 @@ class GlycanDrawer {
         const firstTextColorRaw = firstConn.getAttribute('data-text-color') || '#000000';
         const firstTextColor = this.normalizeColorToHex(firstTextColorRaw); // Convert to hex format
         const firstTextOpacity = parseFloat(firstConn.getAttribute('data-text-opacity')) || 1;
+        const firstTextFontFamily = firstConn.getAttribute('data-text-font-family') || 'Arial';
         
         // Determine style from dash array
         let firstStyle = 'solid';
@@ -7176,7 +7322,7 @@ class GlycanDrawer {
         
         // Check if all connections have same values
         let mixedLinkage = false, mixedWidth = false, mixedColor = false, mixedOpacity = false;
-        let mixedStyle = false, mixedVisible = false, mixedTextSize = false, mixedTextColor = false, mixedTextOpacity = false;
+        let mixedStyle = false, mixedVisible = false, mixedTextSize = false, mixedTextColor = false, mixedTextOpacity = false, mixedTextFontFamily = false;
         
         for (let i = 1; i < connections.length; i++) {
             const conn = connections[i];
@@ -7198,6 +7344,7 @@ class GlycanDrawer {
             if (connTextColor !== firstTextColor) mixedTextColor = true;
             
             if ((parseFloat(conn.getAttribute('data-text-opacity')) || 1) !== firstTextOpacity) mixedTextOpacity = true;
+            if ((conn.getAttribute('data-text-font-family') || 'Arial') !== firstTextFontFamily) mixedTextFontFamily = true;
             
             const dashArray = conn.style.strokeDasharray || conn.getAttribute('stroke-dasharray') || '';
             let style = 'solid';
@@ -7227,11 +7374,12 @@ class GlycanDrawer {
         const linkageTextColorHex = document.getElementById('linkageTextColorHex');
         const linkageTextOpacity = document.getElementById('linkageTextOpacity');
         const linkageTextOpacityValue = document.getElementById('linkageTextOpacityValue');
+        const linkageTextFontFamily = document.getElementById('linkageTextFontFamily');
         
         if (linkageInput) {
             linkageInput.value = mixedLinkage ? '' : firstLinkage;
             if (mixedLinkage) {
-                linkageInput.placeholder = window.languageManager.getTranslation('mixed') || '混合';
+                linkageInput.placeholder = window.languageManager.getTranslation('mixed') || 'Mixed';
             } else {
                 linkageInput.placeholder = '输入键连信息 (如: α1-2, B14)';
             }
@@ -7239,7 +7387,7 @@ class GlycanDrawer {
         
         if (connectionStrokeWidth && connectionStrokeWidthValue) {
             connectionStrokeWidth.value = mixedWidth ? '' : firstWidth;
-            connectionStrokeWidthValue.textContent = mixedWidth ? (window.languageManager.getTranslation('mixed') || '混合') : firstWidth;
+            connectionStrokeWidthValue.textContent = mixedWidth ? (window.languageManager.getTranslation('mixed') || 'Mixed') : firstWidth;
         }
         
         if (connectionColor && connectionColorHex) {
@@ -7247,7 +7395,7 @@ class GlycanDrawer {
             connectionColorHex.value = mixedColor ? '' : firstColor;
             if (mixedColor) {
                 connectionColor.classList.add('mixed');
-                connectionColorHex.placeholder = window.languageManager.getTranslation('mixed') || '混合';
+                connectionColorHex.placeholder = window.languageManager.getTranslation('mixed') || 'Mixed';
             } else {
                 connectionColor.classList.remove('mixed');
                 connectionColorHex.placeholder = firstColor;
@@ -7256,7 +7404,7 @@ class GlycanDrawer {
         
         if (linkageOpacity && linkageOpacityValue) {
             linkageOpacity.value = mixedOpacity ? '1' : firstOpacity;
-            linkageOpacityValue.textContent = mixedOpacity ? (window.languageManager.getTranslation('mixed') || '混合') : Math.round(firstOpacity * 100) + '%';
+            linkageOpacityValue.textContent = mixedOpacity ? (window.languageManager.getTranslation('mixed') || 'Mixed') : Math.round(firstOpacity * 100) + '%';
         }
         
         if (showLinkageText) {
@@ -7266,7 +7414,7 @@ class GlycanDrawer {
         
         if (linkageTextSize && linkageTextSizeValue) {
             linkageTextSize.value = mixedTextSize ? '12' : firstTextSize;
-            linkageTextSizeValue.textContent = mixedTextSize ? (window.languageManager.getTranslation('mixed') || '混合') : firstTextSize;
+            linkageTextSizeValue.textContent = mixedTextSize ? (window.languageManager.getTranslation('mixed') || 'Mixed') : firstTextSize;
         }
         
         if (linkageTextColor && linkageTextColorHex) {
@@ -7274,7 +7422,7 @@ class GlycanDrawer {
             linkageTextColorHex.value = mixedTextColor ? '' : firstTextColor;
             if (mixedTextColor) {
                 linkageTextColor.classList.add('mixed');
-                linkageTextColorHex.placeholder = window.languageManager.getTranslation('mixed') || '混合';
+                linkageTextColorHex.placeholder = window.languageManager.getTranslation('mixed') || 'Mixed';
             } else {
                 linkageTextColor.classList.remove('mixed');
                 linkageTextColorHex.placeholder = firstTextColor;
@@ -7283,7 +7431,11 @@ class GlycanDrawer {
         
         if (linkageTextOpacity && linkageTextOpacityValue) {
             linkageTextOpacity.value = mixedTextOpacity ? '1' : firstTextOpacity;
-            linkageTextOpacityValue.textContent = mixedTextOpacity ? (window.languageManager.getTranslation('mixed') || '混合') : Math.round(firstTextOpacity * 100) + '%';
+            linkageTextOpacityValue.textContent = mixedTextOpacity ? (window.languageManager.getTranslation('mixed') || 'Mixed') : Math.round(firstTextOpacity * 100) + '%';
+        }
+        
+        if (linkageTextFontFamily) {
+            linkageTextFontFamily.value = mixedTextFontFamily ? '' : firstTextFontFamily;
         }
         
         // Update style buttons
@@ -7390,10 +7542,10 @@ class GlycanDrawer {
         const firstType = firstSugar.getAttribute('data-shape');
         const firstSize = this.getSugarSize(firstSugar);
         const firstShape = firstSugar.querySelector('.sugar-shape');
-        const firstBorderWidth = firstShape ? (parseFloat(firstShape.style.strokeWidth || firstShape.getAttribute('stroke-width')) || 2) : 2;
-        const firstBorderColor = firstShape ? (firstShape.style.stroke || firstShape.getAttribute('stroke') || '#000000') : '#000000';
-        const firstBorderOpacity = firstShape ? (parseFloat(firstShape.style.strokeOpacity || firstShape.getAttribute('stroke-opacity')) || 1) : 1;
-        const firstFillColor = firstShape ? (firstShape.style.fill || firstShape.getAttribute('fill') || firstSugar.getAttribute('data-color') || '#0072BC') : '#0072BC';
+        const firstBorderWidth = firstShape ? this.getEffectiveBorderWidth(firstShape) : 2;
+        const firstBorderColor = firstShape ? this.getEffectiveBorderColor(firstShape) : '#000000';
+        const firstBorderOpacity = firstShape ? this.getEffectiveBorderOpacity(firstShape) : 1;
+        const firstFillColor = firstShape ? this.getEffectiveFillColor(firstShape) : '#0072BC';
         const firstFillOpacity = firstShape ? (parseFloat(firstShape.style.fillOpacity || firstShape.getAttribute('fill-opacity')) || 1) : 1;
         
         // Check if all selected sugars have same values for detailed controls
@@ -7407,10 +7559,10 @@ class GlycanDrawer {
             if (sugar.getAttribute('data-shape') !== firstType) mixedType = true;
             if (this.getSugarSize(sugar) !== firstSize) mixedSize = true;
             if (shape) {
-                const borderWidth = parseFloat(shape.style.strokeWidth || shape.getAttribute('stroke-width')) || 2;
-                const borderColor = shape.style.stroke || shape.getAttribute('stroke') || '#000000';
-                const borderOpacity = parseFloat(shape.style.strokeOpacity || shape.getAttribute('stroke-opacity')) || 1;
-                const fillColor = shape.style.fill || shape.getAttribute('fill') || sugar.getAttribute('data-color') || '#0072BC';
+                const borderWidth = this.getEffectiveBorderWidth(shape);
+                const borderColor = this.getEffectiveBorderColor(shape);
+                const borderOpacity = this.getEffectiveBorderOpacity(shape);
+                const fillColor = this.getEffectiveFillColor(shape);
                 const fillOpacity = parseFloat(shape.style.fillOpacity || shape.getAttribute('fill-opacity')) || 1;
                 if (borderWidth !== firstBorderWidth) mixedBorderWidth = true;
                 if (borderColor !== firstBorderColor) mixedBorderColor = true;
@@ -7439,10 +7591,24 @@ class GlycanDrawer {
             sugarType.value = mixedType ? '' : firstType;
         }
         
+        if (sugarSize && sugarSizeValue) {
+            if (mixedSize) {
+                sugarSize.value = '';
+                sugarSizeValue.textContent = window.languageManager.getTranslation('mixed') || 'Mixed';
+                sugarSize.classList.add('mixed');
+                sugarSizeValue.classList.add('mixed');
+            } else {
+                sugarSize.value = firstSize;
+                sugarSizeValue.textContent = firstSize;
+                sugarSize.classList.remove('mixed');
+                sugarSizeValue.classList.remove('mixed');
+            }
+        }
+        
         if (sugarBorderWidth && sugarBorderWidthValue) {
             if (mixedBorderWidth) {
                 sugarBorderWidth.value = '';
-                sugarBorderWidthValue.textContent = window.languageManager.getTranslation('mixed') || '混合';
+                sugarBorderWidthValue.textContent = window.languageManager.getTranslation('mixed') || 'Mixed';
                 sugarBorderWidth.classList.add('mixed');
                 sugarBorderWidthValue.classList.add('mixed');
             } else {
@@ -7471,7 +7637,7 @@ class GlycanDrawer {
         if (sugarBorderOpacity && sugarBorderOpacityValue) {
             if (mixedBorderOpacity) {
                 sugarBorderOpacity.value = '';
-                sugarBorderOpacityValue.textContent = window.languageManager.getTranslation('mixed') || '混合';
+                sugarBorderOpacityValue.textContent = window.languageManager.getTranslation('mixed') || 'Mixed';
                 sugarBorderOpacity.classList.add('mixed');
                 sugarBorderOpacityValue.classList.add('mixed');
             } else {
@@ -7502,7 +7668,7 @@ class GlycanDrawer {
         if (customSugarOpacity && customSugarOpacityValue) {
             if (mixedFillOpacity) {
                 customSugarOpacity.value = '';
-                customSugarOpacityValue.textContent = window.languageManager.getTranslation('mixed') || '混合';
+                customSugarOpacityValue.textContent = window.languageManager.getTranslation('mixed') || 'Mixed';
                 customSugarOpacity.classList.add('mixed');
                 customSugarOpacityValue.classList.add('mixed');
             } else {
@@ -7511,6 +7677,64 @@ class GlycanDrawer {
                 customSugarOpacity.classList.remove('mixed');
                 customSugarOpacityValue.classList.remove('mixed');
             }
+        }
+        
+        // Update border style buttons based on selected sugars
+        const borderStyleButtons = document.querySelectorAll('.border-style-btn');
+        if (borderStyleButtons.length > 0) {
+            // Get border style from first sugar
+            let firstBorderStyle = 'solid';
+            if (firstShape) {
+                const dashArray = this.getEffectiveBorderDashArray(firstShape);
+                if (dashArray) {
+                    const dashValues = dashArray.split(',').map(v => parseFloat(v.trim()));
+                    if (dashValues.length === 2) {
+                        const width = firstBorderWidth;
+                        if (dashValues[0] === width * 3 && dashValues[1] === width * 2) {
+                            firstBorderStyle = 'dashed';
+                        } else if (dashValues[0] === width && dashValues[1] === width) {
+                            firstBorderStyle = 'dotted';
+                        }
+                    }
+                }
+            }
+            
+            // Check if all selected sugars have same border style
+            let mixedBorderStyle = false;
+            for (let i = 1; i < selectedSugars.length; i++) {
+                const sugar = selectedSugars[i];
+                const shape = sugar.querySelector('.sugar-shape');
+                let borderStyle = 'solid';
+                if (shape) {
+                    const dashArray = this.getEffectiveBorderDashArray(shape);
+                    const width = this.getEffectiveBorderWidth(shape);
+                    if (dashArray) {
+                        const dashValues = dashArray.split(',').map(v => parseFloat(v.trim()));
+                        if (dashValues.length === 2) {
+                            if (dashValues[0] === width * 3 && dashValues[1] === width * 2) {
+                                borderStyle = 'dashed';
+                            } else if (dashValues[0] === width && dashValues[1] === width) {
+                                borderStyle = 'dotted';
+                            }
+                        }
+                    }
+                }
+                if (borderStyle !== firstBorderStyle) {
+                    mixedBorderStyle = true;
+                    break;
+                }
+            }
+            
+            // Update border style button states
+            borderStyleButtons.forEach(btn => {
+                if (mixedBorderStyle) {
+                    btn.classList.remove('active');
+                    btn.classList.add('mixed');
+                } else {
+                    btn.classList.toggle('active', btn.dataset.style === firstBorderStyle);
+                    btn.classList.remove('mixed');
+                }
+            });
         }
         
         // Clear flag after UI update is complete
@@ -7569,7 +7793,7 @@ class GlycanDrawer {
         if (fontSize && fontSizeValue) {
             if (mixedSize) {
                 fontSize.value = '';
-                fontSizeValue.textContent = window.languageManager.getTranslation('mixed') || '混合';
+                fontSizeValue.textContent = window.languageManager.getTranslation('mixed') || 'Mixed';
             } else {
                 fontSize.value = firstFontSize;
                 fontSizeValue.textContent = firstFontSize;
@@ -7857,27 +8081,27 @@ class GlycanDrawer {
                 // Update border width and color from selected sugar
                 const shape = referenceSugar.querySelector('.sugar-shape');
                 if (shape) {
-                    const currentWidth = shape.style.strokeWidth || shape.getAttribute('stroke-width') || '2';
+                    const currentWidth = this.getEffectiveBorderWidth(shape);
                     if (widthSlider && widthValue) {
                         widthSlider.value = parseFloat(currentWidth);
                         widthValue.textContent = parseFloat(currentWidth);
                     }
                     
-                    const currentColor = shape.style.stroke || shape.getAttribute('stroke') || '#000000';
+                    const currentColor = this.getEffectiveBorderColor(shape);
                     const hexColor = this.normalizeColorToHex(currentColor);
                     if (colorPicker && colorHex) {
                         colorPicker.value = hexColor;
                         colorHex.value = hexColor;
                     }
                     
-                    const currentOpacity = parseFloat(shape.style.strokeOpacity || shape.getAttribute('stroke-opacity') || '1');
+                    const currentOpacity = this.getEffectiveBorderOpacity(shape);
                     if (opacitySlider && opacityValue) {
                         opacitySlider.value = currentOpacity;
                         opacityValue.textContent = Math.round(currentOpacity * 100) + '%';
                     }
                     
                     // Update custom sugar color from selected sugar
-                    const currentFillColor = shape.style.fill || shape.getAttribute('fill') || referenceSugar.getAttribute('data-color') || '#0072BC';
+                    const currentFillColor = this.getEffectiveFillColor(shape);
                     const hexFillColor = this.normalizeColorToHex(currentFillColor);
                     if (customColorPicker && customColorHex) {
                         customColorPicker.value = hexFillColor;
@@ -8041,6 +8265,97 @@ class GlycanDrawer {
             default:
                 return 20; // default
         }
+    }
+    
+    // Helper method to extract color from gradient reference or direct color
+    getEffectiveFillColor(element) {
+        const fill = element.style.fill || element.getAttribute('fill');
+        if (!fill) return '#0072BC';
+        
+        // Check if it's a gradient reference
+        const gradientMatch = fill.match(/url\(#(.+)\)/);
+        if (gradientMatch) {
+            const gradientId = gradientMatch[1];
+            const gradient = this.canvas.querySelector('#' + gradientId);
+            if (gradient) {
+                // For divided shapes, get the user color (second stop)
+                const stops = gradient.querySelectorAll('stop');
+                if (stops.length >= 2) {
+                    return stops[1].getAttribute('stop-color') || '#0072BC';
+                }
+            }
+        }
+        
+        // Return direct color
+        return fill;
+    }
+    
+    // Helper method to get border color from shape (handles divided shapes)
+    getEffectiveBorderColor(element) {
+        // For divided shapes, get color from the polygon child
+        if (element.classList && (element.classList.contains('triangle-divided-group') ||
+            element.classList.contains('square-divided-group') ||
+            element.classList.contains('diamond-divided-top-group') ||
+            element.classList.contains('diamond-divided-bottom-group'))) {
+            const polygon = element.querySelector('polygon');
+            if (polygon) {
+                return polygon.style.stroke || polygon.getAttribute('stroke') || '#000000';
+            }
+        }
+        
+        // For regular shapes, get from the element itself
+        return element.style.stroke || element.getAttribute('stroke') || '#000000';
+    }
+    
+    // Helper method to get border width from shape (handles divided shapes)
+    getEffectiveBorderWidth(element) {
+        // For divided shapes, get width from the polygon child
+        if (element.classList && (element.classList.contains('triangle-divided-group') ||
+            element.classList.contains('square-divided-group') ||
+            element.classList.contains('diamond-divided-top-group') ||
+            element.classList.contains('diamond-divided-bottom-group'))) {
+            const polygon = element.querySelector('polygon');
+            if (polygon) {
+                return parseFloat(polygon.style.strokeWidth || polygon.getAttribute('stroke-width')) || 2;
+            }
+        }
+        
+        // For regular shapes, get from the element itself
+        return parseFloat(element.style.strokeWidth || element.getAttribute('stroke-width')) || 2;
+    }
+    
+    // Helper method to get border opacity from shape (handles divided shapes)
+    getEffectiveBorderOpacity(element) {
+        // For divided shapes, get opacity from the polygon child
+        if (element.classList && (element.classList.contains('triangle-divided-group') ||
+            element.classList.contains('square-divided-group') ||
+            element.classList.contains('diamond-divided-top-group') ||
+            element.classList.contains('diamond-divided-bottom-group'))) {
+            const polygon = element.querySelector('polygon');
+            if (polygon) {
+                return parseFloat(polygon.style.strokeOpacity || polygon.getAttribute('stroke-opacity')) || 1;
+            }
+        }
+        
+        // For regular shapes, get from the element itself
+        return parseFloat(element.style.strokeOpacity || element.getAttribute('stroke-opacity')) || 1;
+    }
+    
+    // Helper method to get border dash array from shape (handles divided shapes)
+    getEffectiveBorderDashArray(element) {
+        // For divided shapes, get dash array from the polygon child
+        if (element.classList && (element.classList.contains('triangle-divided-group') ||
+            element.classList.contains('square-divided-group') ||
+            element.classList.contains('diamond-divided-top-group') ||
+            element.classList.contains('diamond-divided-bottom-group'))) {
+            const polygon = element.querySelector('polygon');
+            if (polygon) {
+                return polygon.style.strokeDasharray || polygon.getAttribute('stroke-dasharray');
+            }
+        }
+        
+        // For regular shapes, get from the element itself
+        return element.style.strokeDasharray || element.getAttribute('stroke-dasharray');
     }
     
     getConnectionsForSelection() {
@@ -10953,7 +11268,7 @@ class GlycanDrawer {
             if (strokeWidthSlider && strokeWidthValue) {
                 if (mixedWidth) {
                     strokeWidthSlider.value = '';
-                    strokeWidthValue.textContent = window.languageManager.getTranslation('mixed') || '混合';
+                    strokeWidthValue.textContent = window.languageManager.getTranslation('mixed') || 'Mixed';
                     strokeWidthSlider.classList.add('mixed');
                     strokeWidthValue.classList.add('mixed');
                 } else {
@@ -10999,7 +11314,7 @@ class GlycanDrawer {
             if (opacitySlider && opacityValue) {
                 if (mixedOpacity) {
                     opacitySlider.value = '';
-                    opacityValue.textContent = window.languageManager.getTranslation('mixed') || '混合';
+                    opacityValue.textContent = window.languageManager.getTranslation('mixed') || 'Mixed';
                     opacitySlider.classList.add('mixed');
                     opacityValue.classList.add('mixed');
                 } else {
@@ -11037,7 +11352,7 @@ class GlycanDrawer {
             if (textSizeSlider && textSizeValue) {
                 if (mixedTextSize) {
                     textSizeSlider.value = '';
-                    textSizeValue.textContent = window.languageManager.getTranslation('mixed') || '混合';
+                    textSizeValue.textContent = window.languageManager.getTranslation('mixed') || 'Mixed';
                     textSizeSlider.classList.add('mixed');
                     textSizeValue.classList.add('mixed');
                 } else {
