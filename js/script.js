@@ -4268,16 +4268,6 @@ class GlycanDrawer {
             (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1);
     }
     
-    // Deprecated: selectSugar method removed - use selectElement() instead
-    
-    // Deprecated: selectSugarOnly method removed - use selectElement() instead
-    
-    // Deprecated: deselectSugar method removed - use deselectElement() instead
-    
-    // Deprecated: selectText and selectTextOnly methods removed - use selectElement() instead
-    
-    // Deprecated: deselectText method removed - use deselectElement() instead
-    
     deselectAll() {
         // Use unified selection system
         this.clearAllSelections();
