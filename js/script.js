@@ -661,7 +661,9 @@ class GlycanDrawer {
         if (customSugarColor && customSugarColorHex) {
             customSugarColor.addEventListener('input', (e) => {
                 const color = e.target.value;
-                customSugarColorHex.value = color;
+                // Picker values should be normalized; ensure uppercase #RRGGBB shown in the hex field
+                // Ensure the hex field shows normalized uppercase #RRGGBB for picker changes
+                customSugarColorHex.value = this.normalizeColorToHex(color);
                 // Clear mixed state when user manually changes value
                 customSugarColor.classList.remove('mixed');
                 customSugarColorHex.classList.remove('mixed');
@@ -676,12 +678,12 @@ class GlycanDrawer {
                 
                 if (this.currentTool === 'add') {
                     // 添加模式：只更新配置，不应用到任何元素
-                    this.currentSugarConfig.color = color;
+                    this.currentSugarConfig.color = this.normalizeColorToHex(color);
                     this.currentSugarConfig.type = 'custom'; 
                     this.currentSugarConfig.preset = null;
                 } else if (this.currentTool === 'select') {
                     // 选择模式：只应用到选中元素，不更新配置
-                    this.applySugarColor(color);
+                    this.applySugarColor(this.normalizeColorToHex(color));
                 }
             });
             
@@ -689,31 +691,22 @@ class GlycanDrawer {
                 const color = e.target.value;
                 if (this.isValidHexColor(color)) {
                     const normalizedColor = this.normalizeColorToHex(color);
-                    customSugarColor.value = normalizedColor;
-                    customSugarColorHex.value = normalizedColor;
-                    // Clear mixed state when user manually changes value
-                    customSugarColor.classList.remove('mixed');
-                    customSugarColorHex.classList.remove('mixed');
-                    
-                    // Clear SNFG preset selection (manual override)
-                    this.clearPresetSelection();
-                    
-                    // Update color grid buttons to deactivate them (user is using custom color)
-                    document.querySelectorAll('.color-btn').forEach(btn => {
-                        btn.classList.remove('active');
-                    });
-                    
-                    if (this.currentTool === 'add') {
-                        // 添加模式：只更新配置，不应用到任何元素
-                        this.currentSugarConfig.color = normalizedColor;
-                        this.currentSugarConfig.type = 'custom';
-                        this.currentSugarConfig.preset = null;
-                    } else if (this.currentTool === 'select') {
-                        // 选择模式：只应用到选中元素，不更新配置
-                        this.applySugarColor(normalizedColor);
-                    }
+                    if (customSugarColor) customSugarColor.value = normalizedColor;
+                    // Do not overwrite the user's typed hex here; final normalization happens on blur/Enter
                 }
             });
+
+            // Finalize custom sugar hex input on blur or Enter
+            customSugarColorHex.addEventListener('blur', (e) => {
+                const normalized = this.normalizeColorToHex(e.target.value);
+                e.target.value = normalized;
+                const picker = document.getElementById('customSugarColor');
+                if (picker) {
+                    picker.value = normalized;
+                    try { picker.dispatchEvent(new Event('input', { bubbles: true })); } catch (err) {}
+                }
+            });
+            customSugarColorHex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
         }
         
         // Custom sugar opacity control
@@ -1207,11 +1200,12 @@ class GlycanDrawer {
         // Text color controls
         textColor.addEventListener('input', (e) => {
             const color = e.target.value;
-            textColorHex.value = color;
+            // Ensure hex input shows normalized uppercase #RRGGBB when picker changes
+            if (textColorHex) textColorHex.value = this.normalizeColorToHex(color);
             
             if (this.currentTool === 'text') {
                 // 文本工具模式：只更新配置，不应用到任何元素
-                this.currentTextConfig.color = color;
+                this.currentTextConfig.color = this.normalizeColorToHex(color);
             } else if (this.currentTool === 'select') {
                 // 选择模式：使用统一的样式应用方法，确保为一个undo步骤
                 this.applyTextStyle();
@@ -1220,18 +1214,24 @@ class GlycanDrawer {
         
         textColorHex.addEventListener('input', (e) => {
             const color = e.target.value;
-            if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
-                textColor.value = color;
-                
-                if (this.currentTool === 'text') {
-                    // 文本工具模式：只更新配置，不应用到任何元素
-                    this.currentTextConfig.color = color;
-                } else if (this.currentTool === 'select') {
-                    // 选择模式：使用统一的样式应用方法，确保为一个undo步骤
-                    this.applyTextStyle();
-                }
+            // If the user typed a syntactically valid hex (3 or 6 digits, with or without '#'),
+            // update the color picker to preview but do NOT apply or record undo here.
+            if (this.isValidHexColor(color)) {
+                const normalized = this.normalizeColorToHex(color);
+                if (textColor) textColor.value = normalized;
+                // Do not call applyTextStyle() here; finalization happens on blur/Enter
             }
         });
+        // Finalize text hex input on blur or Enter: normalize, write uppercase #RRGGBB, and dispatch picker input
+        textColorHex.addEventListener('blur', (e) => {
+            const normalized = this.normalizeColorToHex(e.target.value);
+            e.target.value = normalized;
+            if (textColor) {
+                textColor.value = normalized;
+                try { textColor.dispatchEvent(new Event('input', { bubbles: true })); } catch (err) {}
+            }
+        });
+        textColorHex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
         
         // Text style buttons (bold, italic, underline)
         textStyleButtons.forEach(btn => {
@@ -1291,37 +1291,36 @@ class GlycanDrawer {
         
         sugarBorderColor.addEventListener('input', (e) => {
             const color = e.target.value;
-            sugarBorderColorHex.value = color;
-            // Clear mixed state when user manually changes value
+            // Use normalized color when picker changes
+            const normalized = this.normalizeColorToHex(color);
+            if (sugarBorderColorHex) sugarBorderColorHex.value = normalized;
             sugarBorderColor.classList.remove('mixed');
             sugarBorderColorHex.classList.remove('mixed');
-            
             if (this.currentTool === 'add') {
-                // 添加模式：只更新配置，不应用到任何元素
-                this.currentSugarConfig.borderColor = color;
+                this.currentSugarConfig.borderColor = normalized;
             } else if (this.currentTool === 'select') {
-                // 选择模式：只应用到选中元素，不更新配置
-                this.applySugarBorderColor(color);
+                this.applySugarBorderColor(normalized);
             }
         });
         
         sugarBorderColorHex.addEventListener('input', (e) => {
             const color = e.target.value;
-            if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
-                sugarBorderColor.value = color;
-                // Clear mixed state when user manually changes value
-                sugarBorderColor.classList.remove('mixed');
-                sugarBorderColorHex.classList.remove('mixed');
-                
-                if (this.currentTool === 'add') {
-                    // 添加模式：只更新配置，不应用到任何元素
-                    this.currentSugarConfig.borderColor = color;
-                } else if (this.currentTool === 'select') {
-                    // 选择模式：只应用到选中元素，不更新配置
-                    this.applySugarBorderColor(color);
-                }
+            if (this.isValidHexColor(color)) {
+                const normalized = this.normalizeColorToHex(color);
+                if (sugarBorderColor) sugarBorderColor.value = normalized;
+                // Do not apply here; blur/Enter will finalize and trigger picker input
             }
         });
+        sugarBorderColorHex.addEventListener('blur', (e) => {
+            const normalized = this.normalizeColorToHex(e.target.value);
+            e.target.value = normalized;
+            const picker = document.getElementById('sugarBorderColor');
+            if (picker) {
+                picker.value = normalized;
+                try { picker.dispatchEvent(new Event('input', { bubbles: true })); } catch (err) {}
+            }
+        });
+        sugarBorderColorHex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
         
         // Connection color controls
         const connectionColor = document.getElementById('connectionColor');
@@ -1329,11 +1328,13 @@ class GlycanDrawer {
         
         connectionColor.addEventListener('input', (e) => {
             const color = e.target.value;
-            connectionColorHex.value = color;
+            // Ensure hex field displays normalized uppercase hex when picker changes
+            if (connectionColorHex) connectionColorHex.value = this.normalizeColorToHex(color);
             
             if (this.currentTool === 'add') {
                 // 添加模式：只更新配置，不应用到任何元素
-                this.currentLinkageConfig.strokeColor = color;
+                // Store normalized hex in config
+                this.currentLinkageConfig.strokeColor = this.normalizeColorToHex(color);
             } else if (this.currentTool === 'select') {
                 // 选择模式：只应用到选中元素，不更新配置
                 this.startStep('Change connection color');
@@ -1344,20 +1345,23 @@ class GlycanDrawer {
         
         connectionColorHex.addEventListener('input', (e) => {
             const color = e.target.value;
-            if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
-                connectionColor.value = color;
-                
-                if (this.currentTool === 'add') {
-                    // 添加模式：只更新配置，不应用到任何元素
-                    this.currentLinkageConfig.strokeColor = color;
-                } else if (this.currentTool === 'select') {
-                    // 选择模式：只应用到选中元素，不更新配置
-                    this.startStep('Change connection color');
-                    this.applyConnectionStyle();
-                    this.finishStep();
-                }
+            // Preview only while typing: accept 3- or 6-digit hex (with/without #)
+            if (this.isValidHexColor(color)) {
+                const normalized = this.normalizeColorToHex(color);
+                if (connectionColor) connectionColor.value = normalized;
+                // Do NOT apply styles or record undo here; finalization occurs on blur/Enter
             }
         });
+        connectionColorHex.addEventListener('blur', (e) => {
+            const normalized = this.normalizeColorToHex(e.target.value);
+            e.target.value = normalized;
+            const picker = document.getElementById('connectionColor');
+            if (picker) {
+                picker.value = normalized;
+                try { picker.dispatchEvent(new Event('input', { bubbles: true })); } catch (err) {}
+            }
+        });
+        connectionColorHex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
         
         // Linkage mode style controls
         const connectionStrokeWidth = document.getElementById('connectionStrokeWidth');
@@ -1459,8 +1463,8 @@ class GlycanDrawer {
                 const color = e.target.dataset.color;
                 console.log('linkageTextColor button clicked, color:', color, 'isUpdatingUI:', this.isUpdatingUI);
                 if (linkageTextColor) {
-                    linkageTextColor.value = color;
-                    if (linkageTextColorHex) linkageTextColorHex.value = color;
+                    linkageTextColor.value = this.normalizeColorToHex(color);
+                    if (linkageTextColorHex) linkageTextColorHex.value = this.normalizeColorToHex(color);
                 }
                 linkageTextColorButtons.forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
@@ -1511,7 +1515,7 @@ class GlycanDrawer {
             });
             linkageTextColor.addEventListener('input', (e) => {
                 const color = e.target.value;
-                if (linkageTextColorHex) linkageTextColorHex.value = color;
+                if (linkageTextColorHex) linkageTextColorHex.value = this.normalizeColorToHex(color);
                 linkageTextColorButtons.forEach(b => b.classList.remove('active'));
                 if (this.currentTool === 'select' && !this.isUpdatingUI) {
                     this.applyLinkageStyle();
@@ -1538,43 +1542,61 @@ class GlycanDrawer {
         }
         
         if (linkageTextColorHex) {
-            linkageTextColorHex.addEventListener('mousedown', () => {
-                if (this.currentTool === 'select') {
-                    this.startStep('Change linkage text color');
-                    this.linkageTextColorDragging = true;
-                    const selectedConnections = Array.from(this.selectedConnections || []);
-                    this.initialConnectionStatesForTextColor = selectedConnections.map(conn => ({
-                        id: conn.id,
-                        beforeData: this.createObjectData(conn)
-                    }));
-                }
-            });
+            // Preview-only while typing: update the picker for live preview but do not apply or record undo here.
             linkageTextColorHex.addEventListener('input', (e) => {
                 const color = e.target.value;
-                if (/^#[0-9A-F]{6}$/i.test(color)) {
-                    if (linkageTextColor) linkageTextColor.value = color;
+                if (this.isValidHexColor(color)) {
+                    const normalized = this.normalizeColorToHex(color);
+                    if (linkageTextColor) linkageTextColor.value = normalized;
                     linkageTextColorButtons.forEach(b => b.classList.remove('active'));
-                    if (this.currentTool === 'select') {
-                        this.applyLinkageStyle();
-                    }
+                    // Do not call applyLinkageStyle() here; finalization on blur/Enter will apply and record a step
                 }
             });
-            linkageTextColorHex.addEventListener('mouseup', () => {
-                if (this.currentTool === 'select' && this.linkageTextColorDragging) {
-                    if (this.initialConnectionStatesForTextColor) {
-                        this.initialConnectionStatesForTextColor.forEach(state => {
-                            const conn = document.getElementById(state.id);
-                            if (conn) {
-                                const afterData = this.createObjectData(conn);
-                                this.recordObjectModified(state.id, state.beforeData, afterData);
-                            }
-                        });
-                        this.initialConnectionStatesForTextColor = null;
+
+            // Finalize on blur: normalize, apply via the picker, and record a single undo step
+            linkageTextColorHex.addEventListener('blur', (e) => {
+                const raw = e.target.value;
+                const normalized = this.normalizeColorToHex(raw);
+                e.target.value = normalized;
+
+                // If not in select mode, just update the add-mode config via picker and return
+                if (this.currentTool === 'add') {
+                    // update config
+                    this.currentLinkageConfig.textColor = normalized;
+                    if (linkageTextColor) {
+                        linkageTextColor.value = normalized;
+                        try { linkageTextColor.dispatchEvent(new Event('input', { bubbles: true })); } catch (err) {}
                     }
-                    this.finishStep();
-                    this.linkageTextColorDragging = false;
+                    return;
                 }
+
+                // In select mode, record a single undo step for the change
+                const selectedConnections = Array.from(this.selectedElements).filter(el => this.getElementType(el) === 'connection');
+                if (selectedConnections.length === 0) return;
+
+                // Capture before snapshots
+                const beforeStates = selectedConnections.map(conn => ({ id: conn.id, beforeData: this.createObjectData(conn) }));
+
+                // Start step, apply via picker input (picker handler will update DOM)
+                this.startStep('Change linkage text color');
+                if (linkageTextColor) {
+                    linkageTextColor.value = normalized;
+                    try { linkageTextColor.dispatchEvent(new Event('input', { bubbles: true })); } catch (err) {}
+                }
+
+                // Capture after snapshots and record modifications
+                beforeStates.forEach(state => {
+                    const conn = document.getElementById(state.id);
+                    if (conn) {
+                        const afterData = this.createObjectData(conn);
+                        this.recordObjectModified(state.id, state.beforeData, afterData);
+                    }
+                });
+                this.finishStep();
             });
+
+            // Enter confirms (same as blur)
+            linkageTextColorHex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
         }
         
         // --- Undo/Redo step recording for linkage text font family ---
@@ -1991,25 +2013,34 @@ class GlycanDrawer {
         
         if (connectionColorAddHex) {
             connectionColorAddHex.addEventListener('input', (e) => {
-                let color = e.target.value.trim();
-                if (!color.startsWith('#')) color = '#' + color;
-                if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
-                    this.currentLinkageConfig.strokeColor = color;
-                    if (connectionColorAdd) connectionColorAdd.value = color;
-                    // Update active state
-                    connectionColorAddButtons.forEach(btn => {
-                        btn.classList.toggle('active', btn.dataset.color === color);
-                    });
+                const color = e.target.value;
+                if (this.isValidHexColor(color)) {
+                    const normalized = this.normalizeColorToHex(color);
+                    if (connectionColorAdd) connectionColorAdd.value = normalized;
+                    // Do not set config here; finalize on blur/Enter
                 }
             });
+            connectionColorAddHex.addEventListener('blur', (e) => {
+                const normalized = this.normalizeColorToHex(e.target.value);
+                e.target.value = normalized;
+                this.currentLinkageConfig.strokeColor = normalized;
+                const picker = document.getElementById('connectionColorAdd');
+                if (picker) {
+                    picker.value = normalized;
+                    try { picker.dispatchEvent(new Event('input', { bubbles: true })); } catch (err) {}
+                }
+                connectionColorAddButtons.forEach(btn => { btn.classList.toggle('active', btn.dataset.color === normalized); });
+            });
+            connectionColorAddHex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
         }
         
         connectionColorAddButtons.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const color = e.target.dataset.color;
-                this.currentLinkageConfig.strokeColor = color;
-                if (connectionColorAdd) connectionColorAdd.value = color;
-                if (connectionColorAddHex) connectionColorAddHex.value = color;
+                const normalized = this.normalizeColorToHex(color);
+                this.currentLinkageConfig.strokeColor = normalized;
+                if (connectionColorAdd) connectionColorAdd.value = normalized;
+                if (connectionColorAddHex) connectionColorAddHex.value = normalized;
                 // Update active state
                 connectionColorAddButtons.forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
@@ -2034,37 +2065,46 @@ class GlycanDrawer {
         
         if (linkageTextColorAdd) {
             linkageTextColorAdd.addEventListener('input', (e) => {
-                const color = this.normalizeColorToHex(e.target.value);
-                this.currentLinkageConfig.textColor = color;
-                if (linkageTextColorAddHex) linkageTextColorAddHex.value = color;
+                const normalized = this.normalizeColorToHex(e.target.value);
+                this.currentLinkageConfig.textColor = normalized;
+                if (linkageTextColorAddHex) linkageTextColorAddHex.value = normalized;
                 // Update active state
                 linkageTextColorAddButtons.forEach(btn => {
-                    btn.classList.toggle('active', btn.dataset.color === color);
+                    btn.classList.toggle('active', btn.dataset.color === normalized);
                 });
             });
         }
         
         if (linkageTextColorAddHex) {
             linkageTextColorAddHex.addEventListener('input', (e) => {
-                let color = e.target.value.trim();
-                if (!color.startsWith('#')) color = '#' + color;
-                if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
-                    this.currentLinkageConfig.textColor = color;
-                    if (linkageTextColorAdd) linkageTextColorAdd.value = color;
-                    // Update active state
-                    linkageTextColorAddButtons.forEach(btn => {
-                        btn.classList.toggle('active', btn.dataset.color === color);
-                    });
+                const color = e.target.value;
+                if (this.isValidHexColor(color)) {
+                    const normalized = this.normalizeColorToHex(color);
+                    if (linkageTextColorAdd) linkageTextColorAdd.value = normalized;
+                    // Do not set config here; finalize on blur/Enter
                 }
             });
+            linkageTextColorAddHex.addEventListener('blur', (e) => {
+                const normalized = this.normalizeColorToHex(e.target.value);
+                e.target.value = normalized;
+                this.currentLinkageConfig.textColor = normalized;
+                const picker = document.getElementById('linkageTextColorAdd');
+                if (picker) {
+                    picker.value = normalized;
+                    try { picker.dispatchEvent(new Event('input', { bubbles: true })); } catch (err) {}
+                }
+                linkageTextColorAddButtons.forEach(btn => { btn.classList.toggle('active', btn.dataset.color === normalized); });
+            });
+            linkageTextColorAddHex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
         }
         
         linkageTextColorAddButtons.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const color = e.target.dataset.color;
-                this.currentLinkageConfig.textColor = color;
-                if (linkageTextColorAdd) linkageTextColorAdd.value = color;
-                if (linkageTextColorAddHex) linkageTextColorAddHex.value = color;
+                const normalized = this.normalizeColorToHex(color);
+                this.currentLinkageConfig.textColor = normalized;
+                if (linkageTextColorAdd) linkageTextColorAdd.value = normalized;
+                if (linkageTextColorAddHex) linkageTextColorAddHex.value = normalized;
                 // Update active state
                 linkageTextColorAddButtons.forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
@@ -2089,7 +2129,7 @@ class GlycanDrawer {
                 if (linkageConnectionColor) {
                     linkageConnectionColor.value = color;
                     const connectionColorHex = document.getElementById('connectionColorHex');
-                    if (connectionColorHex) connectionColorHex.value = color;
+                    if (connectionColorHex) connectionColorHex.value = this.normalizeColorToHex(color);
                 }
                 // Update active state
                 linkageColorButtons.forEach(b => b.classList.remove('active'));
@@ -2184,7 +2224,8 @@ class GlycanDrawer {
                 const colorHex = document.getElementById(target + 'Hex');
                 
                 if (colorPicker) {
-                    colorPicker.value = color;
+                    const normalized = this.normalizeColorToHex(color);
+                    colorPicker.value = normalized;
                     // Clear mixed state
                     colorPicker.classList.remove('mixed');
                     
@@ -2193,7 +2234,7 @@ class GlycanDrawer {
                 }
                 
                 if (colorHex) {
-                    colorHex.value = color;
+                    colorHex.value = this.normalizeColorToHex(color);
                     colorHex.classList.remove('mixed');
                 }
             });
@@ -2407,68 +2448,80 @@ class GlycanDrawer {
     }
     
     isValidHexColor(color) {
-        return /^#?[0-9A-F]{6}$/i.test(color);
+        // Accept 3- or 6-digit hex, with or without leading '#'
+        return /^#?([0-9A-F]{3}|[0-9A-F]{6})$/i.test(color);
     }
     
     // Convert any color format to hex format for consistency
     normalizeColorToHex(color) {
         if (!color) return '#000000';
-        
-        // If already hex format, return as is
-        if (this.isValidHexColor(color)) {
-            return color.startsWith('#') ? color : '#' + color;
+
+        const s = String(color).trim();
+
+        // Handle direct hex (3 or 6 digits) with or without leading '#'
+        const hexMatch = s.match(/^#?([0-9A-F]{3}|[0-9A-F]{6})$/i);
+        if (hexMatch) {
+            let hex = hexMatch[1];
+            if (hex.length === 3) {
+                // Expand shorthand (e.g. 'abc' -> 'aabbcc')
+                hex = hex.split('').map(ch => ch + ch).join('');
+            }
+            return ('#' + hex).toUpperCase();
         }
-        
+
         // Handle rgb(r, g, b) format
-        const rgbMatch = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+        const rgbMatch = s.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i);
         if (rgbMatch) {
             const r = parseInt(rgbMatch[1]);
             const g = parseInt(rgbMatch[2]);
             const b = parseInt(rgbMatch[3]);
-            return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+            return ('#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)).toUpperCase();
         }
-        
+
         // Handle rgba(r, g, b, a) format (ignore alpha)
-        const rgbaMatch = color.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/);
+        const rgbaMatch = s.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/i);
         if (rgbaMatch) {
             const r = parseInt(rgbaMatch[1]);
             const g = parseInt(rgbaMatch[2]);
             const b = parseInt(rgbaMatch[3]);
-            return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+            return ('#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)).toUpperCase();
         }
-        
+
         // Handle cmyk(c%, m%, y%, k%) format
-        const cmykMatch = color.match(/cmyk\((\d+)%?,\s*(\d+)%?,\s*(\d+)%?,\s*(\d+)%?\)/);
+        const cmykMatch = s.match(/cmyk\((\d+)%?,\s*(\d+)%?,\s*(\d+)%?,\s*(\d+)%?\)/i);
         if (cmykMatch) {
             const c = parseFloat(cmykMatch[1]) / 100;
             const m = parseFloat(cmykMatch[2]) / 100;
             const y = parseFloat(cmykMatch[3]) / 100;
             const k = parseFloat(cmykMatch[4]) / 100;
-            
+
             // Convert CMYK to RGB
             const r = Math.round(255 * (1 - c) * (1 - k));
             const g = Math.round(255 * (1 - m) * (1 - k));
             const b = Math.round(255 * (1 - y) * (1 - k));
-            
-            return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+
+            return ('#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)).toUpperCase();
         }
-        
-        // Handle named colors by creating a temporary element
-        const tempDiv = document.createElement('div');
-        tempDiv.style.color = color;
-        document.body.appendChild(tempDiv);
-        const computedColor = window.getComputedStyle(tempDiv).color;
-        document.body.removeChild(tempDiv);
-        
-        // If computed color is rgb format, convert it
-        const computedRgbMatch = computedColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-        if (computedRgbMatch) {
-            const r = parseInt(computedRgbMatch[1]);
-            const g = parseInt(computedRgbMatch[2]);
-            const b = parseInt(computedRgbMatch[3]);
-            return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+
+        // Handle named colors by creating a temporary element and reading computed style
+        try {
+            const tempDiv = document.createElement('div');
+            tempDiv.style.color = s;
+            document.body.appendChild(tempDiv);
+            const computedColor = window.getComputedStyle(tempDiv).color;
+            document.body.removeChild(tempDiv);
+
+            const computedRgbMatch = computedColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i);
+            if (computedRgbMatch) {
+                const r = parseInt(computedRgbMatch[1]);
+                const g = parseInt(computedRgbMatch[2]);
+                const b = parseInt(computedRgbMatch[3]);
+                return ('#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)).toUpperCase();
+            }
+        } catch (e) {
+            // ignore
         }
-        
+
         // Fallback to black if conversion fails
         return '#000000';
     }
@@ -5020,10 +5073,10 @@ class GlycanDrawer {
         const customSugarColor = document.getElementById('customSugarColor');
         const customSugarColorHex = document.getElementById('customSugarColorHex');
         if (customSugarColor && effectiveFillColor) {
-            customSugarColor.value = effectiveFillColor;
+            customSugarColor.value = this.normalizeColorToHex(effectiveFillColor);
         }
         if (customSugarColorHex && effectiveFillColor) {
-            customSugarColorHex.value = effectiveFillColor;
+            customSugarColorHex.value = this.normalizeColorToHex(effectiveFillColor);
         }
         
         // 更新形状按钮 - 显示实际形状 (主按钮和下拉项目)
@@ -5217,7 +5270,7 @@ class GlycanDrawer {
                 customSugarColor.classList.remove('mixed');
             }
             if (customSugarColorHex) {
-                customSugarColorHex.value = colors[0];
+                customSugarColorHex.value = this.normalizeColorToHex(colors[0]);
                 customSugarColorHex.classList.remove('mixed');
             }
         } else {
@@ -7391,8 +7444,8 @@ class GlycanDrawer {
         }
         
         if (connectionColor && connectionColorHex) {
-            connectionColor.value = mixedColor ? '#000000' : firstColor;
-            connectionColorHex.value = mixedColor ? '' : firstColor;
+            connectionColor.value = mixedColor ? '#000000' : this.normalizeColorToHex(firstColor);
+            connectionColorHex.value = mixedColor ? '' : this.normalizeColorToHex(firstColor);
             if (mixedColor) {
                 connectionColor.classList.add('mixed');
                 connectionColorHex.placeholder = window.languageManager.getTranslation('mixed') || 'Mixed';
@@ -7419,7 +7472,7 @@ class GlycanDrawer {
         
         if (linkageTextColor && linkageTextColorHex) {
             linkageTextColor.value = mixedTextColor ? '#000000' : firstTextColor;
-            linkageTextColorHex.value = mixedTextColor ? '' : firstTextColor;
+            linkageTextColorHex.value = mixedTextColor ? '' : this.normalizeColorToHex(firstTextColor);
             if (mixedTextColor) {
                 linkageTextColor.classList.add('mixed');
                 linkageTextColorHex.placeholder = window.languageManager.getTranslation('mixed') || 'Mixed';
@@ -8892,7 +8945,7 @@ class GlycanDrawer {
             if (!this.currentSugarConfig) {
                 this.currentSugarConfig = { type: 'custom', shape: 'circle', color: '#0072BC' };
             }
-            this.currentSugarConfig.borderColor = color;
+            this.currentSugarConfig.borderColor = this.normalizeColorToHex(color);
             return;
         }
         
@@ -11474,7 +11527,15 @@ class GlycanDrawer {
         this.isPrimaryModifierPressed = e.ctrlKey || e.metaKey;
         this.isShiftPressed = e.shiftKey;
         
-        // Don't handle shortcuts when editing text
+        // Determine if a text input is focused (input/textarea/contentEditable)
+        const activeElement = document.activeElement;
+        const isInputFocused = activeElement && (
+            activeElement.tagName === 'INPUT' ||
+            activeElement.tagName === 'TEXTAREA' ||
+            activeElement.contentEditable === 'true'
+        );
+
+        // Don't handle shortcuts when editing rich text via the app's text editor
         if (this.isEditingText) {
             // Allow text formatting shortcuts even when editing
             if (e.ctrlKey || e.metaKey) {
@@ -11504,8 +11565,10 @@ class GlycanDrawer {
             return;
         }
         
-    // Handle keyboard shortcuts (use primary modifier)
+    // Handle keyboard shortcuts (use primary modifier). If a regular input is focused,
+    // allow the browser to handle clipboard and select-all shortcuts there.
     if (e.ctrlKey || e.metaKey) {
+        if (isInputFocused) return; // let the browser/input handle Ctrl/C/V/X/A/A
             switch (e.key.toLowerCase()) {
                 case 'c':
                     e.preventDefault();
