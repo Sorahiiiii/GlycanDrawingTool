@@ -4268,6 +4268,16 @@ class GlycanDrawer {
             (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1);
     }
     
+    // Deprecated: selectSugar method removed - use selectElement() instead
+    
+    // Deprecated: selectSugarOnly method removed - use selectElement() instead
+    
+    // Deprecated: deselectSugar method removed - use deselectElement() instead
+    
+    // Deprecated: selectText and selectTextOnly methods removed - use selectElement() instead
+    
+    // Deprecated: deselectText method removed - use deselectElement() instead
+    
     deselectAll() {
         // Use unified selection system
         this.clearAllSelections();
@@ -10622,94 +10632,7 @@ class GlycanDrawer {
         });
     }
     
-    // Lasso selection methods
-    startLassoSelection(x, y) {
-        this.isLassoDrawing = true;
-        this.lassoPath = [{x, y}];
-        
-        // Create lasso path element
-        this.lassoElement = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        this.lassoElement.classList.add('lasso-path');
-        this.canvas.appendChild(this.lassoElement);
-        
-        this.updateLassoPath();
-    }
-    
-    updateLassoSelection(x, y) {
-        if (!this.isLassoDrawing) return;
-        
-        this.lassoPath.push({x, y});
-        this.updateLassoPath();
-    }
-    
-    updateLassoPath() {
-        if (!this.lassoElement || this.lassoPath.length === 0) return;
-        
-        let pathData = `M ${this.lassoPath[0].x} ${this.lassoPath[0].y}`;
-        for (let i = 1; i < this.lassoPath.length; i++) {
-            pathData += ` L ${this.lassoPath[i].x} ${this.lassoPath[i].y}`;
-        }
-        
-        this.lassoElement.setAttribute('d', pathData);
-    }
-    
-    finishLassoSelection() {
-        if (!this.isLassoDrawing) return;
-        
-        // Close the path and perform selection
-        if (this.lassoPath.length > 2) {
-            this.selectElementsInLasso();
-        }
-        
-        this.clearLasso();
-    }
-    
-    selectElementsInLasso() {
-        const sugars = document.querySelectorAll('.sugar');
-        
-        sugars.forEach(sugar => {
-            const x = parseFloat(sugar.getAttribute('data-x'));
-            const y = parseFloat(sugar.getAttribute('data-y'));
-            
-            if (this.isPointInLasso(x, y)) {
-                this.selectedSugars.add(sugar);
-                sugar.classList.add('selected');
-                this.addSelectionHighlight(sugar);
-            }
-        });
-        
-        // Update style panel if any sugars were selected
-        if (this.selectedSugars.size > 0) {
-            this.updateStylePanel();
-        }
-    }
-    
-    isPointInLasso(x, y) {
-        if (this.lassoPath.length < 3) return false;
-        
-        // Ray casting algorithm for point-in-polygon test
-        let inside = false;
-        const path = this.lassoPath;
-        
-        for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
-            if (((path[i].y > y) !== (path[j].y > y)) &&
-                (x < (path[j].x - path[i].x) * (y - path[i].y) / (path[j].y - path[i].y) + path[i].x)) {
-                inside = !inside;
-            }
-        }
-        
-        return inside;
-    }
-    
-    clearLasso() {
-        this.isLassoDrawing = false;
-        this.lassoPath = [];
-        
-        if (this.lassoElement) {
-            this.lassoElement.remove();
-            this.lassoElement = null;
-        }
-    }
+    // Lasso selection methods (removed) --- IGNORE ---
     
     // Zoom Control Setup
     setupZoomControl() {
