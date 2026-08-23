@@ -59,18 +59,6 @@ export const pointerInputMixin = {
                     // Select this element (clear others first)
                     this.selectElement(clickedElement, false);
                     
-                    // Check for double-click on text
-                    if (this.getElementType(clickedElement) === 'text') {
-                        const currentTime = Date.now();
-                        if (currentTime - this.lastClickTime < this.doubleClickDelay) {
-                            // Double-click detected - enter edit mode
-                            this.startTextEditing(clickedElement);
-                            e.preventDefault();
-                            return;
-                        }
-                        this.lastClickTime = currentTime;
-                    }
-                    
                     // Start dragging this element
                     this.startDragging(x, y, false);
                 }
@@ -497,8 +485,8 @@ export const pointerInputMixin = {
             }
             
             if (clickedText) {
-                // Edit existing text
-                this.editText(clickedText);
+                // Editing existing text is now triggered by a double-click in Select mode.
+                return;
             } else {
                 // Create new text at click position
                 this.startStep('Add text');
@@ -747,6 +735,15 @@ export const pointerInputMixin = {
             this.setTool('select');
             this.clearAllSelections();
             this.selectElement(clickedSugar);
+            this.updateStylePanel();
+            e.preventDefault();
+            return;
+        }
+
+        if (this.currentTool === 'text' && clickedText) {
+            this.setTool('select');
+            this.clearAllSelections();
+            this.selectElement(clickedText);
             this.updateStylePanel();
             e.preventDefault();
             return;

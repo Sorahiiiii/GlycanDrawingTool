@@ -1,29 +1,23 @@
 // Feature mixin extracted mechanically from js/script.js.
 // Original line ranges: 6137, 6193, 6437, 6506, 6537, 6544, 6560, 6636.
 export const exportMixin = {
+    getContentExportBounds(padding = 80) {
+        const bbox = this.computeExportBBox(0, 0, 4000, 2800);
+        if (!bbox) {
+            return { minX: 0, minY: 0, maxX: 4000, maxY: 2800 };
+        }
+        return {
+            minX: bbox.minX - padding,
+            minY: bbox.minY - padding,
+            maxX: bbox.maxX + padding,
+            maxY: bbox.maxY + padding,
+        };
+    },
+
     downloadSVG() {
-        // Get current export area dimensions
-        const exportSize = this.exportSizes[this.currentExportSize];
-        const { width, height } = exportSize;
-        // Calculate export area bounds in canvas coordinates (default centered area)
-        const canvasCenterX = 2000;
-        const canvasCenterY = 1400;
-        const defaultMinX = canvasCenterX - width / 2;
-        const defaultMinY = canvasCenterY - height / 2;
-        const defaultMaxX = canvasCenterX + width / 2;
-        const defaultMaxY = canvasCenterY + height / 2;
-
-        // Compute tight bbox of content inside the default export area
-        const tightBBox = this.computeExportBBox(defaultMinX, defaultMinY, defaultMaxX, defaultMaxY);
-
-        // If we have content, use tight bbox; otherwise fall back to default centered area
-        const useMinX = tightBBox ? tightBBox.minX : defaultMinX;
-        const useMinY = tightBBox ? tightBBox.minY : defaultMinY;
-        const useMaxX = tightBBox ? tightBBox.maxX : defaultMaxX;
-        const useMaxY = tightBBox ? tightBBox.maxY : defaultMaxY;
-
-        const exportW = Math.ceil(useMaxX - useMinX) || width;
-        const exportH = Math.ceil(useMaxY - useMinY) || height;
+        const { minX, minY, maxX, maxY } = this.getContentExportBounds();
+        const exportW = Math.max(1, Math.ceil(maxX - minX));
+        const exportH = Math.max(1, Math.ceil(maxY - minY));
 
         // Create a clean SVG for export with only elements within bounds
         const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -34,16 +28,13 @@ export const exportMixin = {
         exportSVG.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
 
         // Copy only elements within computed bounds and translate them to origin
-        this.copyElementsInBounds(exportSVG, useMinX, useMinY, useMaxX, useMaxY);
+        this.copyElementsInBounds(exportSVG, minX, minY, maxX, maxY);
 
         // Get the SVG string
         const svgString = new XMLSerializer().serializeToString(exportSVG);
         
-        // Add CSS styles inline for better compatibility
-        const styledSVG = this.addInlineStyles(svgString);
-        
         // Create and download the file
-        const blob = new Blob([styledSVG], { type: 'image/svg+xml' });
+        const blob = new Blob([svgString], { type: 'image/svg+xml' });
         const url = URL.createObjectURL(blob);
         
         const link = document.createElement('a');
@@ -551,26 +542,9 @@ export const exportMixin = {
     
 
     exportAsPNG() {
-        // Create export SVG with only export area content
-        const exportSize = this.exportSizes[this.currentExportSize];
-        const { width, height } = exportSize;
-        
-    // Calculate export area bounds in canvas coordinates (default centered area)
-    const canvasCenterX = 2000;
-    const canvasCenterY = 1400;
-    const defaultMinX = canvasCenterX - width / 2;
-    const defaultMinY = canvasCenterY - height / 2;
-    const defaultMaxX = canvasCenterX + width / 2;
-    const defaultMaxY = canvasCenterY + height / 2;
-
-    const tightBBox = this.computeExportBBox(defaultMinX, defaultMinY, defaultMaxX, defaultMaxY);
-    const useMinX = tightBBox ? tightBBox.minX : defaultMinX;
-    const useMinY = tightBBox ? tightBBox.minY : defaultMinY;
-    const useMaxX = tightBBox ? tightBBox.maxX : defaultMaxX;
-    const useMaxY = tightBBox ? tightBBox.maxY : defaultMaxY;
-
-    const exportW = Math.ceil(useMaxX - useMinX) || width;
-    const exportH = Math.ceil(useMaxY - useMinY) || height;
+        const { minX, minY, maxX, maxY } = this.getContentExportBounds();
+        const exportW = Math.max(1, Math.ceil(maxX - minX));
+        const exportH = Math.max(1, Math.ceil(maxY - minY));
 
     const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     exportSVG.setAttribute('width', exportW);
@@ -579,10 +553,9 @@ export const exportMixin = {
     exportSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
 
     // Copy only elements within computed bounds
-    this.copyElementsInBounds(exportSVG, useMinX, useMinY, useMaxX, useMaxY);
+    this.copyElementsInBounds(exportSVG, minX, minY, maxX, maxY);
 
     const svgString = new XMLSerializer().serializeToString(exportSVG);
-    const styledSVG = this.addInlineStyles(svgString);
 
     // Create canvas element
     const canvas = document.createElement('canvas');
@@ -621,33 +594,16 @@ export const exportMixin = {
             }, 'image/png');
         };
         
-        const svgBlob = new Blob([styledSVG], { type: 'image/svg+xml;charset=utf-8' });
+        const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
         const svgUrl = URL.createObjectURL(svgBlob);
         img.src = svgUrl;
     },
     
 
     exportAsJPG() {
-        // Create export SVG with only export area content
-        const exportSize = this.exportSizes[this.currentExportSize];
-        const { width, height } = exportSize;
-        
-        // Calculate export area bounds in canvas coordinates (default centered area)
-        const canvasCenterX = 2000;
-        const canvasCenterY = 1400;
-        const defaultMinX = canvasCenterX - width / 2;
-        const defaultMinY = canvasCenterY - height / 2;
-        const defaultMaxX = canvasCenterX + width / 2;
-        const defaultMaxY = canvasCenterY + height / 2;
-
-        const tightBBox = this.computeExportBBox(defaultMinX, defaultMinY, defaultMaxX, defaultMaxY);
-        const useMinX = tightBBox ? tightBBox.minX : defaultMinX;
-        const useMinY = tightBBox ? tightBBox.minY : defaultMinY;
-        const useMaxX = tightBBox ? tightBBox.maxX : defaultMaxX;
-        const useMaxY = tightBBox ? tightBBox.maxY : defaultMaxY;
-
-        const exportW = Math.ceil(useMaxX - useMinX) || width;
-        const exportH = Math.ceil(useMaxY - useMinY) || height;
+        const { minX, minY, maxX, maxY } = this.getContentExportBounds();
+        const exportW = Math.max(1, Math.ceil(maxX - minX));
+        const exportH = Math.max(1, Math.ceil(maxY - minY));
 
         const exportSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         exportSVG.setAttribute('width', exportW);
@@ -656,10 +612,9 @@ export const exportMixin = {
         exportSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
 
         // Copy only elements within computed bounds
-        this.copyElementsInBounds(exportSVG, useMinX, useMinY, useMaxX, useMaxY);
+        this.copyElementsInBounds(exportSVG, minX, minY, maxX, maxY);
 
         const svgString = new XMLSerializer().serializeToString(exportSVG);
-        const styledSVG = this.addInlineStyles(svgString);
 
         // Create canvas element
         const canvas = document.createElement('canvas');
@@ -696,7 +651,7 @@ export const exportMixin = {
             }, 'image/jpeg', 0.9);
         };
 
-        const svgBlob = new Blob([styledSVG], { type: 'image/svg+xml;charset=utf-8' });
+        const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
         const svgUrl = URL.createObjectURL(svgBlob);
         img.src = svgUrl;
     },

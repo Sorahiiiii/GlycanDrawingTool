@@ -78,13 +78,24 @@ export const styleApplicationMixin = {
     syncRenderButtonsForSelection(selectedSugars) {
         if (!selectedSugars || selectedSugars.length === 0) return;
 
-        const values = selectedSugars.map((sugar) => sugar.getAttribute("data-render-preset") || "flat");
+        const values = selectedSugars.map((sugar) => this.getSugarRenderPreset(sugar));
         const state = getMixedRenderPreset(values);
         document.querySelectorAll("[data-render-preset]").forEach((button) => {
             const isActive = state !== "mixed" && button.dataset.renderPreset === state;
             button.classList.toggle("active", isActive);
             button.classList.remove("mixed");
         });
+    },
+
+    getSugarRenderPreset(sugar) {
+        const storedPreset = sugar.getAttribute("data-render-preset");
+        if (storedPreset) return storedPreset;
+
+        const shape = sugar.querySelector(".sugar-shape");
+        const fill = (shape && (shape.style.fill || shape.getAttribute("fill"))) || "";
+        if (fill.includes("render-soft-")) return "soft";
+        if (fill.includes("render-glossy-")) return "glossy";
+        return "flat";
     },
     
 

@@ -47,7 +47,6 @@ const REQUIRED_ELEMENT_IDS = [
   "exportBtn",
   "clearBtn",
   "workspace",
-  "exportArea",
 ];
 
 export class GlycanDrawer {
@@ -89,7 +88,7 @@ export class GlycanDrawer {
         this.isDragging = false;
         this.dragOffset = { x: 0, y: 0 };
         this.lastClickTime = 0;
-        this.doubleClickDelay = 300;
+        this.doubleClickDelay = 250;
         this.pendingAddClick = null;
         
         // Connection drag states
@@ -227,14 +226,6 @@ export class GlycanDrawer {
                 }
             });
         }
-        
-        // Add canvas size control listeners
-        const sizeButtons = document.querySelectorAll('.size-btn');
-        sizeButtons.forEach(btn => {
-            btn.addEventListener('click', () => {
-                this.setExportAreaSize(btn.dataset.size);
-            });
-        });
         
         // Initialize workspace first
         this.initializeWorkspace();

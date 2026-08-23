@@ -20,7 +20,7 @@
     </div>
     
     <div class="app-container">
-    <h1><span data-i18n="title">Glycan Drawing Tool</span> <span class="version" data-i18n="version">v1.1.0</span></h1>
+    <h1><span data-i18n="title">Glycan Drawing Tool</span> <span class="version" data-i18n="version">v1.1.1</span></h1>
     
     <div class="app-preferences">
       <span class="theme-switch-label" data-i18n="view.themeLight">Light</span>
@@ -52,14 +52,6 @@
                             <div class="export-option" data-format="png" data-i18n="topPanel.exportOptions.png">PNG（透明背景）</div>
                             <div class="export-option" data-format="jpg" data-i18n="topPanel.exportOptions.jpg">JPG（白色背景）</div>
                         </div>
-                    </div>
-
-                    <!-- Canvas Size Controls -->
-                    <div class="canvas-size-controls">
-                        <label data-i18n="topPanel.exportArea">导出区域:</label>
-                        <button id="canvasSmall" class="size-btn" data-size="small" data-i18n="topPanel.canvasSizes.small">小</button>
-                        <button id="canvasMedium" class="size-btn active" data-size="medium" data-i18n="topPanel.canvasSizes.medium">中</button>
-                        <button id="canvasLarge" class="size-btn" data-size="large" data-i18n="topPanel.canvasSizes.large">大</button>
                     </div>
 
                     <!-- Zoom Controls -->
@@ -129,7 +121,6 @@
             <div class="center-panel">
                 <div id="workspace" class="workspace">
                     <!-- Export area visual background (not a container) -->
-                    <div id="exportArea" class="export-area"></div>
                     <!-- SVG canvas spans entire workspace -->
                     <svg id="canvas" class="workspace-canvas" viewBox="0 0 4000 2800">
                         <!-- SVG content will be added here -->

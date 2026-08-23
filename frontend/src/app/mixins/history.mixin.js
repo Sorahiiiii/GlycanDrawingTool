@@ -247,11 +247,7 @@ export const historyMixin = {
                 } catch (e) {}
 
             // Add to undo stack (deep clone step to prevent later mutation)
-            try {
-                this.undoStack.push(JSON.parse(JSON.stringify(this.currentStep)));
-            } catch (e) {
-                this.undoStack.push(this.currentStep);
-            }
+            this.undoStack.push(this.currentStep);
 
             // Clear redo stack when new action is performed
             this.redoStack = [];

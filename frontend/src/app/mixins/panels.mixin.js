@@ -439,7 +439,7 @@ export const panelsMixin = {
         }
         
         // Update style buttons
-        document.querySelectorAll('.connection-style-btn').forEach(btn => {
+        document.querySelectorAll('#linkageControlsSection .connection-style-btn[data-style]').forEach(btn => {
             btn.classList.toggle('active', !mixedStyle && btn.dataset.style === firstStyle);
         });
 

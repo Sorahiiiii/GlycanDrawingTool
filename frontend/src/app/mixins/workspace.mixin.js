@@ -49,19 +49,12 @@ export const workspaceMixin = {
         
         // Find canvas and export area elements
         const canvas = document.getElementById('canvas');
-        const exportArea = document.getElementById('exportArea');
         const workspace = document.getElementById('workspace');
         
         if (canvas) {
             // Apply zoom to canvas only
             canvas.style.transform = `scale(${this.zoomLevel})`;
             canvas.style.transformOrigin = 'center center';
-            }
-        
-        if (exportArea) {
-            // Apply zoom to export area as well, but keep the existing margin-based centering
-            exportArea.style.transform = `scale(${this.zoomLevel})`;
-            exportArea.style.transformOrigin = '50% 50%'; // Center the scaling
             }
         
         if (workspace) {
@@ -79,15 +72,11 @@ export const workspaceMixin = {
 
     initializeWorkspace() {
         this.workspace = document.getElementById('workspace');
-        this.exportArea = document.getElementById('exportArea');
         
-        if (!this.workspace || !this.exportArea) {
-            console.error('Workspace elements not found');
+        if (!this.workspace) {
+            console.error('Workspace element not found');
             return;
         }
-        
-        // Set initial export area size (medium)
-        this.setExportAreaSize('medium');
         
         // Initialize grid background
         this.updateGridBackground();
