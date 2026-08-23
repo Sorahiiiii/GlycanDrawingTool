@@ -1,0 +1,2021 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f5f5f5;
+    color: #333;
+    overflow-x: hidden;
+}
+
+/* Loading Cover */
+.loading-cover {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: #F5F5F5FA;  /* rgba(245, 245, 245, 0.98) */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+    transition: opacity 0.3s ease;
+}
+
+.loading-cover.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.loading-content {
+    text-align: center;
+}
+
+.loading-gif {
+    width: 150px;
+    height: 150px;
+    margin: 0 auto 20px;
+    display: block;
+}
+
+.loading-text {
+    font-size: 16px;
+    color: #2c3e50;
+    font-weight: 500;
+    margin-bottom: 20px;
+}
+
+.loading-progress {
+    width: 300px;
+    height: 4px;
+    margin: 0 auto;
+    position: relative;
+    background-color: #e0e0e0;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.progress-line {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    background: #18d1ff;
+    animation: progressExpand 1.5s ease-in-out infinite;
+}
+
+.progress-line-left {
+    left: 0;
+    transform-origin: left;
+    animation-name: progressExpandLeft;
+}
+
+.progress-line-right {
+    right: 0;
+    transform-origin: right;
+    animation-name: progressExpandRight;
+}
+
+@keyframes progressExpandLeft {
+    0% {
+        width: 0%;
+    }
+    50% {
+        width: 50%;
+    }
+    100% {
+        width: 50%;
+    }
+}
+
+@keyframes progressExpandRight {
+    0% {
+        width: 0%;
+    }
+    50% {
+        width: 50%;
+    }
+    100% {
+        width: 50%;
+    }
+}
+
+.app-container {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Prevent body scrolling */
+}
+
+h1 {
+    text-align: center;
+    padding: 10px 0;
+    margin: 0;
+    color: #2c3e50;
+    background-color: white;
+    border-bottom: 2px solid #ddd;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+}
+
+.version {
+    font-size: 12px;
+    color: #7f8c8d;
+    font-weight: 400;
+    margin-left: 8px;
+}
+
+/* External links above Feedback text (flowed within left-panel) */
+.help-links {
+    width: 180px;
+    padding: 5px 10px;
+    font-size: 16px;
+    font-weight: 500;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin: 6px auto 2px; /* tighten spacing under the top panel-section */
+}
+
+.help-link {
+    display: inline-block; /* underline matches text width */
+    font-size: 15px;
+    color: #2980b9;
+    margin: 0;
+    padding-bottom: 2px;
+    text-align: center; /* center each wrapped line */
+    text-decoration: none;
+    border-bottom: 1px dotted rgba(41, 128, 185, 0.3);
+}
+
+.help-link:hover {
+    color: #1f6ea8;
+    border-bottom-color: rgba(31, 110, 168, 0.6);
+}
+
+/* Top Panel */
+.top-panel {
+    background-color: white;
+    border-bottom: 2px solid #ddd;
+    padding: 10px 20px;
+    position: fixed;
+    top: 60px; /* Below the header */
+    left: 0;
+    right: 0;
+    z-index: 20;
+}
+
+/* Language Switch */
+.language-switch {
+    position: absolute;
+    top: 10px;
+    right: 20px;
+    z-index: 30;
+}
+
+.language-link {
+    color: #2980b9;
+    text-decoration: none;
+    font-size: 14px;
+    border-bottom: 1px dotted rgba(41, 128, 185, 0.3);
+}
+
+.language-link:hover {
+    color: #1f6ea8;
+    border-bottom-color: rgba(31, 110, 168, 0.6);
+}
+
+/* Current language rendered as plain text (non-link) */
+.language-current {
+    font-weight: bold;
+    text-decoration: underline;
+    font-size: 14px;
+    color: #333; /* keep same text color as rest of UI */
+}
+
+.action-buttons {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.canvas-size-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.canvas-size-controls label {
+    font-size: 14px;
+    color: #2c3e50;
+    white-space: nowrap;
+    margin-right: 8px;
+}
+
+.size-btn {
+    padding: 6px 12px;
+    border: 2px solid #ddd;
+    background-color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    margin-right: 4px;
+    transition: all 0.2s ease;
+}
+
+.size-btn:hover {
+    border-color: #3498db;
+    background-color: #f8f9fa;
+}
+
+.size-btn.active {
+    border-color: #3498db;
+    background-color: #3498db;
+    color: white;
+}
+
+.action-btn.center {
+    background-color: #9b59b6;
+    border-color: #9b59b6;
+    margin-left: 8px;
+}
+
+.action-btn.center:hover {
+    background-color: #8e44ad;
+    border-color: #8e44ad;
+}
+
+.action-btn {
+    padding: 8px 16px;
+    border: 2px solid #3498db;
+    background-color: #3498db;
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+    background-color: #2980b9;
+    border-color: #2980b9;
+}
+
+.action-btn.clear {
+    background-color: #e74c3c;
+    border-color: #e74c3c;
+}
+
+.action-btn.clear:hover {
+    background-color: #c0392b;
+    border-color: #c0392b;
+}
+
+.action-btn.undo {
+    background-color: #f39c12;
+    border-color: #f39c12;
+}
+
+.action-btn.undo:hover {
+    background-color: #d68910;
+    border-color: #d68910;
+}
+
+.action-btn.undo:disabled {
+    background-color: #bdc3c7;
+    border-color: #bdc3c7;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.action-btn.redo {
+    background-color: #27ae60;
+    border-color: #27ae60;
+}
+
+.action-btn.redo:hover {
+    background-color: #229954;
+    border-color: #229954;
+}
+
+.action-btn.redo:disabled {
+    background-color: #bdc3c7;
+    border-color: #bdc3c7;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+/* Export dropdown */
+.export-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.action-btn.export {
+    background-color: #3498db;
+    border-color: #3498db;
+}
+
+.action-btn.export:hover {
+    background-color: #2980b9;
+    border-color: #2980b9;
+}
+
+/* Visual indicator when dropdown is open */
+.export-dropdown.open .action-btn.export {
+    background-color: #2980b9;
+    border-color: #2980b9;
+    transform: translateY(1px);
+}
+
+.export-options {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background-color: white;
+    min-width: 200px;
+    box-shadow: 0px 8px 16px 0px #00000033;  /* rgba(0,0,0,0.2) */
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    z-index: 1000;
+    margin-top: 2px;
+}
+
+/* Change from hover to click-based with class toggle */
+.export-dropdown.open .export-options {
+    display: block;
+}
+
+.export-option {
+    padding: 12px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+}
+
+.export-option:last-child {
+    border-bottom: none;
+    border-radius: 0 0 4px 4px;
+}
+
+.export-option:first-child {
+    border-radius: 4px 4px 0 0;
+}
+
+.export-option:hover {
+    background-color: #f8f9fa;
+    color: #3498db;
+}
+
+.export-option:active {
+    background-color: #e9ecef;
+}
+
+/* Main Content Area */
+.main-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    position: relative; /* For fixed panels positioning */
+    margin-top: 120px; /* Space for header (60px) + top panel (~60px) */
+}
+
+/* Left Panel - Tools */
+.left-panel {
+    width: 200px;
+    background-color: white;
+    border-right: 2px solid #ddd;
+    overflow-y: auto;
+    position: fixed;
+    top: 120px; /* Below header and top panel */
+    left: 0;
+    bottom: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start; /* stack sections in DOM order; logo will be pushed down with margin-top:auto */
+}
+
+.panel-section {
+    padding: 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.panel-section:last-child {
+    border-bottom: none;
+}
+
+.panel-section h3 {
+    margin-bottom: 10px;
+    color: #2c3e50;
+    font-size: 16px;
+}
+
+.panel-section h4 {
+    margin-bottom: 8px;
+    color: #34495e;
+    font-size: 14px;
+}
+
+/* Tool Buttons */
+.tool-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.tool-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 2px solid #ddd;
+    background-color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 14px;
+}
+
+.tool-btn:hover {
+    border-color: #3498db;
+    background-color: #f8f9fa;
+}
+
+.tool-btn.active {
+    border-color: #3498db;
+    background-color: #3498db;
+    color: white;
+}
+
+.tool-btn span {
+    font-size: 16px;
+}
+
+/* Feedback text (flowed under help-links) */
+.feedback-text {
+    width: 180px;
+    padding: 5px 10px;
+    font-size: 13px;
+    line-height: 1.2;
+    color: #2c3e50;
+    font-weight: 500;
+    text-align: center;
+    margin: 0 auto 0; /* no gap when grouped in footer */
+}
+
+.ayfl-logo {
+    width: 140px; /* half of previous 180px */
+    padding: 0;
+    margin: 0 auto 0;
+    /* anchor to bottom via footer-group */
+}
+
+/* Footer group: anchor to bottom of left-panel and stack children with no gap */
+.footer-group {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0; /* no gap between feedback and logo */
+    margin-top: auto; /* push the entire group to the bottom of left-panel */
+    padding-bottom: 8px; /* small breathing room from absolute bottom */
+}
+
+.ayfl-logo img {
+    width: 100%;
+    height: auto;
+    display: block;
+    opacity: 1;
+}
+
+/* Center Panel - Workspace Container */
+.center-panel {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    margin-left: 200px; /* Space for fixed left panel */
+    margin-right: 250px; /* Space for fixed right panel */
+}
+
+/* Zoom Controls in Toolbar */
+.zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.zoom-controls label {
+    font-size: 14px;
+    color: #333;
+    margin: 0;
+}
+
+.zoom-controls input[type="range"] {
+    width: 100px;
+    height: 6px;
+    background: #ddd;
+    border-radius: 3px;
+    outline: none;
+    margin: 0;
+}
+
+.zoom-controls input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #3498db;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.zoom-controls span {
+    min-width: 45px;
+    text-align: center;
+    font-weight: 500;
+    font-size: 13px;
+    color: #555;
+}
+
+.zoom-controls .action-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+/* Infinite Workspace (Gray Background) */
+.workspace {
+    width: 100%;
+    height: 100%;
+    background-color: #e5e5e5;
+    position: relative;
+    overflow: auto;
+    cursor: grab;
+    transform-origin: center center;
+    transition: transform 0.1s ease;
+    --grid-size: 20px; /* Default grid size */
+}
+
+/* Grid background applied to workspace-content to scale with zoom */
+.workspace::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: 
+        linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
+    background-size: var(--grid-size) var(--grid-size);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.workspace:active {
+    cursor: grabbing;
+}
+
+/* Export Area (White Rectangle Background - Visual Only) */
+.export-area {
+    position: absolute;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 
+        0 4px 20px rgba(0, 0, 0, 0.15),
+        0 1px 3px rgba(0, 0, 0, 0.1);
+    /* Position at canvas center - canvas is 4000x2800, so center is at (2000, 1400) */
+    top: 1400px; /* Canvas center Y */
+    left: 2000px; /* Canvas center X */
+    /* Offset by half the export area size to center it */
+    margin-top: -350px; /* Half of export area height */
+    margin-left: -500px; /* Half of export area width */
+    /* No transition for instant zoom response */
+    z-index: 5; /* Above grid background, below canvas */
+    /* Width and height are set dynamically by JavaScript */
+    pointer-events: none; /* Don't interfere with interactions */
+    /* Default size in case JavaScript hasn't run yet */
+    width: 1000px;
+    height: 700px;
+}
+
+/* Canvas - larger than workspace to provide more drawing space */
+.workspace-canvas {
+    position: absolute;
+    /* Position canvas at the start, not centered */
+    top: 0;
+    left: 0;
+    /* Canvas is 2x larger than before: 4000x2800 display size */
+    width: 4000px;
+    height: 2800px;
+    z-index: 10; /* Above export area background */
+    pointer-events: auto;
+    /* No transition for instant zoom response */
+}
+
+/* Right Panel - Sugar Configuration */
+.right-panel {
+    width: 250px;
+    background-color: white;
+    border-left: 2px solid #ddd;
+    overflow-y: auto;
+    position: fixed;
+    top: 120px; /* Below header and top panel */
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+}
+
+/* Preset Grid */
+.preset-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-bottom: 15px;
+}
+
+/* Preset glycan toolbar (custom SVG presets) */
+.preset-glycan-toolbar {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+.preset-thumb {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+}
+
+.preset-thumb img {
+    width: 100%;
+    height: auto;
+    max-height: 70px;
+    object-fit: contain;
+}
+
+.preset-thumb span {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #333;
+    text-align: center;
+}
+
+.preset-thumb.disabled {
+    opacity: 0.35;
+    pointer-events: none;
+}
+
+.preset-thumb.active {
+    border-color: #18d1ff;
+    background-color: #ebf8ff;
+}
+
+.thumb-empty {
+    width: 48px;
+    height: 48px;
+    border-radius: 4px;
+    border: 1px dashed #ccc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #bbb;
+    font-size: 20px;
+}
+
+.preset-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background-color: white;
+}
+
+.preset-item:hover {
+    border-color: #3498db;
+    background-color: #f8f9fa;
+}
+
+.preset-item.active {
+    border-color: #18d1ff;
+    background-color: #ebf3fd;
+}
+
+.preset-item span {
+    margin-top: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    color: #2c3e50;
+}
+
+/* Custom Sugar Configuration */
+.custom-subsection {
+    margin-bottom: 15px;
+}
+
+/* Shape Grid */
+.shape-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    margin-bottom: 10px;
+}
+
+/* Shape Selector Grid */
+.shape-selector-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 8px;
+}
+
+/* Shape Category Container */
+.shape-category {
+    position: relative;
+    display: flex;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    background-color: white;
+    height: auto;
+    aspect-ratio: 4/3;
+}
+
+/* Main Shape Button */
+.shape-main-btn {
+    flex: 3;
+    height: 100%;
+    border: none;
+    background-color: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    color: #000;
+    font-size: 16px;
+    border-radius: 4px 0 0 4px;
+}
+
+.shape-main-btn .shape-icon {
+    font-size: 18px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.shape-main-btn .shape-icon svg {
+    display: block;
+    margin: 0 auto;
+}
+
+/* Dropdown Button */
+.shape-dropdown-btn {
+    flex: 1;
+    height: 100%;
+    border: none;
+    border-left: 2px solid #ddd;
+    background-color: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    color: #000;
+    border-radius: 0 4px 4px 0;
+}
+
+.shape-dropdown-btn .dropdown-arrow {
+    font-size: 10px;
+    line-height: 1;
+}
+
+/* Hover States */
+.shape-category:hover {
+    background-color: rgba(52, 152, 219, 0.1);
+}
+
+.shape-main-btn:hover,
+.shape-dropdown-btn:hover {
+    background-color: rgba(52, 152, 219, 0.1);
+}
+
+/* Active States */
+.shape-category.active {
+    background-color: rgba(24, 209, 255, 0.2);
+    border-color: #18d1ff;
+    border-width: 2px;
+}
+
+.shape-main-btn.active {
+    background-color: rgba(24, 209, 255, 0.2);
+}
+
+/* Disabled States */
+.shape-category.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+    cursor: not-allowed;
+}
+
+.shape-category.disabled button {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.shape-category.disabled svg {
+    opacity: 0.5;
+}
+
+/* Dropdown Menu */
+.shape-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background-color: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    display: none;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.shape-dropdown-menu.show {
+    display: block;
+}
+
+/* Dropdown Item */
+.shape-dropdown-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    color: #000;
+    font-size: 16px;
+    border-bottom: 1px solid #eee;
+}
+
+.shape-dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.shape-dropdown-item svg {
+    display: block;
+    margin: 0 auto;
+}
+
+.shape-dropdown-item:hover {
+    background-color: rgba(52, 152, 219, 0.1);
+}
+
+.shape-dropdown-item.active {
+    background-color: rgba(52, 152, 219, 0.2);
+    border-left: 3px solid #3498db;
+}
+
+/* Legacy shape-btn class for backward compatibility */
+.shape-btn {
+    width: 40px;
+    height: 40px;
+    border: 2px solid #ddd;
+    background-color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    color: #3498db;
+}
+
+.shape-btn:hover {
+    border-color: #3498db;
+    background-color: #f8f9fa;
+}
+
+.shape-btn.active {
+    border-color: #18d1ff;
+    background-color: #ebf3fd;
+}
+
+.shape-btn.disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    color: #ccc;
+}
+
+.shape-btn.disabled:hover {
+    border-color: #ddd;
+    background-color: white;
+}
+
+/* SNFG Preset Grid */
+.preset-grid-snfg {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 15px;
+}
+
+.preset-item.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.preset-item.disabled:hover {
+    background-color: transparent;
+    transform: none;
+}
+
+/* Color Controls */
+.color-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.color-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+}
+
+.color-btn {
+    width: 35px;
+    height: 35px;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.color-btn:hover {
+    border-color: #333;
+    transform: scale(1.1);
+}
+
+.color-btn.active {
+    border-color: #333;
+    transform: scale(1.1);
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+}
+
+/* Compact Color Grid for borders, connections, text */
+.color-grid-compact {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.color-btn-compact {
+    width: 30px;
+    height: 30px;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.color-btn-compact:hover {
+    border-color: #333;
+    transform: scale(1.05);
+}
+
+.color-btn-compact.active {
+    border-color: #333;
+    transform: scale(1.05);
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Custom Color Section */
+.custom-color-section {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+    margin-bottom: 8px;
+}
+
+.custom-color-section input[type="color"] {
+    width: 40px;
+    height: 32px;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    background: transparent;
+}
+
+.custom-color-section input[type="text"] {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: monospace;
+}
+
+.custom-color {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+#customColorInput {
+    flex: 1;
+    padding: 4px 6px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+#applyCustomColor {
+    padding: 4px 8px;
+    border: 1px solid #3498db;
+    background-color: #3498db;
+    color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+/* Right Panel - New Control Styles */
+.control-subsection {
+    margin-bottom: 20px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 15px;
+}
+
+.control-subsection:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.control-subsection h4 {
+    margin: 0 0 12px 0;
+    color: #2c3e50;
+    font-size: 14px;
+    font-weight: 600;
+    border-bottom: 2px solid #18d1ff;
+    padding-bottom: 5px;
+}
+
+.control-group {
+    margin-bottom: 12px;
+}
+
+.control-group:last-child {
+    margin-bottom: 0;
+}
+
+.control-group label {
+    display: block;
+    margin-bottom: 6px;
+    color: #555;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* Sliders and Values */
+.control-group input[type="range"] {
+    /* width: 100%; */
+    margin-bottom: 4px;
+}
+
+.control-group span {
+    color: #3498db;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+/* Color controls */
+input[type="color"] {
+    width: 40px;
+    height: 30px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-right: 8px;
+}
+
+input[type="text"] {
+    width: 80px;
+    padding: 4px 6px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+/* Custom color input */
+.custom-color {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.custom-color input {
+    flex: 1;
+}
+
+.custom-color button {
+    padding: 4px 12px;
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.custom-color button:hover {
+    background: #2980b9;
+}
+
+/* Select dropdown */
+#fontFamily {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 13px;
+    background: white;
+}
+
+/* Button groups */
+.border-style-buttons,
+.connection-style-buttons,
+.text-style-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+.border-style-btn,
+.connection-style-btn,
+.text-style-btn {
+    padding: 6px 12px;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s ease;
+}
+
+.border-style-btn:hover,
+.connection-style-btn:hover,
+.text-style-btn:hover {
+    border-color: #3498db;
+    background-color: #f8f9fa;
+}
+
+.border-style-btn.active,
+.connection-style-btn.active,
+.text-style-btn.active {
+    border-color: #3498db;
+    background-color: #3498db;
+    color: white;
+}
+
+.text-style-btn.mixed,
+.connection-style-btn.mixed {
+    border-color: #f39c12;
+    background-color: #f39c12;
+    color: white;
+    position: relative;
+}
+
+.text-style-btn.mixed::after,
+.connection-style-btn.mixed::after {
+    content: '?';
+    position: absolute;
+    font-size: 10px;
+    top: 2px;
+    right: 2px;
+}
+
+.text-style-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    padding: 0;
+}
+
+/* Linkage text style buttons */
+.linkage-text-style-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+.linkage-text-style-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.linkage-text-style-btn:hover {
+    border-color: #3498db;
+    background-color: #f8f9fa;
+}
+
+.linkage-text-style-btn.active {
+    border-color: #3498db;
+    background-color: #3498db;
+    color: white;
+}
+
+.linkage-text-style-btn.mixed {
+    border-color: #f39c12;
+    background-color: #f39c12;
+    color: white;
+    position: relative;
+}
+
+.linkage-text-style-btn.mixed::after {
+    content: '?';
+    position: absolute;
+    font-size: 10px;
+    top: 2px;
+    right: 2px;
+}
+
+/* Mixed state for color inputs - using subtle gray styling */
+input[type="color"].mixed,
+input[type="text"].mixed {
+    border: 2px solid #999999;
+    background-color: #ffffff;
+    opacity: 0.8;
+}
+
+input[type="color"].mixed {
+    background: repeating-linear-gradient(
+        45deg,
+        #f0f0f0,
+        #f0f0f0 2px,
+        #ffffff 2px,
+        #ffffff 4px
+    );
+}
+
+/* Mixed state for range slider and value display */
+input[type="range"].mixed {
+    border: 2px solid #999999;
+    background-color: #ffffff;
+    opacity: 0.8;
+}
+
+span.mixed {
+    color: #666666;
+    font-weight: bold;
+    border: 1px solid #999999;
+    background-color: #f8f8f8;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+/* Connection Status */
+.connection-status {
+    margin-bottom: 12px;
+    padding: 8px;
+    border-radius: 4px;
+    text-align: center;
+    font-size: 12px;
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+}
+
+.connection-status.has-connections {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #6c757d;
+}
+
+.empty-state p {
+    margin: 0;
+    font-size: 14px;
+}
+
+/* Preset grid adjustments */
+.preset-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 15px;
+}
+
+.preset-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px;
+    border: 2px solid #e0e0e0;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: white;
+}
+
+.preset-item:hover {
+    border-color: #3498db;
+    background: #f8f9fa;
+}
+
+.preset-item.active {
+    border-color: #18d1ff;
+    background: #e3f2fd;
+}
+
+.preset-item span {
+    font-size: 11px;
+    color: #555;
+    font-weight: 500;
+}
+
+/* Canvas Cursor States */
+#canvas.add-mode {
+    cursor: pointer; /* Hand pointer for adding on canvas */
+}
+
+#canvas.add-on-sugar {
+    cursor: crosshair !important; /* Cross pointer when over sugar for directional addition */
+}
+
+#canvas.select-mode {
+    cursor: default;
+}
+
+#canvas.text-mode {
+    cursor: text;
+}
+
+#canvas.delete-mode {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="red" opacity="0.7"/><text x="10" y="14" text-anchor="middle" font-size="12" fill="white">×</text></svg>') 10 10, auto;
+}
+
+#canvas.delete-mode .sugar:hover,
+#canvas.delete-mode .text-element:hover {
+    opacity: 0.5;
+    filter: brightness(0.7);
+}
+
+#canvas.linkage-mode {
+    cursor: pointer;
+}
+
+#canvas.linkage-mode .connection:hover {
+    stroke-width: 4;
+    stroke: #007acc;
+}
+
+#canvas.linkage-mode .sugar,
+#canvas.linkage-mode .text-element {
+    opacity: 0.9;
+    pointer-events: none;
+}
+
+
+
+/* Sugar Elements */
+.sugar {
+    cursor: pointer;
+}
+
+.sugar.selected .sugar-shape {
+    filter: drop-shadow(0 0 8px #3498db);
+}
+
+.sugar:hover .sugar-shape {
+    filter: drop-shadow(0 0 4px #74b9ff);
+}
+
+/* Text Elements */
+.text-element {
+    cursor: pointer;
+    user-select: none;
+    pointer-events: all;
+    /* Note: font styles are set by JavaScript with !important */
+}
+
+.text-element.selected {
+    fill: #3498db;
+}
+
+.text-element:hover {
+    fill: #3498db;
+}
+
+/* Text Input Box */
+.text-input-box {
+    position: absolute;
+    background: white;
+    border: 2px solid #3498db;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-family: inherit;
+    font-size: 14px;
+    min-width: 100px;
+    outline: none;
+    z-index: 1000;
+}
+
+/* Selection Highlights */
+.selection-highlight {
+    fill: none;
+    stroke: #3498db;
+    stroke-width: 2;
+    stroke-dasharray: 4,2;
+    opacity: 0.8;
+    pointer-events: none;
+}
+
+/* Connection drag highlight styles */
+.connection-start-highlight {
+    opacity: 0.9;
+}
+
+.connection-target-highlight {
+    opacity: 0.8;
+}
+
+/* Box Selection */
+.selection-box {
+    fill: rgba(52, 152, 219, 0.1);
+    stroke: #3498db;
+    stroke-width: 1;
+    stroke-dasharray: 3,3;
+    pointer-events: none;
+}
+
+.selection-box-preview {
+    fill: rgba(52, 152, 219, 0.05);
+    stroke: #74b9ff;
+    stroke-width: 1;
+    stroke-dasharray: 2,2;
+    pointer-events: none;
+}
+
+/* HTML Overlay Selection Box (can extend beyond export area) */
+.selection-box-overlay {
+    position: absolute;
+    background-color: rgba(52, 152, 219, 0.1);
+    border: 1px dashed #3498db;
+    pointer-events: none;
+    z-index: 1000; /* Above all other elements */
+    box-sizing: border-box;
+}
+
+.box-selection-preview {
+    stroke: #007bff !important;
+    stroke-width: 2 !important;
+    stroke-dasharray: 3,3 !important;
+}
+
+/* Unified Element Hover System */
+.sugar.hover-preview .sugar-shape {
+    stroke: #74b9ff;
+    stroke-width: 2;
+    filter: brightness(1.1);
+}
+
+.text-element.hover-preview {
+    opacity: 0.8;
+    filter: brightness(1.1);
+}
+
+/* Connection Lines */
+.connection {
+    stroke: #333;
+    stroke-width: 2;
+    fill: none;
+    pointer-events: none;
+}
+
+.connection-preview {
+    stroke: #74b9ff;
+    stroke-width: 2;
+    stroke-dasharray: 4,4;
+    fill: none;
+    pointer-events: none;
+}
+
+/* Linkage Labels */
+.linkage-label {
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    fill: #000;
+    text-anchor: middle;
+    pointer-events: none;
+    user-select: none;
+    dominant-baseline: middle;
+}
+
+/* Default hidden state for conditional sections */
+#presetsSection,
+#customSugarSection {
+    display: block; /* Always show in new layout */
+}
+
+#sugarStyleSection, 
+#connectionStyleSection,
+#textStyleSection {
+    display: none;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    /* Revert to normal flow on smaller screens */
+    .left-panel, .right-panel {
+        position: relative;
+        top: auto;
+        left: auto;
+        right: auto;
+        bottom: auto;
+        width: 100%;
+        max-height: 200px;
+    }
+    
+    .center-panel {
+        margin-left: 0;
+        margin-right: 0;
+        padding: 30px 15px;
+        padding-bottom: 50px;
+    }
+    
+
+    
+    #canvas {
+        max-width: 90vw;
+        max-height: 60vh;
+    }
+}
+
+@media (max-width: 768px) {
+    
+    .preset-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    
+    .shape-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+    
+    h1 {
+        font-size: 18px;
+        padding: 8px 0;
+        position: relative; /* Revert fixed positioning on mobile */
+    }
+    
+    .top-panel {
+        position: relative; /* Revert fixed positioning on mobile */
+        top: auto;
+    }
+    
+    .center-panel {
+        padding: 20px 10px;
+    }
+    
+    #canvas {
+        max-width: 95vw;
+        max-height: 50vh;
+    }
+}
+
+/* Linkage Controls Styles */
+.linkage-quick-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
+    margin-top: 5px;
+}
+
+.linkage-text-style-buttons-add {
+    display: flex;
+    gap: 4px;
+}
+
+.linkage-text-style-btn-add {
+    /* Match the standard linkage-text-style-btn appearance */
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.linkage-text-style-btn-add:hover {
+    border-color: #3498db;
+    background-color: #f8f9fa;
+}
+
+.linkage-text-style-btn-add.active {
+    background: #3498db;
+    color: white;
+    border-color: #3498db;
+}
+
+#linkageTextFontFamily {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 13px;
+    background: white;
+}
+
+#linkageTextFontFamilyAdd {
+    width: 100%;
+    padding: 4px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    font-size: 13px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+#customSugarOpacity {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#customSugarOpacityValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+/* Ensure HEX color input boxes use Arial by default for clarity */
+#linkageTextColorAddHex,
+#sugarBorderColorHex,
+#connectionColorAddHex,
+#textColorHex,
+#customSugarColorHex,
+#connectionColorHex,
+#linkageTextColorHex {
+    font-family: Arial, sans-serif;
+}
+
+#sugarSize {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#sugarSizeValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#sugarBorderWidth {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#sugarBorderWidthValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#sugarBorderOpacity {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#sugarBorderOpacityValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#connectionWidthAdd {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#connectionWidthAddValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#connectionOpacityAdd {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#connectionOpacityAddValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#connectionStrokeWidth {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#connectionStrokeWidthValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#linkageOpacity {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#linkageOpacityValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#linkageTextSize {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#linkageTextSizeValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#linkageTextOpacity {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#linkageTextOpacityValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#linkageTextSizeAdd {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#linkageTextSizeAddValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#linkageTextOpacityAdd {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#linkageTextOpacityAddValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#fontSize {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#fontSizeValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+#textOpacity {
+    width: 120px;
+    margin-right: 8px;
+}
+
+#textOpacityValue {
+    font-size: 13px;
+    color: #18d1ff;
+    min-width: 40px;
+    display: inline-block;
+}
+
+.linkage-btn {
+    background: linear-gradient(145deg, #f0f0f0, #e6e6e6);
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: #333;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.linkage-btn:hover {
+    background: linear-gradient(145deg, #e6e6e6, #d9d9d9);
+    border-color: #999;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.linkage-btn:active {
+    transform: translateY(0);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.linkage-btn.active {
+    background: linear-gradient(145deg, #4CAF50, #45a049);
+    color: white;
+    border-color: #4CAF50;
+}
+
+#linkageInput {
+    width: 80%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: 'Arial', sans-serif;
+    margin-top: 5px;
+}
+
+#linkageInputAdd {
+    width: 80%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: 'Arial', sans-serif;
+    margin-top: 5px;
+}
+
+#linkageInput:focus {
+    border-color: #4CAF50;
+    outline: none;
+    box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+}
+
+/* Connection selection highlight */
+.connection.selected {
+    stroke: #0072BC !important; /* Blue for consistency with other selections */
+    stroke-width: 6 !important; /* Thicker line */
+    filter: drop-shadow(0 0 8px rgba(0, 114, 188, 0.8)) drop-shadow(0 0 4px rgba(0, 114, 188, 1));
+    opacity: 1 !important;
+}
+
+/* Linkage text label */
+.linkage-label {
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    fill: #333;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Linkage mode cursor */
+.linkage-mode {
+    cursor: crosshair;
+}
+
+.linkage-mode .connection {
+    cursor: pointer;
+    stroke-width: 3;
+}
+
+.linkage-mode .connection:hover {
+    stroke-width: 4;
+    filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.3));
+}
+
+/* Reduce sugar and text interaction in linkage mode */
+.linkage-mode .sugar,
+.linkage-mode .text-element {
+    pointer-events: none;
+    opacity: 0.7; /* Reduce opacity to better distinguish */
+}
+
+/* Selected connection style */
+.connection.selected {
+    stroke: #0072BC !important; /* Blue for consistency with other selections */
+    stroke-width: 6 !important; /* Thicker line */
+    filter: drop-shadow(0 0 8px rgba(0, 114, 188, 0.8)) drop-shadow(0 0 4px rgba(0, 114, 188, 1));
+    opacity: 1 !important;
+}
+
+/* Disable transitions during dragging for immediate response */
+.sugar.dragging,
+.text-element.dragging {
+    transition: none !important;
+}
+
+.sugar.dragging .sugar-shape,
+.sugar.dragging svg,
+.sugar.dragging *,
+.text-element.dragging,
+.text-element.dragging * {
+    transition: none !important;
+    animation: none !important;
+}
+
+/* Disable workspace transition during dragging */
+.workspace.dragging-active {
+    transition: none !important;
+}
+
+/* Ensure all SVG elements have no transitions during dragging */
+.dragging-active svg,
+.dragging-active svg *,
+.dragging-active .sugar-shape,
+.dragging-active .sugar,
+.dragging-active .text-element {
+    transition: none !important;
+    animation: none !important;
+}
+
+/* Global dragging state - disable ALL transitions */
+body.global-dragging * {
+    transition: none !important;
+    animation: none !important;
+}
+
+/* Custom checkbox colors */
+#showLinkageTextAdd {
+    accent-color: #18d1ff;
+}
+
+
+/* Custom color for showLinkageTextAdd span */
+#showLinkageTextAdd + span {
+    color: #18d1ff;
+}

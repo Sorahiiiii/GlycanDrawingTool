@@ -1,0 +1,20 @@
+{
+  "name": "glycan-draw",
+  "type": "module",
+  "description": "Web-based SNFG glycan drawing editor with a separated Node backend.",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "node backend/src/server.js --root frontend --port 4173",
+    "start": "node backend/src/server.js --root frontend --port 3000",
+    "test:e2e": "node tests/e2e/app.e2e.mjs",
+    "test:smoke": "node tests/smoke/server.smoke.mjs",
+    "test:unit": "node tests/unit/prototype-parity.mjs && node tests/unit/constants-parity.mjs && node tests/unit/mixin-collisions.mjs && node tests/unit/language-bootstrap.mjs && node tests/unit/glycan-drawer-hardening.mjs && node tests/unit/preferences.test.mjs && node tests/unit/formatting.test.mjs && node tests/unit/theme-variables.test.mjs && node tests/unit/render-presets.test.mjs && node tests/unit/geometry.test.mjs",
+    "test": "node tests/run-tests.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}
